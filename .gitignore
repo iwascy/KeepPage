@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wxt/
+.vite/
+.turbo/
+.output/
+**/dist/
+**/.wxt/
+**/.output/
+*.tsbuildinfo
+single-file-core-*.tgz
+tasks/cron_tasks/FeishuApprovalPull/output/
