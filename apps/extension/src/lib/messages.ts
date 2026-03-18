@@ -13,6 +13,7 @@ export const MESSAGE_TYPE = {
   RetryTask: "keeppage/retry-task",
   OpenTaskPreview: "keeppage/open-task-preview",
   TaskUpdated: "keeppage/task-updated",
+  DebugLog: "keeppage/debug-log",
 } as const;
 
 export interface CollectLiveSignalsRequest {
@@ -69,6 +70,14 @@ export interface TaskUpdatedEvent {
   task: CaptureTask;
 }
 
+export interface DebugLogEvent {
+  type: typeof MESSAGE_TYPE.DebugLog;
+  scope: string;
+  level: "info" | "warn" | "error";
+  message: string;
+  details?: unknown;
+}
+
 export type ContentRequest = CollectLiveSignalsRequest | CaptureArchiveHtmlRequest;
 export type BackgroundRequest =
   | ListTasksRequest
@@ -85,6 +94,14 @@ export function isContentRequest(message: unknown): message is ContentRequest {
     maybe.type === MESSAGE_TYPE.CollectLiveSignals ||
     maybe.type === MESSAGE_TYPE.CaptureArchiveHtml
   );
+}
+
+export function isDebugLogEvent(message: unknown): message is DebugLogEvent {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const maybe = message as { type?: string };
+  return maybe.type === MESSAGE_TYPE.DebugLog;
 }
 
 export function isBackgroundRequest(message: unknown): message is BackgroundRequest {

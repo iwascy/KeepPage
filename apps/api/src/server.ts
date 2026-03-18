@@ -8,6 +8,7 @@ import { createObjectStorage } from "./storage/object-storage";
 export function buildServer(config: ApiConfig) {
   const app = Fastify({
     bodyLimit: config.UPLOAD_BODY_LIMIT_MB * 1024 * 1024,
+    trustProxy: true,
     logger: {
       level: config.LOG_LEVEL,
     },
@@ -46,7 +47,7 @@ export function buildServer(config: ApiConfig) {
   });
 
   app.register(async (instance) => {
-    await registerRoutes(instance, repository, objectStorage);
+    await registerRoutes(instance, config, repository, objectStorage);
   });
 
   return app;

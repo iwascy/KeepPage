@@ -1,3 +1,5 @@
+import { isStaleExtensionContextError } from "./extension-errors";
+
 type RuntimeListener = (
   message: unknown,
   sender: chrome.runtime.MessageSender,
@@ -32,13 +34,26 @@ export function ensureBrowserRuntime(): BrowserRuntime | undefined {
       id: chrome.runtime.id,
       sendMessage(message) {
         return new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage(message, (response) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
+          try {
+            chrome.runtime.sendMessage(message, (response) => {
+              if (chrome.runtime.lastError) {
+                const error = new Error(chrome.runtime.lastError.message);
+                if (isStaleExtensionContextError(error)) {
+                  resolve(undefined);
+                  return;
+                }
+                reject(error);
+                return;
+              }
+              resolve(response);
+            });
+          } catch (error) {
+            if (isStaleExtensionContextError(error)) {
+              resolve(undefined);
               return;
             }
-            resolve(response);
-          });
+            reject(error);
+          }
         });
       },
       getURL(path) {

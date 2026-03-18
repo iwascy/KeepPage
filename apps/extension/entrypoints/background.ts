@@ -11,12 +11,15 @@ import {
   isBackgroundRequest,
   type ListTasksResponse,
 } from "../src/lib/messages";
+import { createLogger } from "../src/lib/logger";
 import { getFetchChunkSize } from "../src/lib/singlefile-fetch";
 
 const singleFileTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+const logger = createLogger("background");
 
 export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
+    logger.info("Extension installed or updated, registering context menu.");
     chrome.contextMenus.create({
       id: "keeppage-save-page",
       title: "保存到 KeepPage",
@@ -28,6 +31,10 @@ export default defineBackground(() => {
     if (info.menuItemId !== "keeppage-save-page" || !tab?.id) {
       return;
     }
+    logger.info("Context menu capture requested.", {
+      tabId: tab.id,
+      url: tab.url,
+    });
     await captureActiveTab("standard");
     if (tab.windowId != null) {
       await openSidePanel(tab.windowId);
@@ -38,6 +45,10 @@ export default defineBackground(() => {
     if (!tab.id) {
       return;
     }
+    logger.info("Toolbar capture requested.", {
+      tabId: tab.id,
+      url: tab.url,
+    });
     await captureActiveTab("standard");
     if (tab.windowId != null) {
       await openSidePanel(tab.windowId);
@@ -45,6 +56,7 @@ export default defineBackground(() => {
   });
 
   chrome.commands.onCommand.addListener(async (command) => {
+    logger.info("Command received.", { command });
     if (command === "save-current-page") {
       await captureActiveTab("standard");
       return;
@@ -59,9 +71,18 @@ export default defineBackground(() => {
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (isSingleFileRuntimeMessage(message)) {
+      logger.info("SingleFile runtime message received.", {
+        method: message.method,
+        tabId: sender.tab?.id,
+        frameId: sender.frameId,
+      });
       void handleSingleFileRuntimeMessage(message, sender)
         .then(sendResponse)
         .catch((error) => {
+          logger.error("SingleFile runtime message failed.", {
+            method: message.method,
+            error: error instanceof Error ? error.message : String(error),
+          });
           sendResponse({
             error: error instanceof Error ? error.message : String(error),
           });
@@ -75,6 +96,9 @@ export default defineBackground(() => {
 
     void (async () => {
       if (message.type === MESSAGE_TYPE.ListTasks) {
+        logger.info("Listing recent tasks.", {
+          limit: message.limit ?? 20,
+        });
         const tasks = await listRecentTasks(message.limit ?? 20);
         const response: ListTasksResponse = {
           ok: true,
@@ -85,6 +109,7 @@ export default defineBackground(() => {
       }
       if (message.type === MESSAGE_TYPE.TriggerCaptureActiveTab) {
         const profile = captureProfileSchema.parse(message.profile ?? "standard");
+        logger.info("Triggering active-tab capture.", { profile });
         const task = await captureActiveTab(profile);
         sendResponse({ ok: true, task });
         return;
@@ -93,16 +118,24 @@ export default defineBackground(() => {
         const profile = message.profile
           ? captureProfileSchema.parse(message.profile)
           : undefined;
+        logger.info("Retrying task.", {
+          taskId: message.taskId,
+          profile,
+        });
         const task = await retryTask(message.taskId, profile);
         sendResponse({ ok: true, task });
         return;
       }
       if (message.type === MESSAGE_TYPE.OpenTaskPreview) {
+        logger.info("Opening task preview.", {
+          taskId: message.taskId,
+        });
         await openTaskPreview(message.taskId);
         sendResponse({ ok: true });
       }
     })().catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
+      logger.error("Background request failed.", { error: message });
       sendResponse({ ok: false, error: message });
     });
 
@@ -194,6 +227,11 @@ async function handleSingleFileFetch(
   );
 
   try {
+    logger.info("Proxy fetching resource through background.", {
+      requestId,
+      resourceUrl,
+      tabId: sender.tab.id,
+    });
     const response = await fetch(resourceUrl, {
       headers,
       cache: "force-cache",
@@ -208,6 +246,11 @@ async function handleSingleFileFetch(
       array: body,
     });
   } catch (error) {
+    logger.warn("Background resource fetch failed.", {
+      requestId,
+      resourceUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
     await sendChunkedFetchResponse(sender.tab.id, sender.frameId, {
       requestId,
       error: error instanceof Error ? error.message : String(error),

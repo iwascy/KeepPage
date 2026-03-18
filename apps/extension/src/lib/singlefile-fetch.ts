@@ -1,6 +1,12 @@
 import { ensureBrowserRuntime } from "./browser-polyfill";
+import {
+  getRefreshRequiredMessage,
+  isStaleExtensionContextError,
+} from "./extension-errors";
+import { createLogger } from "./logger";
 
 const FETCH_CHUNK_SIZE = 8 * 1024 * 1024;
+const logger = createLogger("singlefile-fetch");
 
 type RuntimeFetchResponse = {
   status?: number;
@@ -77,6 +83,14 @@ export function initSingleFileFetchBridge() {
 export async function singleFileFetch(resourceUrl: string, options: SingleFileFetchOptions = {}) {
   initSingleFileFetchBridge();
   const fetchOptions = buildFetchOptions(options);
+  const resolvedResourceUrl = resolveResourceUrl(resourceUrl);
+
+  if (shouldUseRuntimeFetch(resolvedResourceUrl)) {
+    logger.info("Using background fetch for cross-origin resource.", {
+      resourceUrl,
+    });
+    return fetchViaRuntime(resourceUrl, fetchOptions, options.referrer);
+  }
 
   try {
     let response = await fetch(resourceUrl, fetchOptions);
@@ -92,25 +106,10 @@ export async function singleFileFetch(resourceUrl: string, options: SingleFileFe
     }
     return response;
   } catch {
-    requestId += 1;
-    const currentRequestId = requestId;
-    const promise = new Promise<{
-      status: number;
-      headers: Map<string, string>;
-      arrayBuffer: () => Promise<ArrayBuffer>;
-    }>((resolve, reject) => {
-      pendingResponses.set(currentRequestId, { resolve, reject });
+    logger.warn("Page-context fetch failed, retrying through background.", {
+      resourceUrl,
     });
-
-    await sendRuntimeMessage({
-      method: "singlefile.fetch",
-      url: resourceUrl,
-      requestId: currentRequestId,
-      referrer: options.referrer,
-      headers: headersToPairs(fetchOptions.headers),
-    });
-
-    return promise;
+    return fetchViaRuntime(resourceUrl, fetchOptions, options.referrer);
   }
 }
 
@@ -149,6 +148,58 @@ function buildFetchOptions(options: SingleFileFetchOptions): RequestInit {
   };
 }
 
+function resolveResourceUrl(resourceUrl: string) {
+  try {
+    return new URL(resourceUrl, globalThis.location?.href);
+  } catch {
+    return null;
+  }
+}
+
+function shouldUseRuntimeFetch(resourceUrl: URL | null) {
+  if (!resourceUrl) {
+    return false;
+  }
+  if (resourceUrl.protocol !== "http:" && resourceUrl.protocol !== "https:") {
+    return false;
+  }
+  const pageOrigin = globalThis.location?.origin;
+  if (!pageOrigin) {
+    return false;
+  }
+  return resourceUrl.origin !== pageOrigin;
+}
+
+async function fetchViaRuntime(
+  resourceUrl: string,
+  fetchOptions: RequestInit,
+  referrer: string | undefined,
+) {
+  logger.info("Sending resource fetch request to background.", {
+    resourceUrl,
+    referrer,
+  });
+  requestId += 1;
+  const currentRequestId = requestId;
+  const promise = new Promise<{
+    status: number;
+    headers: Map<string, string>;
+    arrayBuffer: () => Promise<ArrayBuffer>;
+  }>((resolve, reject) => {
+    pendingResponses.set(currentRequestId, { resolve, reject });
+  });
+
+  await sendRuntimeMessage({
+    method: "singlefile.fetch",
+    url: resourceUrl,
+    requestId: currentRequestId,
+    referrer,
+    headers: headersToPairs(fetchOptions.headers),
+  });
+
+  return promise;
+}
+
 async function onFetchFrame(message: {
   url?: string;
   headers?: Array<[string, string]>;
@@ -165,6 +216,10 @@ async function onFetchFrame(message: {
       array: Array.from(new Uint8Array(await response.arrayBuffer())),
     };
   } catch (error) {
+    logger.warn("Frame fetch failed.", {
+      url: message.url,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       error: error instanceof Error ? error.message : String(error),
     };
@@ -181,6 +236,10 @@ async function onFetchResponse(message: RuntimeFetchResponse) {
   }
 
   if (message.error) {
+    logger.warn("Background fetch response returned error.", {
+      requestId: message.requestId,
+      error: message.error,
+    });
     pending.reject(new Error(message.error));
     pendingResponses.delete(message.requestId);
     return {};
@@ -194,6 +253,12 @@ async function onFetchResponse(message: RuntimeFetchResponse) {
   }
 
   const fullArray = message.truncated ? pending.array ?? [] : message.array ?? [];
+  logger.info("Background fetch response completed.", {
+    requestId: message.requestId,
+    status: message.status ?? 200,
+    bytes: fullArray.length,
+    truncated: Boolean(message.truncated),
+  });
   pending.resolve({
     status: message.status ?? 200,
     headers: new Map(message.headers ?? []),
@@ -209,13 +274,38 @@ export function getFetchChunkSize() {
 
 async function sendRuntimeMessage(message: unknown) {
   return new Promise<unknown>((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          const error = new Error(chrome.runtime.lastError.message);
+          if (isStaleExtensionContextError(error)) {
+            logger.warn("Runtime message failed because extension context is stale.", {
+              error: error.message,
+            });
+            reject(new Error(getRefreshRequiredMessage()));
+            return;
+          }
+          logger.error("Runtime message failed.", {
+            error: error.message,
+          });
+          reject(error);
+          return;
+        }
+        resolve(response);
+      });
+    } catch (error) {
+      if (isStaleExtensionContextError(error)) {
+        logger.warn("Runtime message threw because extension context is stale.", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        reject(new Error(getRefreshRequiredMessage()));
         return;
       }
-      resolve(response);
-    });
+      logger.error("Runtime message threw unexpectedly.", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      reject(error);
+    }
   });
 }
 

@@ -21,9 +21,16 @@ import {
   type CollectLiveSignalsResponse,
   type TaskUpdatedEvent,
 } from "./messages";
+import {
+  getRefreshRequiredMessage,
+  isStaleExtensionContextError,
+} from "./extension-errors";
+import { emitDebugLogToTab } from "./debug-log";
+import { createLogger } from "./logger";
 import { syncTaskToApi } from "./sync-api";
 
 const DEFAULT_PROFILE: CaptureProfile = "standard";
+const logger = createLogger("capture");
 
 export async function captureActiveTab(profile: CaptureProfile = DEFAULT_PROFILE) {
   const [activeTab] = await chrome.tabs.query({
@@ -33,6 +40,11 @@ export async function captureActiveTab(profile: CaptureProfile = DEFAULT_PROFILE
   if (!activeTab?.id) {
     throw new Error("No active tab available for capture.");
   }
+  logCapture("info", activeTab.id, "Starting capture for active tab.", {
+    tabId: activeTab.id,
+    url: activeTab.url,
+    profile,
+  });
   return captureTab(activeTab.id, profile);
 }
 
@@ -41,6 +53,11 @@ export async function retryTask(taskId: string, profileOverride?: CaptureProfile
   if (!task) {
     throw new Error("Task not found.");
   }
+  logger.info("Retry requested.", {
+    taskId,
+    taskStatus: task.status,
+    profileOverride,
+  });
   const retryProfile = profileOverride ?? task.profile;
   if (
     retryProfile === task.profile &&
@@ -88,10 +105,20 @@ async function captureTab(
   };
   await putCaptureTask(task);
   await publishTask(task);
+  await logCapture("info", tabId, "Task queued.", {
+    taskId: task.id,
+    tabId,
+    url: source.url,
+    profile,
+  });
 
   try {
     let workingTask = await transitionCaptureTaskStatus(task.id, "capturing");
     await publishTask(workingTask);
+    await logCapture("info", tabId, "Collecting live page signals.", {
+      taskId: task.id,
+      tabId,
+    });
 
     const liveResult = await sendMessageToTab<CollectLiveSignalsRequest, CollectLiveSignalsResponse>(
       tabId,
@@ -102,6 +129,10 @@ async function captureTab(
     if (!liveResult.ok || !liveResult.liveSignals) {
       throw new Error(liveResult.error ?? "Failed to collect pre-capture signals.");
     }
+    await logCapture("info", tabId, "Live page signals collected.", {
+      taskId: task.id,
+      liveSignals: liveResult.liveSignals,
+    });
 
     const mergedSource: CaptureSource = {
       ...workingTask.source,
@@ -119,9 +150,21 @@ async function captureTab(
       type: MESSAGE_TYPE.CaptureArchiveHtml,
       profile,
     });
+    await logCapture("info", tabId, "Archive capture finished.", {
+      taskId: task.id,
+      archiveOk: archiveResult.ok,
+      usedSingleFile: archiveResult.ok ? archiveResult.usedSingleFile : undefined,
+      error: archiveResult.ok ? undefined : archiveResult.error,
+    });
     const archiveHtml = archiveResult.ok && archiveResult.archiveHtml
       ? archiveResult.archiveHtml
       : buildFallbackArchiveHtml(mergedSource, liveResult.liveSignals);
+    if (!archiveResult.ok) {
+      await logCapture("warn", tabId, "Using fallback archive HTML.", {
+        taskId: task.id,
+        reason: archiveResult.error,
+      });
+    }
     const screenshotDataUrl = options.captureScreenshot === false
       ? null
       : await captureTabScreenshot(tab.windowId);
@@ -133,6 +176,14 @@ async function captureTab(
       missingIframeLikely: archiveSignals.iframeCount < liveResult.liveSignals.iframeCount,
     });
     const localArchiveSha256 = await computeSha256Hex(archiveHtml);
+    await logCapture("info", tabId, "Archive prepared locally.", {
+      taskId: task.id,
+      archiveSize: archiveHtml.length,
+      extractedTextLength: extractedText.length,
+      quality,
+      localArchiveSha256,
+      screenshotCaptured: Boolean(screenshotDataUrl),
+    });
 
     workingTask = await transitionCaptureTaskStatus(task.id, "validating");
     await publishTask(workingTask);
@@ -151,9 +202,17 @@ async function captureTab(
     await publishTask(workingTask);
     workingTask = await transitionCaptureTaskStatus(task.id, "upload_pending");
     await publishTask(workingTask);
-    return syncTask(workingTask);
+    await logCapture("info", tabId, "Task ready for upload.", {
+      taskId: task.id,
+    });
+    return syncTask(workingTask, tabId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    await logCapture("error", tabId, "Capture pipeline failed.", {
+      taskId: task.id,
+      tabId,
+      error: message,
+    });
     const failedTask = await transitionCaptureTaskStatus(task.id, "failed", {
       failureReason: message,
     });
@@ -163,6 +222,10 @@ async function captureTab(
 }
 
 async function captureSourceUrl(url: string, profile: CaptureProfile) {
+  logger.info("Opening temporary tab for retry capture.", {
+    url,
+    profile,
+  });
   const retryTab = await chrome.tabs.create({
     url,
     active: false,
@@ -185,14 +248,18 @@ async function captureSourceUrl(url: string, profile: CaptureProfile) {
   }
 }
 
-async function syncTask(task: CaptureTask) {
+async function syncTask(task: CaptureTask, debugTabId?: number) {
   let workingTask = await transitionCaptureTaskStatus(task.id, "uploading", {
     failureReason: undefined,
   });
   await publishTask(workingTask);
+  await logCapture("info", debugTabId, "Uploading task to API.", {
+    taskId: task.id,
+    url: task.source.url,
+  });
 
   try {
-    const syncResult = await syncTaskToApi(workingTask);
+    const syncResult = await syncTaskToApi(workingTask, debugTabId);
     workingTask = await transitionCaptureTaskStatus(task.id, "uploaded", {
       bookmarkId: syncResult.bookmarkId,
       versionId: syncResult.versionId,
@@ -201,9 +268,18 @@ async function syncTask(task: CaptureTask) {
     await publishTask(workingTask);
     workingTask = await transitionCaptureTaskStatus(task.id, "synced");
     await publishTask(workingTask);
+    await logCapture("info", debugTabId, "Task synced successfully.", {
+      taskId: task.id,
+      bookmarkId: syncResult.bookmarkId,
+      versionId: syncResult.versionId,
+    });
     return workingTask;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    await logCapture("error", debugTabId, "Task sync failed.", {
+      taskId: task.id,
+      error: message,
+    });
     workingTask = await transitionCaptureTaskStatus(task.id, "upload_pending", {
       failureReason: `同步失败，等待重试：${message}`,
     });
@@ -314,6 +390,9 @@ async function captureTabScreenshot(windowId?: number): Promise<string | null> {
       chrome.tabs.captureVisibleTab({ format: "png" }, onCaptured);
     });
   } catch {
+    logger.warn("Capture screenshot failed, continuing without screenshot.", {
+      windowId,
+    });
     return null;
   }
 }
@@ -342,7 +421,22 @@ async function sendMessageToTab<TRequest, TResponse>(
   tabId: number,
   message: TRequest,
 ) {
-  return chrome.tabs.sendMessage(tabId, message) as Promise<TResponse>;
+  try {
+    return await chrome.tabs.sendMessage(tabId, message) as TResponse;
+  } catch (error) {
+    if (isStaleExtensionContextError(error)) {
+      logger.warn("Tab message failed because content script is stale.", {
+        tabId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new Error(getRefreshRequiredMessage());
+    }
+    logger.error("Tab message failed.", {
+      tabId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 async function waitForTabReady(tabId: number, timeoutMs = 15000) {
@@ -373,4 +467,14 @@ async function waitForTabReady(tabId: number, timeoutMs = 15000) {
 
     chrome.tabs.onUpdated.addListener(listener);
   });
+}
+
+async function logCapture(
+  level: "info" | "warn" | "error",
+  tabId: number | undefined,
+  message: string,
+  details?: unknown,
+) {
+  logger[level](message, details);
+  await emitDebugLogToTab(tabId, "capture", level, message, details);
 }

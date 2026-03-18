@@ -8,10 +8,12 @@ import {
 import { defineContentScript } from "wxt/utils/define-content-script";
 import {
   MESSAGE_TYPE,
+  isDebugLogEvent,
   isContentRequest,
   type CaptureArchiveHtmlResponse,
   type CollectLiveSignalsResponse,
 } from "../src/lib/messages";
+import { createLogger, logToConsole } from "../src/lib/logger";
 
 type SingleFilePageData = {
   content?: string | number[];
@@ -32,23 +34,40 @@ export default defineContentScript({
   matches: ["<all_urls>"],
   runAt: "document_idle",
   main() {
+    const logger = createLogger("content");
+    logger.info("Content script ready.", {
+      url: location.href,
+    });
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (isDebugLogEvent(message)) {
+        logToConsole(message.scope, message.level, message.message, message.details);
+        return false;
+      }
+
       if (!isContentRequest(message)) {
         return false;
       }
 
       void (async () => {
         if (message.type === MESSAGE_TYPE.CollectLiveSignals) {
+          logger.info("Collecting live signals.", {
+            url: location.href,
+          });
           const response: CollectLiveSignalsResponse = {
             ok: true,
             sourcePatch: collectSourcePatch(),
             liveSignals: collectLiveSignals(),
           };
+          logger.info("Live signals collected.", response.liveSignals);
           sendResponse(response);
           return;
         }
         if (message.type === MESSAGE_TYPE.CaptureArchiveHtml) {
           const profile = captureProfileSchema.parse(message.profile);
+          logger.info("Capturing archive HTML.", {
+            url: location.href,
+            profile,
+          });
           const capture = await captureArchiveHtml(profile);
           const response: CaptureArchiveHtmlResponse = capture.ok
             ? {
@@ -60,10 +79,24 @@ export default defineContentScript({
                 ok: false,
                 error: capture.error,
               };
+          if (capture.ok) {
+            logger.info("Archive HTML captured.", {
+              usedSingleFile: capture.usedSingleFile,
+              archiveSize: capture.archiveHtml.length,
+            });
+          } else {
+            logger.warn("Archive HTML capture failed.", {
+              error: capture.error,
+            });
+          }
           sendResponse(response);
         }
       })().catch((error) => {
         const reason = error instanceof Error ? error.message : String(error);
+        logger.error("Content script request failed.", {
+          url: location.href,
+          error: reason,
+        });
         sendResponse({ ok: false, error: reason });
       });
 
@@ -115,6 +148,7 @@ function readCanonicalUrl() {
 async function captureArchiveHtml(profile: CaptureProfile) {
   const singlefile = (globalThis as SingleFileGlobal).singlefile;
   const options = profileToSingleFileOptions(profile);
+  const logger = createLogger("content");
 
   // Official integration slot:
   // Once SingleFile MV3 core bundles are wired in document_start hooks,
@@ -123,6 +157,9 @@ async function captureArchiveHtml(profile: CaptureProfile) {
     try {
       const pageData = await singlefile.getPageData(options);
       if (typeof pageData?.content === "string") {
+        logger.info("SingleFile returned string content.", {
+          size: pageData.content.length,
+        });
         return {
           ok: true as const,
           archiveHtml: pageData.content,
@@ -131,6 +168,9 @@ async function captureArchiveHtml(profile: CaptureProfile) {
       }
       if (Array.isArray(pageData?.content)) {
         const html = new TextDecoder().decode(Uint8Array.from(pageData.content));
+        logger.info("SingleFile returned byte-array content.", {
+          size: html.length,
+        });
         return {
           ok: true as const,
           archiveHtml: html,
@@ -139,6 +179,9 @@ async function captureArchiveHtml(profile: CaptureProfile) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      logger.warn("SingleFile capture failed.", {
+        error: message,
+      });
       return {
         ok: false as const,
         error: `singlefile.getPageData failed: ${message}`,
@@ -146,6 +189,7 @@ async function captureArchiveHtml(profile: CaptureProfile) {
     }
   }
 
+  logger.warn("SingleFile API unavailable, using DOM serialization fallback.");
   return {
     ok: true as const,
     archiveHtml: serializeDocumentForFallback(),
