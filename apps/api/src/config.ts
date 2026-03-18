@@ -4,7 +4,11 @@ const configSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   API_HOST: z.string().default("127.0.0.1"),
   API_PORT: z.coerce.number().int().positive().default(8787),
+  API_PUBLIC_BASE_URL: z.string().optional(),
   STORAGE_DRIVER: z.enum(["memory", "postgres"]).default("memory"),
+  OBJECT_STORAGE_DRIVER: z.enum(["localfs"]).default("localfs"),
+  OBJECT_STORAGE_ROOT: z.string().default("./data/object-storage"),
+  UPLOAD_BODY_LIMIT_MB: z.coerce.number().int().positive().default(32),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   DATABASE_URL: z.string().optional(),
 });

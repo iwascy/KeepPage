@@ -93,7 +93,7 @@ export const captureUploads = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    captureUploadsHashIdx: index("capture_uploads_hash_idx").on(
+    captureUploadsHashIdx: uniqueIndex("capture_uploads_hash_idx").on(
       table.normalizedUrlHash,
       table.htmlSha256,
     ),

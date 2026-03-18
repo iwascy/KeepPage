@@ -3,7 +3,6 @@ import type {
   BookmarkSearchResponse,
   CaptureCompleteRequest,
   CaptureInitRequest,
-  CaptureInitResponse,
 } from "@keeppage/domain";
 
 export type BookmarkSearchQuery = {
@@ -21,9 +20,16 @@ export type CompleteCaptureResult = {
   deduplicated: boolean;
 };
 
+export type InitCaptureResult = {
+  alreadyExists: boolean;
+  bookmarkId?: string;
+  versionId?: string;
+  objectKey: string;
+};
+
 export interface BookmarkRepository {
   readonly kind: "memory" | "postgres";
-  initCapture(input: CaptureInitRequest): Promise<CaptureInitResponse>;
+  initCapture(input: CaptureInitRequest): Promise<InitCaptureResult>;
   completeCapture(input: CaptureCompleteRequest): Promise<CompleteCaptureResult>;
   searchBookmarks(query: BookmarkSearchQuery): Promise<BookmarkSearchResponse>;
 }

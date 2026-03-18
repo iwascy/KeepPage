@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { Client } from "pg";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -10,8 +10,8 @@ if (!DATABASE_URL) {
 
 const databaseUrl = DATABASE_URL;
 
-const migrationUrl = new URL(
-  "../../../../packages/db/migrations/0001_initial.sql",
+const migrationsDirUrl = new URL(
+  "../../../../packages/db/migrations/",
   import.meta.url,
 );
 
@@ -41,11 +41,9 @@ async function main() {
     await adminClient.end();
   }
 
-  const sqlText = await readFile(migrationUrl, "utf8");
-  const statements = sqlText
-    .split(/;\s*\n/g)
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
+  const migrationFiles = (await readdir(migrationsDirUrl))
+    .filter((fileName) => fileName.endsWith(".sql"))
+    .sort();
 
   const client = new Client({
     connectionString: databaseUrl,
@@ -53,19 +51,28 @@ async function main() {
 
   await client.connect();
   try {
-    for (const statement of statements) {
-      try {
-        await client.query(`${statement};`);
-      } catch (error) {
-        if (
-          typeof error === "object" &&
-          error &&
-          "code" in error &&
-          DUPLICATE_ERROR_CODES.has(String(error.code))
-        ) {
-          continue;
+    for (const migrationFile of migrationFiles) {
+      const migrationUrl = new URL(migrationFile, migrationsDirUrl);
+      const sqlText = await readFile(migrationUrl, "utf8");
+      const statements = sqlText
+        .split(/;\s*\n/g)
+        .map((statement) => statement.trim())
+        .filter((statement) => statement.length > 0);
+
+      for (const statement of statements) {
+        try {
+          await client.query(`${statement};`);
+        } catch (error) {
+          if (
+            typeof error === "object" &&
+            error &&
+            "code" in error &&
+            DUPLICATE_ERROR_CODES.has(String(error.code))
+          ) {
+            continue;
+          }
+          throw error;
         }
-        throw error;
       }
     }
     console.log(`Postgres schema initialized for ${targetDatabase}.`);

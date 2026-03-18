@@ -21,14 +21,17 @@ import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
+import type { ObjectStorage } from "../storage/object-storage";
 import type {
   BookmarkRepository,
   BookmarkSearchQuery,
   CompleteCaptureResult,
+  InitCaptureResult,
 } from "./bookmark-repository";
 
 type PostgresBookmarkRepositoryOptions = {
   databaseUrl: string;
+  objectStorage: ObjectStorage;
 };
 
 const DEFAULT_USER_ID = "6f8326ce-830f-46b6-a2ab-2be2f102f5fe";
@@ -40,6 +43,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
   private readonly pool: Pool;
   private readonly db: NodePgDatabase<typeof dbSchema>;
   private readonly bootstrapPromise: Promise<void>;
+  private readonly objectStorage: ObjectStorage;
 
   constructor(options: PostgresBookmarkRepositoryOptions) {
     this.pool = new Pool({
@@ -49,10 +53,11 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     this.db = drizzle(this.pool, {
       schema: dbSchema,
     });
+    this.objectStorage = options.objectStorage;
     this.bootstrapPromise = this.ensureBootstrap();
   }
 
-  async initCapture(input: CaptureInitRequest): Promise<CaptureInitResponse> {
+  async initCapture(input: CaptureInitRequest): Promise<InitCaptureResult> {
     await this.bootstrapPromise;
 
     const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(input.url));
@@ -80,26 +85,68 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         bookmarkId: hit.bookmarkId,
         versionId: hit.versionId,
         objectKey: hit.objectKey,
-        uploadUrl: this.createUploadUrl(hit.objectKey),
+      };
+    }
+
+    const pending = await this.db
+      .select({
+        objectKey: captureUploads.objectKey,
+      })
+      .from(captureUploads)
+      .where(
+        and(
+          eq(captureUploads.normalizedUrlHash, normalizedUrlHash),
+          eq(captureUploads.htmlSha256, input.htmlSha256),
+        ),
+      )
+      .orderBy(desc(captureUploads.createdAt))
+      .limit(1);
+
+    if (pending[0]) {
+      return {
+        alreadyExists: false,
+        objectKey: pending[0].objectKey,
       };
     }
 
     const objectKey = this.createObjectKey();
-    await this.db.insert(captureUploads).values({
-      objectKey,
-      normalizedUrlHash,
-      sourceUrl: input.url,
-      title: input.title,
-      htmlSha256: input.htmlSha256,
-      fileSize: input.fileSize,
-      captureProfile: input.profile,
-      deviceId: input.deviceId,
-    });
+    await this.db
+      .insert(captureUploads)
+      .values({
+        objectKey,
+        normalizedUrlHash,
+        sourceUrl: input.url,
+        title: input.title,
+        htmlSha256: input.htmlSha256,
+        fileSize: input.fileSize,
+        captureProfile: input.profile,
+        deviceId: input.deviceId,
+      })
+      .onConflictDoNothing({
+        target: [captureUploads.normalizedUrlHash, captureUploads.htmlSha256],
+      });
+
+    const claimedPending = await this.db
+      .select({
+        objectKey: captureUploads.objectKey,
+      })
+      .from(captureUploads)
+      .where(
+        and(
+          eq(captureUploads.normalizedUrlHash, normalizedUrlHash),
+          eq(captureUploads.htmlSha256, input.htmlSha256),
+        ),
+      )
+      .orderBy(desc(captureUploads.createdAt))
+      .limit(1);
+
+    if (!claimedPending[0]) {
+      throw new Error("Failed to create or reuse pending upload.");
+    }
 
     return {
       alreadyExists: false,
-      objectKey,
-      uploadUrl: this.createUploadUrl(objectKey),
+      objectKey: claimedPending[0].objectKey,
     };
   }
 
@@ -131,6 +178,10 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       };
     }
 
+    if (!(await this.objectStorage.hasObject(input.objectKey))) {
+      throw new Error("Uploaded archive object not found.");
+    }
+
     const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(input.source.url));
     const now = new Date();
 
@@ -140,6 +191,10 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         .from(captureUploads)
         .where(eq(captureUploads.objectKey, input.objectKey))
         .limit(1);
+      const pending = pendingUpload[0];
+      if (!pending) {
+        throw new Error("Pending capture not found for object key.");
+      }
 
       const existingBookmarkRows = await tx
         .select({
@@ -215,7 +270,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         .where(eq(bookmarkVersions.bookmarkId, bookmarkId));
       const versionNo = nextVersionNoRows[0]?.nextVersionNo ?? 1;
       const versionId = crypto.randomUUID();
-      const pending = pendingUpload[0];
+      const objectStat = await this.objectStorage.statObject(input.objectKey);
 
       await tx.insert(bookmarkVersions).values({
         id: versionId,
@@ -229,6 +284,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         captureOptionsJson: pending
           ? {
               fileSize: pending.fileSize,
+              uploadedSize: objectStat?.size ?? pending.fileSize,
               deviceId: pending.deviceId,
             }
           : {},
@@ -507,9 +563,5 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
   private createObjectKey() {
     const day = new Date().toISOString().slice(0, 10);
     return `captures/${day}/${crypto.randomUUID()}.html`;
-  }
-
-  private createUploadUrl(objectKey: string) {
-    return `https://uploads.keeppage.local/presigned/${encodeURIComponent(objectKey)}`;
   }
 }

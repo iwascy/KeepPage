@@ -6,19 +6,23 @@ import {
   type BookmarkVersion,
   type CaptureCompleteRequest,
   type CaptureInitRequest,
-  type CaptureInitResponse,
 } from "@keeppage/domain";
 import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
+import type { ObjectStorage } from "../storage/object-storage";
 import type {
   BookmarkRepository,
+  InitCaptureResult,
   BookmarkSearchQuery,
   CompleteCaptureResult,
 } from "./bookmark-repository";
 
 type PendingCapture = {
   objectKey: string;
-  uploadUrl: string;
   request: CaptureInitRequest;
+};
+
+type InMemoryBookmarkRepositoryOptions = {
+  objectStorage: ObjectStorage;
 };
 
 export class InMemoryBookmarkRepository implements BookmarkRepository {
@@ -28,8 +32,13 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   private readonly versionsByBookmark = new Map<string, BookmarkVersion[]>();
   private readonly pendingByObjectKey = new Map<string, PendingCapture>();
   private readonly versionsByObjectKey = new Map<string, BookmarkVersion>();
+  private readonly objectStorage: ObjectStorage;
 
-  async initCapture(input: CaptureInitRequest): Promise<CaptureInitResponse> {
+  constructor(options: InMemoryBookmarkRepositoryOptions) {
+    this.objectStorage = options.objectStorage;
+  }
+
+  async initCapture(input: CaptureInitRequest): Promise<InitCaptureResult> {
     const normalizedUrl = normalizeSourceUrl(input.url);
     const normalizedUrlHash = hashNormalizedUrl(normalizedUrl);
 
@@ -51,14 +60,25 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
         bookmarkId: bookmark.id,
         versionId: matchedVersion.id,
         objectKey: existingObjectKey ?? this.createObjectKey(),
-        uploadUrl: this.createUploadUrl(existingObjectKey ?? this.createObjectKey()),
       };
     }
 
+    for (const pendingCapture of this.pendingByObjectKey.values()) {
+      const pendingHash = hashNormalizedUrl(normalizeSourceUrl(pendingCapture.request.url));
+      if (
+        pendingHash === normalizedUrlHash &&
+        pendingCapture.request.htmlSha256 === input.htmlSha256
+      ) {
+        return {
+          alreadyExists: false,
+          objectKey: pendingCapture.objectKey,
+        };
+      }
+    }
+
     const objectKey = this.createObjectKey();
-    const uploadUrl = this.createUploadUrl(objectKey);
-    this.pendingByObjectKey.set(objectKey, { objectKey, uploadUrl, request: input });
-    return { alreadyExists: false, objectKey, uploadUrl };
+    this.pendingByObjectKey.set(objectKey, { objectKey, request: input });
+    return { alreadyExists: false, objectKey };
   }
 
   async completeCapture(input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
@@ -75,6 +95,12 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
         createdNewVersion: false,
         deduplicated: true,
       };
+    }
+    if (!pendingCapture) {
+      throw new Error("Pending capture not found for object key.");
+    }
+    if (!(await this.objectStorage.hasObject(input.objectKey))) {
+      throw new Error("Uploaded archive object not found.");
     }
 
     const normalizedUrl = normalizeSourceUrl(input.source.url);
@@ -217,9 +243,5 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   private createObjectKey() {
     const day = new Date().toISOString().slice(0, 10);
     return `captures/${day}/${crypto.randomUUID()}.html`;
-  }
-
-  private createUploadUrl(objectKey: string) {
-    return `https://uploads.keeppage.local/presigned/${encodeURIComponent(objectKey)}`;
   }
 }

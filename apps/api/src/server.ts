@@ -3,14 +3,24 @@ import { ZodError } from "zod";
 import { type ApiConfig } from "./config";
 import { createRepository } from "./repositories";
 import { registerRoutes } from "./routes";
+import { createObjectStorage } from "./storage/object-storage";
 
 export function buildServer(config: ApiConfig) {
   const app = Fastify({
+    bodyLimit: config.UPLOAD_BODY_LIMIT_MB * 1024 * 1024,
     logger: {
       level: config.LOG_LEVEL,
     },
   });
-  const repository = createRepository(config);
+  app.addContentTypeParser(/^text\/html(?:;.*)?$/i, { parseAs: "buffer" }, (_request, body, done) => {
+    done(null, body);
+  });
+  app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => {
+    done(null, body);
+  });
+
+  const objectStorage = createObjectStorage(config);
+  const repository = createRepository(config, objectStorage);
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
@@ -36,7 +46,7 @@ export function buildServer(config: ApiConfig) {
   });
 
   app.register(async (instance) => {
-    await registerRoutes(instance, repository);
+    await registerRoutes(instance, repository, objectStorage);
   });
 
   return app;

@@ -10,3 +10,4 @@ dist/
 *.tsbuildinfo
 single-file-core-*.tgz
 tasks/cron_tasks/FeishuApprovalPull/output/
+data/

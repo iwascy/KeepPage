@@ -41,6 +41,15 @@ export async function syncTaskToApi(task: CaptureTask): Promise<SyncResult> {
     await postJson(`${apiBaseUrl}/captures/init`, initPayload),
   );
 
+  if (initResponse.alreadyExists && initResponse.bookmarkId && initResponse.versionId) {
+    return {
+      bookmarkId: initResponse.bookmarkId,
+      versionId: initResponse.versionId,
+    };
+  }
+
+  await uploadArchiveHtml(initResponse.uploadUrl, task.artifacts.archiveHtml);
+
   const completePayload: CaptureCompleteRequest = {
     objectKey: initResponse.objectKey,
     htmlSha256: task.localArchiveSha256,
@@ -63,6 +72,21 @@ export async function syncTaskToApi(task: CaptureTask): Promise<SyncResult> {
     bookmarkId: completeResponse.bookmarkId,
     versionId: completeResponse.versionId,
   };
+}
+
+async function uploadArchiveHtml(uploadUrl: string, archiveHtml: string) {
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": "text/html;charset=utf-8",
+    },
+    body: archiveHtml,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Upload ${response.status}: ${text}`);
+  }
 }
 
 async function getApiBaseUrl() {

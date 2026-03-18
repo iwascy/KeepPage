@@ -6,6 +6,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { BookmarkRepository } from "../repositories";
+import type { ObjectStorage } from "../storage/object-storage";
 
 const captureCompleteResponseSchema = z.object({
   bookmarkId: z.string().min(1),
@@ -17,11 +18,15 @@ const captureCompleteResponseSchema = z.object({
 export async function registerCaptureRoutes(
   app: FastifyInstance,
   repository: BookmarkRepository,
+  objectStorage: ObjectStorage,
 ) {
   app.post("/captures/init", async (request, reply) => {
     const payload = captureInitRequestSchema.parse(request.body);
     const result = await repository.initCapture(payload);
-    const response = captureInitResponseSchema.parse(result);
+    const response = captureInitResponseSchema.parse({
+      ...result,
+      uploadUrl: objectStorage.createUploadUrl(result.objectKey),
+    });
     return reply.send(response);
   });
 
