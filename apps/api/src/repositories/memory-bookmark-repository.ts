@@ -192,6 +192,22 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     });
   }
 
+  async getBookmarkDetail(bookmarkId: string) {
+    const bookmark = this.bookmarks.get(bookmarkId);
+    if (!bookmark) {
+      return null;
+    }
+
+    const versions = [...(this.versionsByBookmark.get(bookmarkId) ?? [])].sort(
+      (left, right) => right.versionNo - left.versionNo,
+    );
+
+    return {
+      bookmark,
+      versions,
+    };
+  }
+
   private findBookmarkByNormalizedHash(normalizedHash: string) {
     for (const bookmark of this.bookmarks.values()) {
       const bookmarkHash = hashNormalizedUrl(normalizeSourceUrl(bookmark.sourceUrl));

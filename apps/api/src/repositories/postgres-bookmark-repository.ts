@@ -1,11 +1,12 @@
 import {
   bookmarkSchema,
   bookmarkSearchResponseSchema,
+  bookmarkVersionSchema,
   qualityReportSchema,
   type Bookmark,
+  type BookmarkVersion,
   type CaptureCompleteRequest,
   type CaptureInitRequest,
-  type CaptureInitResponse,
 } from "@keeppage/domain";
 import {
   bookmarks,
@@ -403,6 +404,21 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     });
   }
 
+  async getBookmarkDetail(bookmarkId: string) {
+    await this.bootstrapPromise;
+
+    const bookmark = await this.loadBookmarkOrNull(bookmarkId);
+    if (!bookmark) {
+      return null;
+    }
+
+    const versions = await this.loadVersionsByBookmarkId(bookmarkId);
+    return {
+      bookmark,
+      versions,
+    };
+  }
+
   private async ensureBootstrap() {
     await this.db
       .insert(users)
@@ -417,6 +433,15 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
   }
 
   private async loadBookmark(bookmarkId: string): Promise<Bookmark> {
+    const bookmark = await this.loadBookmarkOrNull(bookmarkId);
+    if (!bookmark) {
+      throw new Error(`Bookmark not found: ${bookmarkId}`);
+    }
+
+    return bookmark;
+  }
+
+  private async loadBookmarkOrNull(bookmarkId: string): Promise<Bookmark | null> {
     const rows = await this.db
       .select({
         id: bookmarks.id,
@@ -446,7 +471,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
     const row = rows[0];
     if (!row) {
-      throw new Error(`Bookmark not found: ${bookmarkId}`);
+      return null;
     }
 
     const tagsByBookmark = await this.loadTagsByBookmarkId([bookmarkId]);
@@ -455,6 +480,46 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       tags: tagsByBookmark.get(bookmarkId) ?? [],
       versionCount: versionCounts.get(bookmarkId) ?? 0,
     });
+  }
+
+  private async loadVersionsByBookmarkId(bookmarkId: string): Promise<BookmarkVersion[]> {
+    const rows = await this.db
+      .select({
+        id: bookmarkVersions.id,
+        bookmarkId: bookmarkVersions.bookmarkId,
+        versionNo: bookmarkVersions.versionNo,
+        htmlObjectKey: bookmarkVersions.htmlObjectKey,
+        htmlSha256: bookmarkVersions.htmlSha256,
+        textSha256: bookmarkVersions.textSha256,
+        textSimhash: bookmarkVersions.textSimhash,
+        captureProfile: bookmarkVersions.captureProfile,
+        qualityReport: bookmarkVersions.qualityReportJson,
+        createdAt: bookmarkVersions.createdAt,
+      })
+      .from(bookmarkVersions)
+      .innerJoin(bookmarks, eq(bookmarks.id, bookmarkVersions.bookmarkId))
+      .where(
+        and(
+          eq(bookmarks.userId, DEFAULT_USER_ID),
+          eq(bookmarkVersions.bookmarkId, bookmarkId),
+        ),
+      )
+      .orderBy(desc(bookmarkVersions.versionNo));
+
+    return rows.map((row) =>
+      bookmarkVersionSchema.parse({
+        id: row.id,
+        bookmarkId: row.bookmarkId,
+        versionNo: row.versionNo,
+        htmlObjectKey: row.htmlObjectKey,
+        htmlSha256: row.htmlSha256,
+        textSha256: row.textSha256 ?? undefined,
+        textSimhash: row.textSimhash ?? undefined,
+        captureProfile: row.captureProfile,
+        quality: this.readQuality(row.qualityReport),
+        createdAt: row.createdAt.toISOString(),
+      }),
+    );
   }
 
   private async loadTagsByBookmarkId(bookmarkIds: string[]) {

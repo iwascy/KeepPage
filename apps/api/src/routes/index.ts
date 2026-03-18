@@ -14,5 +14,5 @@ export async function registerRoutes(
   await registerHealthRoutes(app, repository);
   await registerCaptureRoutes(app, repository, objectStorage);
   await registerUploadRoutes(app, objectStorage);
-  await registerBookmarkRoutes(app, repository);
+  await registerBookmarkRoutes(app, repository, objectStorage);
 }

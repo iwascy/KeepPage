@@ -172,6 +172,16 @@ export const bookmarkSearchResponseSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 
+export const bookmarkDetailVersionSchema = bookmarkVersionSchema.extend({
+  archiveAvailable: z.boolean(),
+  archiveSizeBytes: z.number().int().positive().optional(),
+});
+
+export const bookmarkDetailResponseSchema = z.object({
+  bookmark: bookmarkSchema,
+  versions: z.array(bookmarkDetailVersionSchema),
+});
+
 export type CaptureSource = z.infer<typeof captureSourceSchema>;
 export type CapturePageSignals = z.infer<typeof capturePageSignalsSchema>;
 export type QualityReason = z.infer<typeof qualityReasonSchema>;
@@ -180,10 +190,12 @@ export type CaptureArtifacts = z.infer<typeof captureArtifactsSchema>;
 export type CaptureTask = z.infer<typeof captureTaskSchema>;
 export type Bookmark = z.infer<typeof bookmarkSchema>;
 export type BookmarkVersion = z.infer<typeof bookmarkVersionSchema>;
+export type BookmarkDetailVersion = z.infer<typeof bookmarkDetailVersionSchema>;
 export type CaptureInitRequest = z.infer<typeof captureInitRequestSchema>;
 export type CaptureInitResponse = z.infer<typeof captureInitResponseSchema>;
 export type CaptureCompleteRequest = z.infer<typeof captureCompleteRequestSchema>;
 export type BookmarkSearchResponse = z.infer<typeof bookmarkSearchResponseSchema>;
+export type BookmarkDetailResponse = z.infer<typeof bookmarkDetailResponseSchema>;
 
 const validStatusTransitions: Record<CaptureStatus, CaptureStatus[]> = {
   queued: ["capturing", "failed"],
