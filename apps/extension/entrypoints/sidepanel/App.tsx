@@ -6,7 +6,7 @@ type AsyncState = "idle" | "capturing" | "error";
 type SettingsState = "idle" | "saving" | "saved" | "error";
 type ConnectionState = "idle" | "testing" | "ok" | "error";
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
+const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
 const PROFILE_OPTIONS: Array<{
   value: CaptureProfile;
   label: string;
