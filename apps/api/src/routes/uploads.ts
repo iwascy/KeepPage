@@ -1,6 +1,10 @@
+import { gunzip } from "node:zlib";
+import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ObjectStorage } from "../storage/object-storage";
+
+const gunzipAsync = promisify(gunzip);
 
 const uploadParamsSchema = z.object({
   encodedObjectKey: z.string().min(1),
@@ -33,7 +37,7 @@ export async function registerUploadRoutes(
     async (request, reply) => {
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = decodeObjectKey(params.encodedObjectKey);
-      const body = toBuffer(request.body);
+      const body = await decodeUploadBody(request.body, request.headers["content-encoding"]);
       if (body.byteLength === 0) {
         return reply.status(400).send({
           error: "EmptyUploadBody",
@@ -72,6 +76,32 @@ function toBuffer(body: unknown) {
     return Buffer.from(body);
   }
   return Buffer.alloc(0);
+}
+
+async function decodeUploadBody(
+  body: unknown,
+  contentEncoding: string | string[] | undefined,
+) {
+  const buffer = toBuffer(body);
+  if (buffer.byteLength === 0) {
+    return buffer;
+  }
+
+  const encoding = Array.isArray(contentEncoding) ? contentEncoding[0] : contentEncoding;
+  if (!encoding) {
+    return buffer;
+  }
+
+  const normalized = encoding
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (normalized.includes("gzip")) {
+    return await gunzipAsync(buffer);
+  }
+
+  return buffer;
 }
 
 function guessContentType(objectKey: string) {

@@ -16,12 +16,11 @@ type SyncResult = {
 };
 
 async function uploadArchiveHtml(uploadUrl: string, archiveHtml: string) {
+  const uploadPayload = await createUploadPayload(archiveHtml);
   const response = await fetch(uploadUrl, {
     method: "PUT",
-    headers: {
-      "content-type": "text/html;charset=utf-8",
-    },
-    body: archiveHtml,
+    headers: uploadPayload.headers,
+    body: uploadPayload.body,
   });
 
   if (!response.ok) {
@@ -33,6 +32,45 @@ async function uploadArchiveHtml(uploadUrl: string, archiveHtml: string) {
     });
     throw new Error(`Upload ${response.status}: ${text}`);
   }
+}
+
+async function createUploadPayload(archiveHtml: string) {
+  const compressed = await gzipContent(archiveHtml);
+  if (compressed && compressed.byteLength > 0 && compressed.byteLength < archiveHtml.length) {
+    logger.info("Uploading compressed archive payload.", {
+      originalBytes: archiveHtml.length,
+      compressedBytes: compressed.byteLength,
+    });
+    return {
+      headers: {
+        "content-type": "text/html;charset=utf-8",
+        "content-encoding": "gzip",
+      } as Record<string, string>,
+      body: compressed,
+    };
+  }
+
+  logger.info("Uploading plain archive payload.", {
+    originalBytes: archiveHtml.length,
+  });
+  return {
+    headers: {
+      "content-type": "text/html;charset=utf-8",
+    } as Record<string, string>,
+    body: archiveHtml,
+  };
+}
+
+async function gzipContent(content: string) {
+  if (typeof CompressionStream === "undefined") {
+    return null;
+  }
+
+  const stream = new Blob([content], {
+    type: "text/html;charset=utf-8",
+  }).stream().pipeThrough(new CompressionStream("gzip"));
+  const compressedBuffer = await new Response(stream).arrayBuffer();
+  return new Uint8Array(compressedBuffer);
 }
 
 async function getApiBaseUrl() {
