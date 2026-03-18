@@ -34,6 +34,12 @@ Web 开发态默认通过 Vite 代理把 `/api/*` 转发到 `http://127.0.0.1:87
 export KEEPPAGE_API_PROXY_TARGET='http://127.0.0.1:8787'
 ```
 
+## 文档
+
+- 使用文档：`docs/usage.md`
+- 部署文档：`docs/deployment.md`
+- 架构基线：`docs/architecture.md`
+
 ## 当前约束
 
 - `single-file-core` 使用 AGPL-3.0-or-later，产品许可证策略需要在项目早期确定
