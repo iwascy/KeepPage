@@ -1,5 +1,7 @@
 import {
+  bookmarkMetadataUpdateRequestSchema,
   bookmarkDetailResponseSchema,
+  bookmarkSchema,
   bookmarkSearchResponseSchema,
   qualityGradeSchema,
 } from "@keeppage/domain";
@@ -13,6 +15,8 @@ const searchQuerySchema = z.object({
   q: z.string().optional(),
   quality: qualityGradeSchema.optional(),
   domain: z.string().optional(),
+  folderId: z.string().min(1).optional(),
+  tagId: z.string().min(1).optional(),
   limit: z.coerce.number().int().positive().max(100).default(20),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
@@ -62,5 +66,20 @@ export async function registerBookmarkRoutes(
       versions,
     });
     return reply.send(payload);
+  });
+
+  app.patch<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId/metadata", async (request, reply) => {
+    const user = await authService.requireUser(request);
+    const params = bookmarkParamsSchema.parse(request.params);
+    const body = bookmarkMetadataUpdateRequestSchema.parse(request.body);
+    const bookmark = await repository.updateBookmarkMetadata(user.id, params.bookmarkId, body);
+    if (!bookmark) {
+      return reply.status(404).send({
+        error: "BookmarkNotFound",
+        message: "Bookmark not found.",
+      });
+    }
+
+    return reply.send(bookmarkSchema.parse(bookmark));
   });
 }
