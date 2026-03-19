@@ -6,6 +6,12 @@
 ## Build, Test, and Development Commands
 Run `npm install` once at the repo root. Use `npm run dev:api` to start the API on `127.0.0.1:8787`, `npm run dev:web` for the Vite UI, and `npm run dev:extension` for extension development. `npm run build` builds every workspace that defines a `build` script. `npm run typecheck` is the repo-wide verification baseline. For Postgres-backed development, set `STORAGE_DRIVER=postgres`, provide `DATABASE_URL`, then run `npm run db:init -w @keeppage/api`.
 
+## Extension Change Requirements
+Whenever you modify code or configuration under `apps/extension`, you must do all of the following before finishing:
+- Bump the extension version in both `apps/extension/package.json` and `apps/extension/wxt.config.ts`.
+- Run `npm run build -w @keeppage/extension` to generate fresh extension artifacts.
+- Never hand-edit generated directories such as `apps/extension/.output` or `apps/extension/.wxt`; regenerate them through the build command instead.
+
 ## Coding Style & Naming Conventions
 Use strict TypeScript and ESM modules. Match the existing style: 2-space indentation, double quotes, semicolons, and small focused files. Use `PascalCase` for React components, `camelCase` for functions and variables, and kebab-case for utility or route filenames such as `singlefile-fetch.ts`. Keep shared contracts in `packages/domain` and public entrypoints in `src/index.ts`. No repo-wide ESLint or Prettier config is committed, so follow surrounding code closely.
 
