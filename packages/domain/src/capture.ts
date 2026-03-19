@@ -161,7 +161,7 @@ export const bookmarkSchema = z.object({
   tags: z.array(tagSchema).default([]),
   folder: folderSchema.optional(),
   latestVersionId: z.string().min(1).optional(),
-  versionCount: z.number().int().positive().default(1),
+  versionCount: z.number().int().nonnegative().default(0),
   latestQuality: qualityReportSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -222,6 +222,8 @@ export type CaptureTask = z.infer<typeof captureTaskSchema>;
 export type Bookmark = z.infer<typeof bookmarkSchema>;
 export type BookmarkVersion = z.infer<typeof bookmarkVersionSchema>;
 export type BookmarkDetailVersion = z.infer<typeof bookmarkDetailVersionSchema>;
+export type Tag = z.infer<typeof tagSchema>;
+export type Folder = z.infer<typeof folderSchema>;
 export type AuthUser = z.infer<typeof authUserSchema>;
 export type AuthRegisterRequest = z.infer<typeof authRegisterRequestSchema>;
 export type AuthLoginRequest = z.infer<typeof authLoginRequestSchema>;

@@ -7,6 +7,7 @@ import { registerAuthRoutes } from "./auth";
 import { registerBookmarkRoutes } from "./bookmarks";
 import { registerCaptureRoutes } from "./captures";
 import { registerHealthRoutes } from "./health";
+import { registerImportRoutes } from "./imports";
 import { registerUploadRoutes } from "./uploads";
 
 export async function registerRoutes(
@@ -21,4 +22,5 @@ export async function registerRoutes(
   await registerCaptureRoutes(app, config, authService, repository, objectStorage);
   await registerUploadRoutes(app, config, authService, repository, objectStorage);
   await registerBookmarkRoutes(app, authService, repository, objectStorage);
+  await registerImportRoutes(app, authService, repository);
 }

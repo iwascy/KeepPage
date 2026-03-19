@@ -3,12 +3,18 @@ import {
   bookmarkSchema,
   bookmarkSearchResponseSchema,
   bookmarkVersionSchema,
+  createImportTaskId,
+  createImportTaskItemId,
   qualityReportSchema,
   type AuthUser,
   type Bookmark,
   type BookmarkVersion,
   type CaptureCompleteRequest,
   type CaptureInitRequest,
+  type ImportExecutionOptions,
+  type ImportTask,
+  type ImportTaskDetailResponse,
+  type ImportTaskItem,
 } from "@keeppage/domain";
 import {
   bookmarks,
@@ -16,6 +22,8 @@ import {
   bookmarkVersions,
   captureUploads,
   folders,
+  importItems,
+  importTasks,
   tags,
   users,
 } from "@keeppage/db";
@@ -25,8 +33,8 @@ import {
   count,
   desc,
   eq,
-  ilike,
   inArray,
+  ilike,
   or,
   sql,
 } from "drizzle-orm";
@@ -37,7 +45,9 @@ import type { ObjectStorage } from "../storage/object-storage";
 import type {
   BookmarkRepository,
   BookmarkSearchQuery,
+  CreateImportTaskInput,
   CompleteCaptureResult,
+  ImportBookmarkMatch,
   InitCaptureResult,
   UserAuthRecord,
 } from "./bookmark-repository";
@@ -490,6 +500,293 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     };
   }
 
+  async findImportBookmarkMatches(userId: string, normalizedUrlHashes: string[]) {
+    if (normalizedUrlHashes.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .select({
+        normalizedUrlHash: bookmarks.normalizedUrlHash,
+        bookmarkId: bookmarks.id,
+        title: bookmarks.title,
+        latestVersionId: bookmarks.latestVersionId,
+      })
+      .from(bookmarks)
+      .where(
+        and(
+          eq(bookmarks.userId, userId),
+          inArray(bookmarks.normalizedUrlHash, normalizedUrlHashes),
+        ),
+      );
+
+    return rows.map((row) => ({
+      normalizedUrlHash: row.normalizedUrlHash,
+      bookmarkId: row.bookmarkId,
+      title: row.title,
+      hasArchive: Boolean(row.latestVersionId),
+      latestVersionId: row.latestVersionId ?? undefined,
+    })) satisfies ImportBookmarkMatch[];
+  }
+
+  async createImportTask(userId: string, input: CreateImportTaskInput): Promise<ImportTaskDetailResponse> {
+    const taskId = createImportTaskId();
+    const createdAt = new Date();
+    const existingMatches = await this.findImportBookmarkMatches(
+      userId,
+      input.items
+        .map((item) => item.normalizedUrlHash)
+        .filter((value): value is string => Boolean(value)),
+    );
+    const matchMap = new Map(existingMatches.map((match) => [match.normalizedUrlHash, match]));
+
+    const detail = await this.db.transaction(async (tx) => {
+      await tx.insert(importTasks).values({
+        id: taskId,
+        userId,
+        name: input.taskName,
+        sourceType: input.sourceType,
+        mode: input.options.mode,
+        status: "running",
+        fileName: input.fileName,
+        totalCount: input.preview.summary.totalCount,
+        validCount: input.preview.summary.validCount,
+        invalidCount: input.preview.summary.invalidCount,
+        duplicateInFileCount: input.preview.summary.duplicateInFileCount,
+        duplicateExistingCount: input.preview.summary.duplicateExistingCount,
+        createdCount: 0,
+        mergedCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        archiveQueuedCount: 0,
+        archiveSuccessCount: 0,
+        archiveFailedCount: 0,
+        sourceMetaJson: {
+          options: input.options,
+          preview: input.preview.summary,
+        },
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      const itemRows: typeof importItems.$inferInsert[] = [];
+      let createdCount = 0;
+      let mergedCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
+
+      for (const item of input.items) {
+        const now = new Date();
+
+        if (!item.valid) {
+          itemRows.push(this.toImportItemInsert(userId, taskId, item, {
+            status: "skipped",
+            dedupeResult: "invalid_input",
+            reason: item.reason ?? "无法解析的链接。",
+            createdAt: now,
+            updatedAt: now,
+          }));
+          skippedCount += 1;
+          continue;
+        }
+
+        if (item.duplicateInFile) {
+          itemRows.push(this.toImportItemInsert(userId, taskId, item, {
+            status: "skipped",
+            dedupeResult: "skipped_duplicate",
+            reason: item.reason ?? "与本次导入中的更早条目重复。",
+            createdAt: now,
+            updatedAt: now,
+          }));
+          skippedCount += 1;
+          continue;
+        }
+
+        const existing = item.normalizedUrlHash ? matchMap.get(item.normalizedUrlHash) : undefined;
+        if (existing) {
+          if (input.options.dedupeStrategy === "update_metadata") {
+            await this.updateImportedBookmarkMetadata(
+              tx,
+              userId,
+              existing.bookmarkId,
+              item,
+              input.taskName,
+              input.options,
+              now,
+            );
+          }
+
+          if (input.options.dedupeStrategy === "skip") {
+            itemRows.push(this.toImportItemInsert(userId, taskId, item, {
+              status: "skipped",
+              dedupeResult: "skipped_existing",
+              reason: "站内已存在同一链接，按当前策略跳过。",
+              bookmarkId: existing.bookmarkId,
+              archivedVersionId: existing.latestVersionId,
+              hasArchive: existing.hasArchive,
+              createdAt: now,
+              updatedAt: now,
+            }));
+            skippedCount += 1;
+          } else {
+            itemRows.push(this.toImportItemInsert(userId, taskId, item, {
+              status: "deduplicated",
+              dedupeResult: "merged_existing",
+              reason: existing.hasArchive ? "已合并到现有书签，且该书签已有归档。" : "已合并到现有书签。",
+              bookmarkId: existing.bookmarkId,
+              archivedVersionId: existing.latestVersionId,
+              hasArchive: existing.hasArchive,
+              createdAt: now,
+              updatedAt: now,
+            }));
+            mergedCount += 1;
+          }
+          continue;
+        }
+
+        try {
+          const bookmarkId = await this.insertImportedBookmark(
+            tx,
+            userId,
+            item,
+            input.taskName,
+            input.options,
+            now,
+          );
+          itemRows.push(this.toImportItemInsert(userId, taskId, item, {
+            status: "created_bookmark",
+            dedupeResult: "created_bookmark",
+            reason: input.options.mode === "links_only" ? "已完成轻导入。" : "已完成轻导入，批量归档将在后续版本接入。",
+            bookmarkId,
+            hasArchive: false,
+            createdAt: now,
+            updatedAt: now,
+          }));
+          createdCount += 1;
+        } catch (error) {
+          itemRows.push(this.toImportItemInsert(userId, taskId, item, {
+            status: "failed",
+            dedupeResult: "none",
+            reason: error instanceof Error ? error.message : "导入时发生未知错误。",
+            createdAt: now,
+            updatedAt: now,
+          }));
+          failedCount += 1;
+        }
+      }
+
+      if (itemRows.length > 0) {
+        await tx.insert(importItems).values(itemRows);
+      }
+
+      const completedAt = new Date();
+      const status = failedCount > 0 || input.preview.summary.invalidCount > 0
+        ? "partial_failed"
+        : "completed";
+
+      await tx
+        .update(importTasks)
+        .set({
+          status,
+          createdCount,
+          mergedCount,
+          skippedCount,
+          failedCount,
+          updatedAt: completedAt,
+          completedAt,
+        })
+        .where(eq(importTasks.id, taskId));
+
+      return {
+        task: {
+          id: taskId,
+          name: input.taskName,
+          sourceType: input.sourceType,
+          mode: input.options.mode,
+          status,
+          fileName: input.fileName,
+          totalCount: input.preview.summary.totalCount,
+          validCount: input.preview.summary.validCount,
+          invalidCount: input.preview.summary.invalidCount,
+          duplicateInFileCount: input.preview.summary.duplicateInFileCount,
+          duplicateExistingCount: input.preview.summary.duplicateExistingCount,
+          createdCount,
+          mergedCount,
+          skippedCount,
+          failedCount,
+          archiveQueuedCount: 0,
+          archiveSuccessCount: 0,
+          archiveFailedCount: 0,
+          createdAt: createdAt.toISOString(),
+          updatedAt: completedAt.toISOString(),
+          completedAt: completedAt.toISOString(),
+        },
+        items: itemRows.map((row) => ({
+          id: row.id,
+          taskId: row.taskId,
+          index: row.position,
+          title: row.title,
+          url: row.sourceUrl ?? undefined,
+          domain: row.domain ?? undefined,
+          folderPath: row.folderPath ?? undefined,
+          status: row.status,
+          dedupeResult: row.dedupeResult,
+          reason: row.reason ?? undefined,
+          bookmarkId: row.bookmarkId ?? undefined,
+          archivedVersionId: row.archivedVersionId ?? undefined,
+          hasArchive: row.hasArchive ?? false,
+          createdAt: (row.createdAt ?? createdAt).toISOString(),
+          updatedAt: (row.updatedAt ?? createdAt).toISOString(),
+        })),
+      } satisfies ImportTaskDetailResponse;
+    });
+
+    return detail;
+  }
+
+  async listImportTasks(userId: string) {
+    const rows = await this.db
+      .select()
+      .from(importTasks)
+      .where(eq(importTasks.userId, userId))
+      .orderBy(desc(importTasks.createdAt));
+
+    return rows.map((row) => this.mapImportTaskRow(row));
+  }
+
+  async getImportTaskDetail(userId: string, taskId: string) {
+    const taskRows = await this.db
+      .select()
+      .from(importTasks)
+      .where(
+        and(
+          eq(importTasks.userId, userId),
+          eq(importTasks.id, taskId),
+        ),
+      )
+      .limit(1);
+    const taskRow = taskRows[0];
+    if (!taskRow) {
+      return null;
+    }
+
+    const itemRows = await this.db
+      .select()
+      .from(importItems)
+      .where(
+        and(
+          eq(importItems.userId, userId),
+          eq(importItems.taskId, taskId),
+        ),
+      )
+      .orderBy(importItems.position);
+
+    return {
+      task: this.mapImportTaskRow(taskRow),
+      items: itemRows.map((row) => this.mapImportItemRow(row)),
+    } satisfies ImportTaskDetailResponse;
+  }
+
   async userCanReadObject(userId: string, objectKey: string) {
     const rows = await this.db
       .select({
@@ -681,6 +978,297 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     return versionCountMap;
   }
 
+  private async insertImportedBookmark(
+    tx: any,
+    userId: string,
+    item: {
+      title: string;
+      url?: string;
+      normalizedUrl?: string;
+      normalizedUrlHash?: string;
+      domain?: string;
+      folderPath?: string;
+      sourceTags: string[];
+    },
+    taskName: string,
+    options: ImportExecutionOptions,
+    now: Date,
+  ) {
+    if (!item.url || !item.normalizedUrlHash || !item.domain) {
+      throw new Error("导入条目缺少有效 URL。");
+    }
+
+    const bookmarkId = crypto.randomUUID();
+    const folderId = await this.ensureFolderId(tx, userId, item.folderPath, options, now);
+    await tx.insert(bookmarks).values({
+      id: bookmarkId,
+      userId,
+      sourceUrl: item.url,
+      canonicalUrl: null,
+      normalizedUrlHash: item.normalizedUrlHash,
+      title: this.pickImportTitle(item.url, item.title, options),
+      domain: item.domain,
+      latestVersionId: null,
+      folderId,
+      note: "",
+      isPinnedOffline: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const tagIds = await this.ensureTagIds(tx, userId, item.sourceTags, taskName, options, now);
+    if (tagIds.length > 0) {
+      await tx.insert(bookmarkTags).values(
+        tagIds.map((tagId) => ({
+          bookmarkId,
+          tagId,
+          createdAt: now,
+        })),
+      );
+    }
+
+    return bookmarkId;
+  }
+
+  private async updateImportedBookmarkMetadata(
+    tx: any,
+    userId: string,
+    bookmarkId: string,
+    item: {
+      title: string;
+      folderPath?: string;
+      sourceTags: string[];
+      url?: string;
+    },
+    taskName: string,
+    options: ImportExecutionOptions,
+    now: Date,
+  ) {
+    const folderId = await this.ensureFolderId(tx, userId, item.folderPath, options, now);
+    await tx
+      .update(bookmarks)
+      .set({
+        title: this.pickImportTitle(item.url ?? item.title, item.title, options),
+        folderId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(bookmarks.userId, userId),
+          eq(bookmarks.id, bookmarkId),
+        ),
+      );
+
+    const tagIds = await this.ensureTagIds(tx, userId, item.sourceTags, taskName, options, now);
+    if (tagIds.length === 0) {
+      return;
+    }
+
+    await tx
+      .insert(bookmarkTags)
+      .values(tagIds.map((tagId) => ({
+        bookmarkId,
+        tagId,
+        createdAt: now,
+      })))
+      .onConflictDoNothing();
+  }
+
+  private async ensureFolderId(
+    tx: any,
+    userId: string,
+    sourceFolderPath: string | undefined,
+    options: ImportExecutionOptions,
+    now: Date,
+  ) {
+    if (options.targetFolderMode === "flatten") {
+      return null;
+    }
+
+    const path = options.targetFolderMode === "specific"
+      ? options.targetFolderPath?.trim()
+      : sourceFolderPath?.trim();
+    if (!path) {
+      return null;
+    }
+
+    const existingRows = await tx
+      .select({
+        id: folders.id,
+      })
+      .from(folders)
+      .where(
+        and(
+          eq(folders.userId, userId),
+          eq(folders.path, path),
+        ),
+      )
+      .limit(1);
+    if (existingRows[0]?.id) {
+      return existingRows[0].id;
+    }
+
+    const segments = path.split("/").map((segment) => segment.trim()).filter(Boolean);
+    const folderId = crypto.randomUUID();
+    await tx.insert(folders).values({
+      id: folderId,
+      userId,
+      name: segments[segments.length - 1] ?? path,
+      path,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return folderId;
+  }
+
+  private async ensureTagIds(
+    tx: any,
+    userId: string,
+    sourceTags: string[],
+    taskName: string,
+    options: ImportExecutionOptions,
+    now: Date,
+  ) {
+    const names = new Set<string>();
+    if (options.tagStrategy === "keep_source_tags") {
+      for (const tagName of sourceTags) {
+        if (tagName.trim()) {
+          names.add(tagName.trim());
+        }
+      }
+    }
+    if (options.tagStrategy === "append_batch_tag") {
+      names.add(`导入批次:${taskName}`);
+    }
+    if (names.size === 0) {
+      return [];
+    }
+
+    const rows = [];
+    for (const name of names) {
+      const existingRows = await tx
+        .select({
+          id: tags.id,
+        })
+        .from(tags)
+        .where(
+          and(
+            eq(tags.userId, userId),
+            eq(tags.name, name),
+          ),
+        )
+        .limit(1);
+
+      if (existingRows[0]?.id) {
+        rows.push(existingRows[0].id);
+        continue;
+      }
+
+      const tagId = crypto.randomUUID();
+      await tx.insert(tags).values({
+        id: tagId,
+        userId,
+        name,
+        createdAt: now,
+      });
+      rows.push(tagId);
+    }
+
+    return rows;
+  }
+
+  private pickImportTitle(
+    fallbackTitle: string,
+    importedTitle: string,
+    options: ImportExecutionOptions,
+  ) {
+    if (options.titleStrategy === "prefer_page_title") {
+      return fallbackTitle;
+    }
+    return importedTitle.trim() || fallbackTitle;
+  }
+
+  private toImportItemInsert(
+    userId: string,
+    taskId: string,
+    item: {
+      index: number;
+      title: string;
+      url?: string;
+      normalizedUrl?: string;
+      normalizedUrlHash?: string;
+      domain?: string;
+      folderPath?: string;
+      sourceTags: string[];
+    },
+    overrides: Omit<
+      typeof importItems.$inferInsert,
+      "id" | "taskId" | "userId" | "position" | "title" | "sourceUrl" | "normalizedUrl" | "normalizedUrlHash" | "domain" | "folderPath" | "sourceTagsJson" | "sourceMetaJson"
+    >,
+  ) {
+    return {
+      id: createImportTaskItemId(),
+      taskId,
+      userId,
+      position: item.index,
+      title: item.title,
+      sourceUrl: item.url ?? null,
+      normalizedUrl: item.normalizedUrl ?? null,
+      normalizedUrlHash: item.normalizedUrlHash ?? null,
+      domain: item.domain ?? null,
+      folderPath: item.folderPath ?? null,
+      sourceTagsJson: item.sourceTags,
+      sourceMetaJson: {},
+      ...overrides,
+    } satisfies typeof importItems.$inferInsert;
+  }
+
+  private mapImportTaskRow(row: typeof importTasks.$inferSelect) {
+    return {
+      id: row.id,
+      name: row.name,
+      sourceType: row.sourceType,
+      mode: row.mode,
+      status: row.status,
+      fileName: row.fileName ?? undefined,
+      totalCount: row.totalCount,
+      validCount: row.validCount,
+      invalidCount: row.invalidCount,
+      duplicateInFileCount: row.duplicateInFileCount,
+      duplicateExistingCount: row.duplicateExistingCount,
+      createdCount: row.createdCount,
+      mergedCount: row.mergedCount,
+      skippedCount: row.skippedCount,
+      failedCount: row.failedCount,
+      archiveQueuedCount: row.archiveQueuedCount,
+      archiveSuccessCount: row.archiveSuccessCount,
+      archiveFailedCount: row.archiveFailedCount,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      completedAt: row.completedAt?.toISOString(),
+    } satisfies ImportTask;
+  }
+
+  private mapImportItemRow(row: typeof importItems.$inferSelect) {
+    return {
+      id: row.id,
+      taskId: row.taskId,
+      index: row.position,
+      title: row.title,
+      url: row.sourceUrl ?? undefined,
+      domain: row.domain ?? undefined,
+      folderPath: row.folderPath ?? undefined,
+      status: row.status,
+      dedupeResult: row.dedupeResult,
+      reason: row.reason ?? undefined,
+      bookmarkId: row.bookmarkId ?? undefined,
+      archivedVersionId: row.archivedVersionId ?? undefined,
+      hasArchive: row.hasArchive,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    } satisfies ImportTaskItem;
+  }
+
   private mapBookmarkRow(
     row: {
       id: string;
@@ -719,7 +1307,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
           }
         : undefined,
       latestVersionId: row.latestVersionId ?? undefined,
-      versionCount: Math.max(1, options.versionCount || 1),
+      versionCount: Math.max(0, options.versionCount || 0),
       latestQuality: maybeQuality,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

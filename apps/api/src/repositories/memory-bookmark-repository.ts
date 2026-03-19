@@ -1,19 +1,32 @@
 import {
   createBookmarkId,
+  createImportTaskId,
+  createImportTaskItemId,
   createVersionId,
   type AuthUser,
   type Bookmark,
   type BookmarkVersion,
   type CaptureCompleteRequest,
   type CaptureInitRequest,
+  importTaskDetailResponseSchema,
+  importTaskSchema,
+  type Folder,
+  type ImportExecutionOptions,
+  type ImportTask,
+  type ImportTaskDetailResponse,
+  type ImportTaskItem,
+  type Tag,
 } from "@keeppage/domain";
 import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
 import type { ObjectStorage } from "../storage/object-storage";
 import type {
   BookmarkRepository,
   BookmarkSearchQuery,
+  CreateImportTaskInput,
   CompleteCaptureResult,
+  ImportBookmarkMatch,
   InitCaptureResult,
+  PreparedImportItem,
   UserAuthRecord,
 } from "./bookmark-repository";
 
@@ -29,6 +42,10 @@ type UserBookmarkState = {
   versionsByBookmark: Map<string, BookmarkVersion[]>;
   pendingByObjectKey: Map<string, PendingCapture>;
   versionsByObjectKey: Map<string, BookmarkVersion>;
+  foldersByPath: Map<string, Folder>;
+  tagsByName: Map<string, Tag>;
+  importTasks: Map<string, ImportTask>;
+  importItemsByTaskId: Map<string, ImportTaskItem[]>;
 };
 
 type InMemoryBookmarkRepositoryOptions = {
@@ -257,6 +274,191 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     };
   }
 
+  async findImportBookmarkMatches(userId: string, normalizedUrlHashes: string[]) {
+    const state = this.ensureUserState(userId);
+    const targetHashes = new Set(normalizedUrlHashes);
+    const matches: ImportBookmarkMatch[] = [];
+
+    for (const bookmark of state.bookmarks.values()) {
+      const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(bookmark.sourceUrl));
+      if (!targetHashes.has(normalizedUrlHash)) {
+        continue;
+      }
+      matches.push({
+        normalizedUrlHash,
+        bookmarkId: bookmark.id,
+        title: bookmark.title,
+        hasArchive: (bookmark.versionCount ?? 0) > 0,
+        latestVersionId: bookmark.latestVersionId,
+      });
+    }
+
+    return matches;
+  }
+
+  async createImportTask(userId: string, input: CreateImportTaskInput): Promise<ImportTaskDetailResponse> {
+    const state = this.ensureUserState(userId);
+    const now = new Date().toISOString();
+    const taskId = createImportTaskId();
+    const existingMatches = await this.findImportBookmarkMatches(
+      userId,
+      input.items
+        .map((item) => item.normalizedUrlHash)
+        .filter((value): value is string => Boolean(value)),
+    );
+    const matchMap = new Map(existingMatches.map((match) => [match.normalizedUrlHash, match]));
+    const items: ImportTaskItem[] = [];
+
+    let createdCount = 0;
+    let mergedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+
+    for (const item of input.items) {
+      const itemNow = new Date().toISOString();
+      if (!item.valid) {
+        items.push(this.createImportTaskItem(taskId, item, {
+          status: "skipped",
+          dedupeResult: "invalid_input",
+          reason: item.reason ?? "无法解析的链接。",
+          createdAt: itemNow,
+          updatedAt: itemNow,
+        }));
+        skippedCount += 1;
+        continue;
+      }
+
+      if (item.duplicateInFile) {
+        items.push(this.createImportTaskItem(taskId, item, {
+          status: "skipped",
+          dedupeResult: "skipped_duplicate",
+          reason: item.reason ?? "与本次导入中的更早条目重复。",
+          createdAt: itemNow,
+          updatedAt: itemNow,
+        }));
+        skippedCount += 1;
+        continue;
+      }
+
+      const existing = item.normalizedUrlHash ? matchMap.get(item.normalizedUrlHash) : undefined;
+      if (existing) {
+        if (input.options.dedupeStrategy === "update_metadata") {
+          const existingBookmark = state.bookmarks.get(existing.bookmarkId);
+          if (existingBookmark) {
+            existingBookmark.title = this.pickImportTitle(existingBookmark.title, item, input.options);
+            existingBookmark.folder = this.resolveFolder(state, item, input.options);
+            existingBookmark.updatedAt = itemNow;
+            state.bookmarks.set(existingBookmark.id, existingBookmark);
+          }
+        }
+
+        if (input.options.dedupeStrategy === "skip") {
+          items.push(this.createImportTaskItem(taskId, item, {
+            status: "skipped",
+            dedupeResult: "skipped_existing",
+            reason: "站内已存在同一链接，按当前策略跳过。",
+            bookmarkId: existing.bookmarkId,
+            hasArchive: existing.hasArchive,
+            archivedVersionId: existing.latestVersionId,
+            createdAt: itemNow,
+            updatedAt: itemNow,
+          }));
+          skippedCount += 1;
+        } else {
+          items.push(this.createImportTaskItem(taskId, item, {
+            status: "deduplicated",
+            dedupeResult: "merged_existing",
+            reason: existing.hasArchive ? "已合并到现有书签，且该书签已有归档。" : "已合并到现有书签。",
+            bookmarkId: existing.bookmarkId,
+            hasArchive: existing.hasArchive,
+            archivedVersionId: existing.latestVersionId,
+            createdAt: itemNow,
+            updatedAt: itemNow,
+          }));
+          mergedCount += 1;
+        }
+        continue;
+      }
+
+      try {
+        const bookmark = this.createImportedBookmark(state, item, input.taskName, input.options, itemNow);
+        items.push(this.createImportTaskItem(taskId, item, {
+          status: "created_bookmark",
+          dedupeResult: "created_bookmark",
+          reason: input.options.mode === "links_only" ? "已完成轻导入。" : "已完成轻导入，批量归档将在后续版本接入。",
+          bookmarkId: bookmark.id,
+          hasArchive: false,
+          createdAt: itemNow,
+          updatedAt: itemNow,
+        }));
+        createdCount += 1;
+      } catch (error) {
+        items.push(this.createImportTaskItem(taskId, item, {
+          status: "failed",
+          dedupeResult: "none",
+          reason: error instanceof Error ? error.message : "导入时发生未知错误。",
+          createdAt: itemNow,
+          updatedAt: itemNow,
+        }));
+        failedCount += 1;
+      }
+    }
+
+    const taskStatus = failedCount > 0 || input.preview.summary.invalidCount > 0
+      ? "partial_failed"
+      : "completed";
+    const task = importTaskSchema.parse({
+      id: taskId,
+      name: input.taskName,
+      sourceType: input.sourceType,
+      mode: input.options.mode,
+      status: taskStatus,
+      fileName: input.fileName,
+      totalCount: input.preview.summary.totalCount,
+      validCount: input.preview.summary.validCount,
+      invalidCount: input.preview.summary.invalidCount,
+      duplicateInFileCount: input.preview.summary.duplicateInFileCount,
+      duplicateExistingCount: input.preview.summary.duplicateExistingCount,
+      createdCount,
+      mergedCount,
+      skippedCount,
+      failedCount,
+      archiveQueuedCount: 0,
+      archiveSuccessCount: 0,
+      archiveFailedCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
+
+    state.importTasks.set(task.id, task);
+    state.importItemsByTaskId.set(task.id, items);
+
+    return importTaskDetailResponseSchema.parse({
+      task,
+      items,
+    });
+  }
+
+  async listImportTasks(userId: string) {
+    const state = this.ensureUserState(userId);
+    return [...state.importTasks.values()].sort(
+      (left, right) => right.createdAt.localeCompare(left.createdAt),
+    );
+  }
+
+  async getImportTaskDetail(userId: string, taskId: string) {
+    const state = this.ensureUserState(userId);
+    const task = state.importTasks.get(taskId);
+    if (!task) {
+      return null;
+    }
+    return importTaskDetailResponseSchema.parse({
+      task,
+      items: state.importItemsByTaskId.get(taskId) ?? [],
+    });
+  }
+
   async userCanReadObject(userId: string, objectKey: string) {
     const state = this.ensureUserState(userId);
     return state.versionsByObjectKey.has(objectKey);
@@ -277,6 +479,10 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       versionsByBookmark: new Map(),
       pendingByObjectKey: new Map(),
       versionsByObjectKey: new Map(),
+      foldersByPath: new Map(),
+      tagsByName: new Map(),
+      importTasks: new Map(),
+      importItemsByTaskId: new Map(),
     };
     this.stateByUserId.set(userId, created);
     return created;
@@ -332,6 +538,133 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       return state.bookmarks.get(bookmarkId);
     }
     return undefined;
+  }
+
+  private createImportedBookmark(
+    state: UserBookmarkState,
+    item: PreparedImportItem,
+    taskName: string,
+    options: ImportExecutionOptions,
+    now: string,
+  ) {
+    if (!item.url || !item.domain) {
+      throw new Error("导入条目缺少有效 URL。");
+    }
+
+    const bookmark: Bookmark = {
+      id: createBookmarkId(),
+      sourceUrl: item.url,
+      canonicalUrl: undefined,
+      title: this.pickImportTitle(item.url, item, options),
+      domain: item.domain,
+      note: "",
+      tags: this.resolveTags(state, item, taskName, options),
+      folder: this.resolveFolder(state, item, options),
+      latestVersionId: undefined,
+      versionCount: 0,
+      latestQuality: undefined,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    state.bookmarks.set(bookmark.id, bookmark);
+    state.versionsByBookmark.set(bookmark.id, []);
+    return bookmark;
+  }
+
+  private pickImportTitle(
+    fallbackTitle: string,
+    item: PreparedImportItem,
+    options: ImportExecutionOptions,
+  ) {
+    if (options.titleStrategy === "prefer_page_title") {
+      return fallbackTitle;
+    }
+    const candidate = item.title.trim();
+    return candidate || fallbackTitle;
+  }
+
+  private resolveFolder(
+    state: UserBookmarkState,
+    item: PreparedImportItem,
+    options: ImportExecutionOptions,
+  ) {
+    if (options.targetFolderMode === "flatten") {
+      return undefined;
+    }
+
+    const folderPath = options.targetFolderMode === "specific"
+      ? options.targetFolderPath?.trim()
+      : item.folderPath?.trim();
+    if (!folderPath) {
+      return undefined;
+    }
+
+    const existing = state.foldersByPath.get(folderPath);
+    if (existing) {
+      return existing;
+    }
+
+    const segments = folderPath.split("/").map((segment) => segment.trim()).filter(Boolean);
+    const folder: Folder = {
+      id: crypto.randomUUID(),
+      name: segments[segments.length - 1] ?? folderPath,
+      path: folderPath,
+    };
+    state.foldersByPath.set(folderPath, folder);
+    return folder;
+  }
+
+  private resolveTags(
+    state: UserBookmarkState,
+    item: PreparedImportItem,
+    taskName: string,
+    options: ImportExecutionOptions,
+  ) {
+    const names = new Set<string>();
+    if (options.tagStrategy === "keep_source_tags") {
+      for (const tagName of item.sourceTags) {
+        names.add(tagName);
+      }
+    }
+    if (options.tagStrategy === "append_batch_tag") {
+      names.add(`导入批次:${taskName}`);
+    }
+
+    return [...names].map((tagName) => {
+      const existing = state.tagsByName.get(tagName);
+      if (existing) {
+        return existing;
+      }
+      const created: Tag = {
+        id: crypto.randomUUID(),
+        name: tagName,
+      };
+      state.tagsByName.set(tagName, created);
+      return created;
+    });
+  }
+
+  private createImportTaskItem(
+    taskId: string,
+    item: PreparedImportItem,
+    overrides: Partial<Omit<ImportTaskItem, "id" | "taskId" | "index" | "title" | "url" | "domain" | "folderPath">>,
+  ) {
+    return {
+      id: createImportTaskItemId(),
+      taskId,
+      index: item.index,
+      title: item.title,
+      url: item.url,
+      domain: item.domain,
+      folderPath: item.folderPath,
+      status: "pending",
+      dedupeResult: "none",
+      hasArchive: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...overrides,
+    } satisfies ImportTaskItem;
   }
 
   private createObjectKey(userId: string) {

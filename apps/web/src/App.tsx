@@ -20,6 +20,7 @@ import {
   loginAccount,
   registerAccount,
 } from "./api";
+import { ImportDetailPanel, ImportHistoryPanel, ImportNewPanel } from "./imports";
 
 type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -27,7 +28,10 @@ type DetailLoadState = "idle" | "loading" | "ready" | "not-found" | "error";
 type AuthMode = "login" | "register";
 type ViewRoute =
   | { page: "list" }
-  | { page: "detail"; bookmarkId: string; versionId?: string };
+  | { page: "detail"; bookmarkId: string; versionId?: string }
+  | { page: "imports-new" }
+  | { page: "imports-list" }
+  | { page: "imports-detail"; taskId: string };
 
 type SessionState =
   | { status: "booting"; token: null; user: null; error: string | null }
@@ -140,6 +144,22 @@ function parseRoute(hash: string): ViewRoute {
 
   const [pathPart, queryString = ""] = normalized.split("?");
   const path = pathPart.replace(/\/+$/, "");
+  if (path === "/imports/new") {
+    return { page: "imports-new" };
+  }
+  if (path === "/imports") {
+    return { page: "imports-list" };
+  }
+  if (path.startsWith("/imports/")) {
+    const taskId = decodeURIComponent(path.slice("/imports/".length));
+    if (!taskId) {
+      return { page: "imports-list" };
+    }
+    return {
+      page: "imports-detail",
+      taskId,
+    };
+  }
   if (!path.startsWith("/bookmarks/")) {
     return { page: "list" };
   }
@@ -167,6 +187,18 @@ function buildDetailHash(bookmarkId: string, versionId?: string) {
 
 function goToList() {
   window.location.hash = "#/";
+}
+
+function goToImportNew() {
+  window.location.hash = "#/imports/new";
+}
+
+function goToImportList() {
+  window.location.hash = "#/imports";
+}
+
+function openImportTask(taskId: string) {
+  window.location.hash = `#/imports/${encodeURIComponent(taskId)}`;
 }
 
 function openBookmark(bookmarkId: string, versionId?: string) {
@@ -1025,6 +1057,20 @@ export function App() {
   }
 
   const isDetailRoute = route.page === "detail";
+  const isImportRoute =
+    route.page === "imports-new" ||
+    route.page === "imports-list" ||
+    route.page === "imports-detail";
+  const pageTitle = route.page === "detail"
+    ? "归档查看页"
+    : isImportRoute
+    ? "批量导入工作台"
+    : "网页归档工作台";
+  const pageSubtitle = route.page === "detail"
+    ? "查看主档、切换版本，并直接核对质量诊断与 archive.html 是否真实可读。"
+    : isImportRoute
+    ? "先轻导入再按需归档，导入结果、失败原因和去重命中都可追踪。"
+    : "每个账号独立保存自己的网页归档、版本和详情预览。";
 
   return (
     <main className={`page-shell${isDetailRoute ? " is-detail-route" : ""}`}>
@@ -1032,14 +1078,19 @@ export function App() {
       <section className={`topbar${isDetailRoute ? " is-detail-route" : ""}`}>
         <div>
           <p className="eyebrow">KeepPage Workspace</p>
-          <h1>{route.page === "detail" ? "归档查看页" : "网页归档工作台"}</h1>
-          <p className="subtitle">
-            {route.page === "detail"
-              ? "查看主档、切换版本，并直接核对质量诊断与 archive.html 是否真实可读。"
-              : "每个账号独立保存自己的网页归档、版本和详情预览。"}
-          </p>
+          <h1>{pageTitle}</h1>
+          <p className="subtitle">{pageSubtitle}</p>
         </div>
         <div className="topbar-actions">
+          <button className="secondary-button" type="button" onClick={goToList}>
+            归档列表
+          </button>
+          <button className="secondary-button" type="button" onClick={goToImportNew}>
+            新建导入
+          </button>
+          <button className="secondary-button" type="button" onClick={goToImportList}>
+            导入历史
+          </button>
           <div className="user-chip">
             <strong>{session.user.name || session.user.email}</strong>
             <span>{session.user.email}</span>
@@ -1115,9 +1166,9 @@ export function App() {
             </section>
           )}
         </>
-      ) : detailLoadState === "loading" || isPending ? (
+      ) : route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
         <section className="loading">正在加载归档详情...</section>
-      ) : detailLoadState === "error" ? (
+      ) : route.page === "detail" && detailLoadState === "error" ? (
         <EmptyState
           mode="missing-detail"
           title="归档详情加载失败"
@@ -1128,7 +1179,7 @@ export function App() {
             </button>
           }
         />
-      ) : detailLoadState === "not-found" || !detail || !selectedVersion ? (
+      ) : route.page === "detail" && (detailLoadState === "not-found" || !detail) ? (
         <EmptyState
           mode="missing-detail"
           action={
@@ -1137,9 +1188,42 @@ export function App() {
             </button>
           }
         />
-      ) : (
-        <DetailPanel detail={detail} selectedVersion={selectedVersion} previewState={archivePreview} />
-      )}
+      ) : route.page === "detail" && !selectedVersion ? (
+        <EmptyState
+          mode="missing-detail"
+          title="该书签尚未生成归档版本"
+          description="这是轻导入生成的书签元数据，暂时没有 archive.html 版本可预览。"
+          action={
+            <a className="primary-button" href={detail?.bookmark.sourceUrl ?? "#"} target="_blank" rel="noreferrer">
+              打开原网页
+            </a>
+          }
+        />
+      ) : route.page === "detail" ? (
+        <DetailPanel detail={detail!} selectedVersion={selectedVersion!} previewState={archivePreview} />
+      ) : route.page === "imports-new" ? (
+        <ImportNewPanel
+          token={session.token}
+          onApiError={handleProtectedApiError}
+          onOpenHistory={goToImportList}
+          onOpenTask={openImportTask}
+        />
+      ) : route.page === "imports-list" ? (
+        <ImportHistoryPanel
+          token={session.token}
+          onApiError={handleProtectedApiError}
+          onOpenTask={openImportTask}
+          onOpenNew={goToImportNew}
+        />
+      ) : route.page === "imports-detail" ? (
+        <ImportDetailPanel
+          token={session.token}
+          taskId={route.taskId}
+          onApiError={handleProtectedApiError}
+          onOpenHistory={goToImportList}
+          onOpenBookmark={(bookmarkId) => openBookmark(bookmarkId)}
+        />
+      ) : null}
     </main>
   );
 }
