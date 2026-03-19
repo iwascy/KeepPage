@@ -61,6 +61,108 @@ export type BookmarkDetailResult = {
   source: DataSource;
 };
 
+export type ImportSourceType = "browser_html" | "url_list" | "csv_txt" | "browser_extension";
+export type ImportMode = "links_only" | "queue_archive" | "archive_now";
+export type ImportTaskStatus =
+  | "draft"
+  | "parsing"
+  | "ready"
+  | "running"
+  | "paused"
+  | "completed"
+  | "partial_failed"
+  | "failed"
+  | "cancelled";
+export type ImportItemStatus =
+  | "pending"
+  | "deduplicated"
+  | "created_bookmark"
+  | "queued_for_archive"
+  | "archiving"
+  | "archived"
+  | "skipped"
+  | "failed";
+export type ImportDedupeResult = "created" | "merged" | "skipped" | "duplicate_in_file" | "invalid";
+
+export type ImportPreviewRequest = {
+  sourceType: ImportSourceType;
+  rawInput: string;
+  fileName?: string;
+  mode: ImportMode;
+  dedupeStrategy: "merge" | "skip" | "update_meta";
+  titleStrategy: "prefer_input" | "prefer_web" | "update_later";
+  targetFolderMode: "keep_source" | "specific_folder" | "flatten";
+  targetFolderPath?: string;
+  addBatchTag?: boolean;
+};
+
+export type ImportPreviewStats = {
+  rawTotal: number;
+  validCount: number;
+  invalidCount: number;
+  duplicateInFileCount: number;
+  duplicateInLibraryCount: number;
+  willCreateCount: number;
+  willMergeCount: number;
+  willSkipCount: number;
+};
+
+export type ImportPreviewItem = {
+  id: string;
+  title: string;
+  url: string;
+  domain: string;
+  folderPath?: string;
+  status: "valid" | "invalid" | "duplicate_in_file" | "duplicate_in_library";
+  reason?: string;
+  existingBookmarkId?: string;
+  existingHasArchive?: boolean;
+};
+
+export type ImportPreviewResult = {
+  source: DataSource;
+  sourceType: ImportSourceType;
+  stats: ImportPreviewStats;
+  samples: ImportPreviewItem[];
+  domains: Array<{ domain: string; count: number }>;
+};
+
+export type ImportTaskSummary = {
+  id: string;
+  name: string;
+  status: ImportTaskStatus;
+  sourceType: ImportSourceType;
+  mode: ImportMode;
+  totalCount: number;
+  successCount: number;
+  mergedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  archiveSuccessCount: number;
+  archiveFailedCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ImportTaskItem = {
+  id: string;
+  title: string;
+  url: string;
+  domain: string;
+  sourceFolderPath?: string;
+  status: ImportItemStatus;
+  dedupeResult?: ImportDedupeResult;
+  bookmarkId?: string;
+  hasArchive?: boolean;
+  errorReason?: string;
+};
+
+export type ImportTaskDetailResult = {
+  source: DataSource;
+  task: ImportTaskSummary;
+  items: ImportTaskItem[];
+};
+
 type RequestOptions = {
   method?: string;
   token?: string;
@@ -129,6 +231,115 @@ async function readErrorPayload(response: Response) {
       details: undefined,
     };
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function toImportSourceType(value: unknown): ImportSourceType {
+  if (value === "browser_html" || value === "url_list" || value === "csv_txt" || value === "browser_extension") {
+    return value;
+  }
+  return "url_list";
+}
+
+function toImportMode(value: unknown): ImportMode {
+  if (value === "links_only" || value === "queue_archive" || value === "archive_now") {
+    return value;
+  }
+  return "links_only";
+}
+
+function toImportTaskStatus(value: unknown): ImportTaskStatus {
+  const valid: ImportTaskStatus[] = [
+    "draft",
+    "parsing",
+    "ready",
+    "running",
+    "paused",
+    "completed",
+    "partial_failed",
+    "failed",
+    "cancelled",
+  ];
+  return valid.includes(value as ImportTaskStatus) ? (value as ImportTaskStatus) : "draft";
+}
+
+function toImportItemStatus(value: unknown): ImportItemStatus {
+  const valid: ImportItemStatus[] = [
+    "pending",
+    "deduplicated",
+    "created_bookmark",
+    "queued_for_archive",
+    "archiving",
+    "archived",
+    "skipped",
+    "failed",
+  ];
+  return valid.includes(value as ImportItemStatus) ? (value as ImportItemStatus) : "pending";
+}
+
+function toImportDedupeResult(value: unknown): ImportDedupeResult | undefined {
+  const valid: ImportDedupeResult[] = [
+    "created",
+    "merged",
+    "skipped",
+    "duplicate_in_file",
+    "invalid",
+  ];
+  return valid.includes(value as ImportDedupeResult) ? (value as ImportDedupeResult) : undefined;
+}
+
+function toImportSummary(value: unknown): ImportTaskSummary {
+  const row = asRecord(value);
+  return {
+    id: asString(row.id),
+    name: asString(row.name, "未命名导入"),
+    status: toImportTaskStatus(row.status),
+    sourceType: toImportSourceType(row.sourceType),
+    mode: toImportMode(row.mode),
+    totalCount: asNumber(row.totalCount),
+    successCount: asNumber(row.successCount),
+    mergedCount: asNumber(row.mergedCount),
+    skippedCount: asNumber(row.skippedCount),
+    failedCount: asNumber(row.failedCount),
+    archiveSuccessCount: asNumber(row.archiveSuccessCount),
+    archiveFailedCount: asNumber(row.archiveFailedCount),
+    createdAt: asString(row.createdAt),
+    updatedAt: asString(row.updatedAt || row.createdAt),
+  };
+}
+
+function toImportItem(value: unknown): ImportTaskItem {
+  const row = asRecord(value);
+  return {
+    id: asString(row.id),
+    title: asString(row.title, "(无标题)"),
+    url: asString(row.url),
+    domain: asString(row.domain),
+    sourceFolderPath: asString(row.sourceFolderPath) || undefined,
+    status: toImportItemStatus(row.status),
+    dedupeResult: toImportDedupeResult(row.dedupeResult),
+    bookmarkId: asString(row.bookmarkId) || undefined,
+    hasArchive: typeof row.hasArchive === "boolean" ? row.hasArchive : undefined,
+    errorReason: asString(row.errorReason) || undefined,
+  };
 }
 
 export async function registerAccount(input: AuthRegisterRequest): Promise<AuthSession> {
@@ -295,4 +506,105 @@ export async function createArchiveObjectUrl(token: string, objectKey: string, s
     type: response.headers.get("content-type") ?? "text/html;charset=utf-8",
   });
   return URL.createObjectURL(blob);
+}
+
+export async function previewImport(input: ImportPreviewRequest, token: string): Promise<ImportPreviewResult> {
+  const response = await request("/imports/preview", {
+    method: "POST",
+    token,
+    body: input,
+  });
+  const payload = asRecord(await response.json());
+  const summary = asRecord(payload.summary);
+  const samplesRaw = Array.isArray(payload.samples) ? payload.samples : [];
+  const domainsRaw = Array.isArray(payload.domains) ? payload.domains : [];
+  const samples = samplesRaw.map((item) => {
+    const row = asRecord(item);
+    const status = asString(row.status, "valid");
+    const sampleStatus: ImportPreviewItem["status"] = (
+      status === "valid" || status === "invalid" || status === "duplicate_in_file" || status === "duplicate_in_library"
+        ? status
+        : "valid"
+    );
+    return {
+      id: asString(row.id, crypto.randomUUID()),
+      title: asString(row.title, "(无标题)"),
+      url: asString(row.url),
+      domain: asString(row.domain),
+      folderPath: asString(row.folderPath) || undefined,
+      status: sampleStatus,
+      reason: asString(row.reason) || undefined,
+      existingBookmarkId: asString(row.existingBookmarkId) || undefined,
+      existingHasArchive: typeof row.existingHasArchive === "boolean" ? row.existingHasArchive : undefined,
+    };
+  });
+
+  return {
+    source: "api",
+    sourceType: toImportSourceType(payload.sourceType),
+    stats: {
+      rawTotal: asNumber(summary.rawTotal),
+      validCount: asNumber(summary.validCount),
+      invalidCount: asNumber(summary.invalidCount),
+      duplicateInFileCount: asNumber(summary.duplicateInFileCount),
+      duplicateInLibraryCount: asNumber(summary.duplicateInLibraryCount),
+      willCreateCount: asNumber(summary.willCreateCount),
+      willMergeCount: asNumber(summary.willMergeCount),
+      willSkipCount: asNumber(summary.willSkipCount),
+    },
+    samples,
+    domains: domainsRaw.map((item) => {
+      const row = asRecord(item);
+      return {
+        domain: asString(row.domain),
+        count: asNumber(row.count),
+      };
+    }),
+  };
+}
+
+export async function createImportTask(input: ImportPreviewRequest & { name: string }, token: string) {
+  const response = await request("/imports", {
+    method: "POST",
+    token,
+    body: input,
+  });
+  const payload = asRecord(await response.json());
+  return {
+    taskId: asString(payload.taskId || payload.id),
+  };
+}
+
+export async function fetchImportTasks(token: string): Promise<ImportTaskSummary[]> {
+  const response = await request("/imports", {
+    token,
+  });
+  const payload = asRecord(await response.json());
+  const rows = Array.isArray(payload.items)
+    ? payload.items
+    : Array.isArray(payload.tasks)
+    ? payload.tasks
+    : [];
+  return rows.map(toImportSummary).filter((item) => item.id);
+}
+
+export async function fetchImportTaskDetail(taskId: string, token: string): Promise<ImportTaskDetailResult | null> {
+  try {
+    const response = await request(`/imports/${encodeURIComponent(taskId)}`, {
+      token,
+    });
+    const payload = asRecord(await response.json());
+    const task = toImportSummary(payload.task ?? payload);
+    const rows = Array.isArray(payload.items) ? payload.items : [];
+    return {
+      source: "api",
+      task,
+      items: rows.map(toImportItem),
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }

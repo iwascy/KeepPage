@@ -1,5 +1,10 @@
 import {
   captureProfileValues,
+  importDedupeResultValues,
+  importItemStatusValues,
+  importModeValues,
+  importSourceValues,
+  importTaskStatusValues,
   qualityGradeValues,
 } from "@keeppage/domain";
 import {
@@ -20,6 +25,11 @@ import {
 
 export const captureProfileEnum = pgEnum("capture_profile", captureProfileValues);
 export const qualityGradeEnum = pgEnum("quality_grade", qualityGradeValues);
+export const importSourceEnum = pgEnum("import_source", importSourceValues);
+export const importModeEnum = pgEnum("import_mode", importModeValues);
+export const importTaskStatusEnum = pgEnum("import_task_status", importTaskStatusValues);
+export const importItemStatusEnum = pgEnum("import_item_status", importItemStatusValues);
+export const importDedupeResultEnum = pgEnum("import_dedupe_result", importDedupeResultValues);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -196,5 +206,74 @@ export const syncOps = pgTable(
   },
   (table) => ({
     syncUserCursorIdx: uniqueIndex("sync_ops_user_cursor_idx").on(table.userId, table.cursor),
+  }),
+);
+
+export const importTasks = pgTable(
+  "import_tasks",
+  {
+    id: text("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sourceType: importSourceEnum("source_type").notNull(),
+    mode: importModeEnum("mode").notNull(),
+    status: importTaskStatusEnum("status").notNull(),
+    fileName: varchar("file_name", { length: 255 }),
+    totalCount: integer("total_count").notNull().default(0),
+    validCount: integer("valid_count").notNull().default(0),
+    invalidCount: integer("invalid_count").notNull().default(0),
+    duplicateInFileCount: integer("duplicate_in_file_count").notNull().default(0),
+    duplicateExistingCount: integer("duplicate_existing_count").notNull().default(0),
+    createdCount: integer("created_count").notNull().default(0),
+    mergedCount: integer("merged_count").notNull().default(0),
+    skippedCount: integer("skipped_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    archiveQueuedCount: integer("archive_queued_count").notNull().default(0),
+    archiveSuccessCount: integer("archive_success_count").notNull().default(0),
+    archiveFailedCount: integer("archive_failed_count").notNull().default(0),
+    sourceMetaJson: jsonb("source_meta_json").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    importTasksUserCreatedIdx: index("import_tasks_user_created_idx").on(table.userId, table.createdAt),
+  }),
+);
+
+export const importItems = pgTable(
+  "import_items",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => importTasks.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    title: text("title").notNull(),
+    sourceUrl: text("source_url"),
+    normalizedUrl: text("normalized_url"),
+    normalizedUrlHash: varchar("normalized_url_hash", { length: 128 }),
+    domain: varchar("domain", { length: 255 }),
+    folderPath: text("folder_path"),
+    sourceTagsJson: jsonb("source_tags_json").default([]).notNull(),
+    status: importItemStatusEnum("status").notNull(),
+    dedupeResult: importDedupeResultEnum("dedupe_result").notNull(),
+    reason: text("reason"),
+    bookmarkId: text("bookmark_id"),
+    archivedVersionId: text("archived_version_id"),
+    hasArchive: boolean("has_archive").notNull().default(false),
+    sourceMetaJson: jsonb("source_meta_json").default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    importItemsTaskPositionIdx: uniqueIndex("import_items_task_position_idx").on(table.taskId, table.position),
+    importItemsUserTaskIdx: index("import_items_user_task_idx").on(table.userId, table.taskId),
+    importItemsBookmarkIdx: index("import_items_bookmark_idx").on(table.bookmarkId),
   }),
 );

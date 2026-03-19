@@ -174,7 +174,7 @@ export const bookmarkSchema = z.object({
   tags: z.array(tagSchema).default([]),
   folder: folderSchema.optional(),
   latestVersionId: z.string().min(1).optional(),
-  versionCount: z.number().int().positive().default(1),
+  versionCount: z.number().int().nonnegative().default(0),
   latestQuality: qualityReportSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

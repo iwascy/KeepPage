@@ -8,6 +8,7 @@ import { registerBookmarkRoutes } from "./bookmarks";
 import { registerCaptureRoutes } from "./captures";
 import { registerFolderRoutes } from "./folders";
 import { registerHealthRoutes } from "./health";
+import { registerImportRoutes } from "./imports";
 import { registerTagRoutes } from "./tags";
 import { registerUploadRoutes } from "./uploads";
 
@@ -25,4 +26,5 @@ export async function registerRoutes(
   await registerBookmarkRoutes(app, authService, repository, objectStorage);
   await registerFolderRoutes(app, authService, repository);
   await registerTagRoutes(app, authService, repository);
+  await registerImportRoutes(app, authService, repository);
 }
