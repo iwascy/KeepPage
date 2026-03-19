@@ -1,4 +1,8 @@
-import { captureProfileSchema } from "@keeppage/domain";
+import {
+  captureProfileSchema,
+  privateAutoLockSchema,
+  saveModeSchema,
+} from "@keeppage/domain";
 import { defineBackground } from "wxt/utils/define-background";
 import {
   captureActiveTab,
@@ -20,6 +24,12 @@ import {
   openSidePanelForWindow,
   validateStoredAuthSession,
 } from "../src/lib/auth-flow";
+import {
+  createPrivateVault,
+  getPrivateVaultSummary,
+  lockPrivateVault,
+  unlockPrivateVault,
+} from "../src/lib/private-vault";
 
 const singleFileTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 const logger = createLogger("background");
@@ -111,10 +121,12 @@ export default defineBackground(() => {
 
     void (async () => {
       if (message.type === MESSAGE_TYPE.ListTasks) {
+        const saveMode = saveModeSchema.parse(message.saveMode ?? "standard");
         logger.info("Listing recent tasks.", {
           limit: message.limit ?? 20,
+          saveMode,
         });
-        const tasks = await listRecentTasks(message.limit ?? 20);
+        const tasks = await listRecentTasks(message.limit ?? 20, saveMode);
         const response: ListTasksResponse = {
           ok: true,
           tasks,
@@ -123,13 +135,14 @@ export default defineBackground(() => {
         return;
       }
       if (message.type === MESSAGE_TYPE.TriggerCaptureActiveTab) {
+        const saveMode = saveModeSchema.parse(message.saveMode ?? "standard");
         if (!await ensureAuthenticated("sidepanel-capture")) {
           sendResponse({ ok: false, error: "请先登录 KeepPage。" });
           return;
         }
         const profile = captureProfileSchema.parse(message.profile ?? "standard");
-        logger.info("Triggering active-tab capture.", { profile });
-        const task = await captureActiveTab(profile);
+        logger.info("Triggering active-tab capture.", { profile, saveMode });
+        const task = await captureActiveTab(profile, saveMode);
         sendResponse({ ok: true, task });
         return;
       }
@@ -141,11 +154,15 @@ export default defineBackground(() => {
         const profile = message.profile
           ? captureProfileSchema.parse(message.profile)
           : undefined;
+        const saveMode = message.saveMode
+          ? saveModeSchema.parse(message.saveMode)
+          : undefined;
         logger.info("Retrying task.", {
           taskId: message.taskId,
           profile,
+          saveMode,
         });
-        const task = await retryTask(message.taskId, profile);
+        const task = await retryTask(message.taskId, profile, saveMode);
         sendResponse({ ok: true, task });
         return;
       }
@@ -155,6 +172,34 @@ export default defineBackground(() => {
         });
         await openTaskPreview(message.taskId);
         sendResponse({ ok: true });
+        return;
+      }
+      if (message.type === MESSAGE_TYPE.GetPrivateVaultState) {
+        const summary = await getPrivateVaultSummary();
+        sendResponse({ ok: true, summary });
+        return;
+      }
+      if (message.type === MESSAGE_TYPE.CreatePrivateVault) {
+        const result = await createPrivateVault({
+          passphrase: message.passphrase,
+          autoLock: privateAutoLockSchema.parse(message.autoLock),
+        });
+        sendResponse({
+          ok: true,
+          summary: result.summary,
+          recoveryCode: result.recoveryCode,
+        });
+        return;
+      }
+      if (message.type === MESSAGE_TYPE.UnlockPrivateVault) {
+        const summary = await unlockPrivateVault(message.passphrase);
+        sendResponse({ ok: true, summary });
+        return;
+      }
+      if (message.type === MESSAGE_TYPE.LockPrivateVault) {
+        const summary = await lockPrivateVault();
+        sendResponse({ ok: true, summary });
+        return;
       }
     })().catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -175,6 +220,10 @@ export default defineBackground(() => {
         singleFileTimeouts.delete(key);
       }
     }
+  });
+
+  chrome.runtime.onSuspend.addListener(() => {
+    void lockPrivateVault();
   });
 });
 

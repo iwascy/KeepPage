@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   authSessionSchema,
   authUserSchema,
@@ -6,8 +6,15 @@ import {
   type AuthUser,
   type CaptureProfile,
   type CaptureTask,
+  type PrivateAutoLock,
+  type PrivateVaultSummary,
+  type SaveMode,
 } from "@keeppage/domain";
-import { MESSAGE_TYPE, type TaskUpdatedEvent } from "../../src/lib/messages";
+import {
+  MESSAGE_TYPE,
+  type PrivateVaultStateResponse,
+  type TaskUpdatedEvent,
+} from "../../src/lib/messages";
 import { getStoredAuthToken, getStoredAuthUser } from "../../src/lib/auth-storage";
 import {
   openExtensionAuthPage,
@@ -47,6 +54,22 @@ const PROFILE_OPTIONS: Array<{
     description: "更快更小，优先搜索和快速归档。",
   },
 ];
+const SAVE_MODE_OPTIONS: Array<{ value: SaveMode; label: string }> = [
+  {
+    value: "standard",
+    label: "普通",
+  },
+  {
+    value: "private",
+    label: "私密",
+  },
+];
+const AUTO_LOCK_OPTIONS: Array<{ value: PrivateAutoLock; label: string }> = [
+  { value: "5m", label: "5 分钟" },
+  { value: "15m", label: "15 分钟" },
+  { value: "1h", label: "1 小时" },
+  { value: "browser", label: "浏览器关闭后" },
+];
 
 const AUTH_PAGE_VIEW = new URLSearchParams(window.location.search).get("view") === "auth";
 
@@ -54,8 +77,10 @@ export function App() {
   const [tasks, setTasks] = useState<CaptureTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [state, setState] = useState<AsyncState>("idle");
+  const [saveMode, setSaveMode] = useState<SaveMode>("standard");
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>("standard");
   const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_API_BASE_URL);
+  const [incognitoPrivateDefault, setIncognitoPrivateDefault] = useState(true);
   const [settingsState, setSettingsState] = useState<SettingsState>("idle");
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
@@ -67,11 +92,26 @@ export function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [vaultSummary, setVaultSummary] = useState<PrivateVaultSummary | null>(null);
+  const [vaultPassphrase, setVaultPassphrase] = useState("");
+  const [vaultPassphraseConfirm, setVaultPassphraseConfirm] = useState("");
+  const [unlockPassphrase, setUnlockPassphrase] = useState("");
+  const [vaultAutoLock, setVaultAutoLock] = useState<PrivateAutoLock>("15m");
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.all([refreshTasks(), loadSettings()]);
+    void Promise.all([loadSettings(), refreshPrivateVaultState()]);
+  }, []);
 
+  useEffect(() => {
+    void refreshTasks(saveMode);
+    if (saveMode === "private") {
+      void refreshPrivateVaultState();
+    }
+  }, [saveMode, authUser?.id]);
+
+  useEffect(() => {
     const listener = (
       message: unknown,
       _sender: chrome.runtime.MessageSender,
@@ -79,6 +119,9 @@ export function App() {
     ) => {
       const event = message as Partial<TaskUpdatedEvent>;
       if (event.type !== MESSAGE_TYPE.TaskUpdated || !event.task) {
+        return;
+      }
+      if ((event.task.saveMode ?? "standard") !== saveMode) {
         return;
       }
       setTasks((previous) => {
@@ -93,7 +136,7 @@ export function App() {
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
     };
-  }, []);
+  }, [saveMode]);
 
   useEffect(() => {
     const listener: Parameters<typeof chrome.storage.onChanged.addListener>[0] = (changes, areaName) => {
@@ -108,9 +151,45 @@ export function App() {
     return () => {
       chrome.storage.onChanged.removeListener(listener);
     };
-  }, []);
+  }, [saveMode]);
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const selectedProfileMeta = PROFILE_OPTIONS.find((option) => option.value === captureProfile);
+  const authBannerTone = authState === "ok" ? "ok" : authState;
+  const isRegister = authMode === "register";
+  const isPrivateView = saveMode === "private";
+  const isVaultEnabled = Boolean(vaultSummary?.enabled);
+  const isVaultUnlocked = Boolean(vaultSummary?.unlocked);
+  const isPrivateLockedView = isPrivateView && (!isVaultEnabled || !isVaultUnlocked);
+  const canResumeSync = Boolean(
+    !isPrivateView &&
+      selectedTask &&
+      selectedTask.status === "upload_pending" &&
+      selectedTask.artifacts?.archiveHtml &&
+      typeof selectedTask.artifacts.extractedText === "string" &&
+      selectedTask.quality &&
+      selectedTask.localArchiveSha256,
+  );
+  const retryLabel = isPrivateView
+    ? "重新抓取"
+    : canResumeSync && selectedTask?.profile === captureProfile
+    ? "继续同步"
+    : "按当前 Profile 重抓";
+  const primaryActionLabel = useMemo(() => {
+    if (!authUser) {
+      return "去登录";
+    }
+    if (state === "capturing") {
+      return isPrivateView ? "私密保存中..." : "保存中...";
+    }
+    if (isPrivateView && !isVaultEnabled) {
+      return "先启用私密库";
+    }
+    if (isPrivateView && !isVaultUnlocked) {
+      return "先解锁私密库";
+    }
+    return isPrivateView ? "私密保存当前页" : "保存当前页";
+  }, [authUser, state, isPrivateView, isVaultEnabled, isVaultUnlocked]);
 
   async function syncAuthStateFromStorage() {
     const [token, user] = await Promise.all([
@@ -130,12 +209,14 @@ export function App() {
     setAuthUser(user);
     setAuthState("ok");
     setAuthMessage(`已登录 ${user.email}，现在可以继续使用扩展。`);
+    await refreshTasks(saveMode);
   }
 
-  async function refreshTasks() {
+  async function refreshTasks(nextSaveMode = saveMode) {
     const response = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPE.ListTasks,
       limit: 20,
+      saveMode: nextSaveMode,
     });
     if (!response?.ok) {
       setError(response?.error ?? "加载任务列表失败。");
@@ -151,12 +232,24 @@ export function App() {
     });
   }
 
+  async function refreshPrivateVaultState() {
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPE.GetPrivateVaultState,
+    }) as PrivateVaultStateResponse;
+    if (!response?.ok) {
+      setError(response?.error ?? "加载私密库状态失败。");
+      return;
+    }
+    setVaultSummary(response.summary ?? null);
+  }
+
   async function captureCurrentPage() {
     setState("capturing");
     setError(null);
     const response = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPE.TriggerCaptureActiveTab,
       profile: captureProfile,
+      saveMode,
     });
     if (!response?.ok) {
       setState("error");
@@ -164,7 +257,10 @@ export function App() {
       return;
     }
     setState("idle");
-    await refreshTasks();
+    await refreshTasks(saveMode);
+    if (saveMode === "private") {
+      await refreshPrivateVaultState();
+    }
   }
 
   async function handlePrimaryAction() {
@@ -172,6 +268,14 @@ export function App() {
       setAuthState("idle");
       setAuthMessage("请先完成登录，登录成功后就可以开始使用扩展。");
       await openExtensionAuthPage("capture-button");
+      return;
+    }
+    if (isPrivateView && !isVaultEnabled) {
+      setError("请先启用私密库，再进行私密保存。");
+      return;
+    }
+    if (isPrivateView && !isVaultUnlocked) {
+      setError("私密库当前已锁定，请先解锁。");
       return;
     }
 
@@ -186,12 +290,13 @@ export function App() {
       type: MESSAGE_TYPE.RetryTask,
       taskId: selectedTask.id,
       profile: captureProfile,
+      saveMode,
     });
     if (!response?.ok) {
       setError(response?.error ?? "重试失败。");
       return;
     }
-    await refreshTasks();
+    await refreshTasks(saveMode);
   }
 
   async function openPreviewInNewTab() {
@@ -207,10 +312,67 @@ export function App() {
     }
   }
 
+  async function createPrivateVaultAction() {
+    setError(null);
+    if (vaultPassphrase.trim().length < 8) {
+      setError("私密口令至少需要 8 位。");
+      return;
+    }
+    if (vaultPassphrase !== vaultPassphraseConfirm) {
+      setError("两次输入的私密口令不一致。");
+      return;
+    }
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPE.CreatePrivateVault,
+      passphrase: vaultPassphrase,
+      autoLock: vaultAutoLock,
+    }) as PrivateVaultStateResponse;
+    if (!response?.ok) {
+      setError(response?.error ?? "启用私密库失败。");
+      return;
+    }
+    setVaultSummary(response.summary ?? null);
+    setRecoveryCode(response.recoveryCode ?? null);
+    setVaultPassphrase("");
+    setVaultPassphraseConfirm("");
+    setUnlockPassphrase("");
+    setSaveMode("private");
+    await refreshTasks("private");
+  }
+
+  async function unlockPrivateVaultAction() {
+    setError(null);
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPE.UnlockPrivateVault,
+      passphrase: unlockPassphrase,
+    }) as PrivateVaultStateResponse;
+    if (!response?.ok) {
+      setError(response?.error ?? "解锁私密库失败。");
+      return;
+    }
+    setVaultSummary(response.summary ?? null);
+    setUnlockPassphrase("");
+    await refreshTasks("private");
+  }
+
+  async function lockPrivateVaultAction() {
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPE.LockPrivateVault,
+    }) as PrivateVaultStateResponse;
+    if (!response?.ok) {
+      setError(response?.error ?? "锁定私密库失败。");
+      return;
+    }
+    setVaultSummary(response.summary ?? null);
+    await refreshTasks("private");
+  }
+
   async function loadSettings() {
     const result = await chrome.storage.local.get([
       "apiBaseUrl",
       "captureProfilePreference",
+      "saveModePreference",
+      "incognitoPrivateDefault",
       "authToken",
       "authUser",
     ]);
@@ -227,6 +389,14 @@ export function App() {
         setCaptureProfile(matched.value);
       }
     }
+
+    const nextIncognitoPrivateDefault = result.incognitoPrivateDefault !== false;
+    setIncognitoPrivateDefault(nextIncognitoPrivateDefault);
+    const detectedInitialSaveMode = await resolveInitialSaveMode(
+      typeof result.saveModePreference === "string" ? result.saveModePreference : undefined,
+      nextIncognitoPrivateDefault,
+    );
+    setSaveMode(detectedInitialSaveMode);
 
     const storedToken = typeof result.authToken === "string" ? result.authToken.trim() : "";
     if (!storedToken) {
@@ -250,7 +420,7 @@ export function App() {
       await chrome.storage.local.set({ authUser: user });
       setAuthState("ok");
       setAuthMessage(`已登录 ${user.email}，后续同步将归到这个账号。`);
-      await refreshTasks();
+      await refreshTasks(detectedInitialSaveMode);
     } catch (loadError) {
       await chrome.storage.local.remove(["authToken", "authUser"]);
       setAuthUser(null);
@@ -271,6 +441,8 @@ export function App() {
       await chrome.storage.local.set({
         apiBaseUrl: normalizedApiBaseUrl,
         captureProfilePreference: captureProfile,
+        saveModePreference: saveMode,
+        incognitoPrivateDefault,
       });
       setApiBaseUrl(normalizedApiBaseUrl);
       setSettingsState("saved");
@@ -332,7 +504,7 @@ export function App() {
       );
       setConnectionState("idle");
       setConnectionMessage(null);
-      await refreshTasks();
+      await refreshTasks(saveMode);
     } catch (authError) {
       setAuthState("error");
       setAuthMessage(
@@ -374,35 +546,32 @@ export function App() {
     }
   }
 
-  const selectedProfileMeta = PROFILE_OPTIONS.find((option) => option.value === captureProfile);
-  const canResumeSync = Boolean(
-    selectedTask &&
-      selectedTask.status === "upload_pending" &&
-      selectedTask.artifacts?.archiveHtml &&
-      typeof selectedTask.artifacts.extractedText === "string" &&
-      selectedTask.quality &&
-      selectedTask.localArchiveSha256,
-  );
-  const retryLabel = canResumeSync && selectedTask?.profile === captureProfile
-    ? "继续同步"
-    : "按当前 Profile 重抓";
-  const authBannerTone = authState === "ok" ? "ok" : authState;
-  const isRegister = authMode === "register";
-  const primaryActionLabel = !authUser
-    ? "去登录"
-    : state === "capturing"
-    ? "保存中..."
-    : "保存当前页";
-
   return (
     <div className="layout">
       <header className="header">
         <div className="header-copy">
           <p className="eyebrow">KeepPage Queue</p>
-          <h1>Archive-First 保存队列</h1>
-          <p className="header-subtitle">先拿到本地可预览归档，再异步上传、去重和建索引。</p>
+          <h1>{isPrivateView ? "Private Vault 私密队列" : "Archive-First 保存队列"}</h1>
+          <p className="header-subtitle">
+            {isPrivateView
+              ? "私密任务会先在当前设备加密写入本地库，锁定状态下不展示标题、URL 与质量详情。"
+              : "先拿到本地可预览归档，再异步上传、去重和建索引。"}
+          </p>
         </div>
         <div className="header-actions">
+          <label className="compact-field">
+            <span>保存模式</span>
+            <select
+              value={saveMode}
+              onChange={(event) => setSaveMode(event.target.value as SaveMode)}
+            >
+              {SAVE_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="compact-field">
             <span>抓取 profile</span>
             <select
@@ -417,7 +586,7 @@ export function App() {
             </select>
           </label>
           <button
-            className="capture-btn"
+            className={`capture-btn ${isPrivateView ? "capture-btn-private" : ""}`}
             disabled={state === "capturing"}
             onClick={handlePrimaryAction}
             type="button"
@@ -427,12 +596,118 @@ export function App() {
         </div>
       </header>
 
+      {isPrivateView && (
+        <section className="private-strip">
+          <div className="settings-copy">
+            <p className="settings-title">私密库状态</p>
+            <p className="muted">
+              {!isVaultEnabled
+                ? "首次启用后，私密归档会以加密形式保存在当前浏览器设备。"
+                : isVaultUnlocked
+                ? "当前设备已解锁私密库，可以查看标题、质量信息和本地预览。"
+                : "私密库当前已锁定，只会暴露最小摘要信息。"}
+            </p>
+            {vaultSummary ? (
+              <div className="vault-facts">
+                <span>条目数：{vaultSummary.totalItems}</span>
+                <span>待同步：{vaultSummary.pendingSyncCount}</span>
+                <span>自动锁定：{renderAutoLockLabel(vaultSummary.autoLock)}</span>
+              </div>
+            ) : null}
+          </div>
+
+          {!isVaultEnabled ? (
+            <>
+              <div className="vault-form">
+                <label className="field-inline">
+                  <span>私密口令</span>
+                  <input
+                    type="password"
+                    value={vaultPassphrase}
+                    onChange={(event) => setVaultPassphrase(event.target.value)}
+                    placeholder="至少 8 位"
+                  />
+                </label>
+                <label className="field-inline">
+                  <span>确认口令</span>
+                  <input
+                    type="password"
+                    value={vaultPassphraseConfirm}
+                    onChange={(event) => setVaultPassphraseConfirm(event.target.value)}
+                    placeholder="再次输入"
+                  />
+                </label>
+                <label className="field-inline">
+                  <span>自动锁定</span>
+                  <select
+                    value={vaultAutoLock}
+                    onChange={(event) => setVaultAutoLock(event.target.value as PrivateAutoLock)}
+                  >
+                    {AUTO_LOCK_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="settings-actions">
+                <button onClick={createPrivateVaultAction} type="button">
+                  启用私密库
+                </button>
+              </div>
+            </>
+          ) : isVaultUnlocked ? (
+            <>
+              <div className="vault-summary-card">
+                <strong>私密库已解锁</strong>
+                <span>
+                  当前会话可以查看私密标题、预览和质量提示。手动锁定或超时后需要重新输入口令。
+                </span>
+              </div>
+              <div className="settings-actions">
+                <button className="ghost-btn" onClick={lockPrivateVaultAction} type="button">
+                  立即锁定
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="vault-form">
+                <label className="field-inline">
+                  <span>解锁口令</span>
+                  <input
+                    type="password"
+                    value={unlockPassphrase}
+                    onChange={(event) => setUnlockPassphrase(event.target.value)}
+                    placeholder="输入私密口令"
+                  />
+                </label>
+              </div>
+              <div className="settings-actions">
+                <button onClick={unlockPrivateVaultAction} type="button">
+                  解锁私密库
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {recoveryCode && (
+        <section className="settings-banner settings-ok">
+          恢复码已生成，请尽快另存到安全位置：<strong>{recoveryCode}</strong>
+        </section>
+      )}
+
       <section className="account-strip">
         <div className="settings-copy">
           <p className="settings-title">账号状态</p>
           <p className="muted">
             {authUser
-              ? "当前扩展会把新归档同步到这个账号。"
+              ? isPrivateView
+                ? "当前版本的私密保存仍绑定到当前账号，但内容只保存在本机私密库。"
+                : "当前扩展会把新归档同步到这个账号。"
               : "请先注册或登录账号，新的本地归档任务也会绑定到当前账号。"}
           </p>
         </div>
@@ -509,21 +784,31 @@ export function App() {
 
       <section className="settings-strip">
         <div className="settings-copy">
-          <p className="settings-title">同步配置</p>
+          <p className="settings-title">同步与默认规则</p>
           <p className="muted">
             当前保存会使用 <strong>{selectedProfileMeta?.label ?? "标准保真"}</strong>。
             {selectedProfileMeta?.description ? ` ${selectedProfileMeta.description}` : ""}
           </p>
         </div>
-        <label className="field-inline">
-          <span>API Base URL</span>
-          <input
-            value={apiBaseUrl}
-            onChange={(event) => setApiBaseUrl(event.target.value)}
-            placeholder={DEFAULT_API_BASE_URL}
-            spellCheck={false}
-          />
-        </label>
+        <div className="settings-fields">
+          <label className="field-inline">
+            <span>API Base URL</span>
+            <input
+              value={apiBaseUrl}
+              onChange={(event) => setApiBaseUrl(event.target.value)}
+              placeholder={DEFAULT_API_BASE_URL}
+              spellCheck={false}
+            />
+          </label>
+          <label className="toggle-inline">
+            <input
+              checked={incognitoPrivateDefault}
+              onChange={(event) => setIncognitoPrivateDefault(event.target.checked)}
+              type="checkbox"
+            />
+            <span>无痕窗口默认私密</span>
+          </label>
+        </div>
         <div className="settings-actions">
           <button onClick={saveSettings} type="button">
             {settingsState === "saving" ? "保存中..." : "保存设置"}
@@ -547,27 +832,36 @@ export function App() {
         <section className="task-list">
           {tasks.length === 0 && (
             <p className="muted">
-              {authUser
+              {isPrivateView
+                ? !isVaultEnabled
+                  ? "启用私密库后，新的私密保存记录会出现在这里。"
+                  : "当前私密库还没有保存记录。"
+                : authUser
                 ? "当前账号还没有保存记录。点击「保存当前页」，先生成本地归档，再异步进入上传队列。"
                 : "登录后，这里只会显示当前账号的本地保存记录。"}
             </p>
           )}
           {tasks.map((task) => {
             const active = task.id === selectedTaskId;
+            const lockedTask = isPrivateLockedView && task.isPrivate;
             return (
               <button
-                className={`task-card ${active ? "active" : ""}`}
+                className={`task-card ${active ? "active" : ""} ${task.isPrivate ? "task-card-private" : ""}`}
                 key={task.id}
                 onClick={() => setSelectedTaskId(task.id)}
                 type="button"
               >
-                <p className="task-title">{task.source.title}</p>
-                <p className="task-url">{task.source.domain}</p>
+                <p className="task-title">{lockedTask ? "私密条目（已锁定）" : task.source.title}</p>
+                <p className="task-url">{lockedTask ? "已锁定" : task.source.domain}</p>
                 <div className="task-meta">
                   <span className={`status status-${task.status}`}>{task.status}</span>
-                  <span className={`grade grade-${task.quality?.grade ?? "none"}`}>
-                    {task.quality ? `${task.quality.grade.toUpperCase()} ${task.quality.score}` : "N/A"}
-                  </span>
+                  {lockedTask ? (
+                    <span className="grade grade-private">LOCKED</span>
+                  ) : (
+                    <span className={`grade grade-${task.quality?.grade ?? "none"}`}>
+                      {task.quality ? `${task.quality.grade.toUpperCase()} ${task.quality.score}` : "N/A"}
+                    </span>
+                  )}
                 </div>
               </button>
             );
@@ -575,8 +869,31 @@ export function App() {
         </section>
 
         <section className="preview-panel">
-          {!selectedTask && <p className="muted">选择左侧记录以查看质量诊断和本地预览。</p>}
-          {selectedTask && (
+          {!selectedTask && (
+            <p className="muted">
+              {isPrivateView
+                ? "选择左侧私密记录以查看锁定态摘要或解锁态详情。"
+                : "选择左侧记录以查看质量诊断和本地预览。"}
+            </p>
+          )}
+
+          {selectedTask && isPrivateLockedView && (
+            <div className="vault-locked-panel">
+              <h2>私密库已锁定</h2>
+              <p className="muted">
+                当前只展示最小摘要信息。输入私密口令解锁后，才能查看标题、域名、质量诊断和本地预览。
+              </p>
+              <div className="task-facts">
+                <span>状态：{selectedTask.status}</span>
+                <span>模式：本机私密</span>
+                {vaultSummary?.lastUpdatedAt ? (
+                  <span>最近更新：{formatDateTime(vaultSummary.lastUpdatedAt)}</span>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {selectedTask && !isPrivateLockedView && (
             <>
               <div className="preview-toolbar">
                 <h2>{selectedTask.source.title}</h2>
@@ -587,6 +904,11 @@ export function App() {
                   <button onClick={openPreviewInNewTab} type="button">
                     新标签预览
                   </button>
+                  {isPrivateView && (
+                    <button className="ghost-btn" onClick={lockPrivateVaultAction} type="button">
+                      锁定私密库
+                    </button>
+                  )}
                 </div>
               </div>
               <p className="muted">{selectedTask.source.url}</p>
@@ -594,6 +916,8 @@ export function App() {
                 {selectedTask.owner ? <span>账号：{selectedTask.owner.email}</span> : null}
                 <span>状态：{selectedTask.status}</span>
                 <span>Profile：{selectedTask.profile}</span>
+                {selectedTask.isPrivate ? <span>私密模式：本机私密</span> : null}
+                {selectedTask.syncState ? <span>同步：{selectedTask.syncState}</span> : null}
                 {selectedTask.bookmarkId && <span>Bookmark：{selectedTask.bookmarkId}</span>}
               </div>
               <div className="quality-box">
@@ -642,6 +966,38 @@ export function App() {
 function normalizeApiBaseUrl(input: string) {
   const normalized = input.trim();
   return (normalized || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+}
+
+async function resolveInitialSaveMode(
+  preferredSaveMode: string | undefined,
+  incognitoPrivateDefault: boolean,
+): Promise<SaveMode> {
+  if (preferredSaveMode === "standard" || preferredSaveMode === "private") {
+    return preferredSaveMode;
+  }
+  if (!incognitoPrivateDefault) {
+    return "standard";
+  }
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    return activeTab?.incognito ? "private" : "standard";
+  } catch {
+    return "standard";
+  }
+}
+
+function renderAutoLockLabel(autoLock: PrivateAutoLock) {
+  return AUTO_LOCK_OPTIONS.find((option) => option.value === autoLock)?.label ?? autoLock;
+}
+
+function formatDateTime(input: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(input));
 }
 
 async function authenticateAccount(

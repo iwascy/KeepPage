@@ -2,6 +2,7 @@ import {
   createCaptureId,
   ensureArchiveBaseHref,
   evaluateQuality,
+  type SaveMode,
   type CaptureTaskOwner,
   type CapturePageSignals,
   type CaptureProfile,
@@ -15,6 +16,15 @@ import {
   putCaptureTask,
   transitionCaptureTaskStatus,
 } from "./capture-queue";
+import {
+  buildPrivateTaskShell,
+  getPrivateTask,
+  listPrivateTasks,
+  patchPrivateTaskShell,
+  putPrivateTaskPayload,
+  putPrivateTaskShell,
+  requirePrivateVaultUnlocked,
+} from "./private-vault";
 import {
   MESSAGE_TYPE,
   type CaptureArchiveHtmlRequest,
@@ -37,8 +47,14 @@ import { syncTaskToApi } from "./sync-api";
 const DEFAULT_PROFILE: CaptureProfile = "standard";
 const logger = createLogger("capture");
 
-export async function captureActiveTab(profile: CaptureProfile = DEFAULT_PROFILE) {
+export async function captureActiveTab(
+  profile: CaptureProfile = DEFAULT_PROFILE,
+  saveMode: SaveMode = "standard",
+) {
   const owner = await requireCurrentTaskOwner();
+  if (saveMode === "private") {
+    await requirePrivateVaultUnlocked();
+  }
   const [activeTab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,
@@ -46,20 +62,32 @@ export async function captureActiveTab(profile: CaptureProfile = DEFAULT_PROFILE
   if (!activeTab?.id) {
     throw new Error("No active tab available for capture.");
   }
-  logCapture("info", activeTab.id, "Starting capture for active tab.", {
+  logCapture(saveMode, "info", activeTab.id, "Starting capture for active tab.", {
     tabId: activeTab.id,
     url: activeTab.url,
     profile,
     ownerUserId: owner.userId,
   });
-  return captureTab(activeTab.id, profile, owner);
+  return captureTab(activeTab.id, profile, owner, saveMode);
 }
 
-export async function retryTask(taskId: string, profileOverride?: CaptureProfile) {
+export async function retryTask(
+  taskId: string,
+  profileOverride?: CaptureProfile,
+  saveModeOverride?: SaveMode,
+) {
   const owner = await requireCurrentTaskOwner();
-  const task = await getCaptureTask(taskId);
+  const saveMode = saveModeOverride ?? "standard";
+  const standardTask = saveMode === "standard" ? await getCaptureTask(taskId) : null;
+  const privateTask = saveMode === "private"
+    ? await getPrivateTask(taskId, owner.userId)
+    : null;
+  const task = standardTask ?? privateTask;
   if (!task) {
     throw new Error("Task not found.");
+  }
+  if (task.isPrivate) {
+    await requirePrivateVaultUnlocked();
   }
   assertTaskOwnership(task, owner);
   logger.info("Retry requested.", {
@@ -70,6 +98,7 @@ export async function retryTask(taskId: string, profileOverride?: CaptureProfile
   });
   const retryProfile = profileOverride ?? task.profile;
   if (
+    saveMode === "standard" &&
     retryProfile === task.profile &&
     task.status === "upload_pending" &&
     task.artifacts?.archiveHtml &&
@@ -79,14 +108,18 @@ export async function retryTask(taskId: string, profileOverride?: CaptureProfile
   ) {
     return syncTask(task);
   }
-  return captureSourceUrl(task.source.url, retryProfile);
+  return captureSourceUrl(task.source.url, retryProfile, task.isPrivate ? "private" : "standard");
 }
 
 export async function openTaskPreview(taskId: string) {
   const owner = await requireCurrentTaskOwner();
-  const task = await getCaptureTask(taskId);
+  const task = await getCaptureTask(taskId)
+    ?? await getPrivateTask(taskId, owner.userId);
   if (!task?.artifacts?.archiveHtml) {
     throw new Error("Task archive HTML is not available for preview.");
+  }
+  if (task.isPrivate) {
+    await requirePrivateVaultUnlocked();
   }
   assertTaskOwnership(task, owner);
   const previewHtml = ensureArchiveBaseHref(
@@ -97,10 +130,13 @@ export async function openTaskPreview(taskId: string) {
   await chrome.tabs.create({ url: previewUrl, active: true });
 }
 
-export async function listRecentTasks(limit = 20) {
+export async function listRecentTasks(limit = 20, saveMode: SaveMode = "standard") {
   const owner = await getStoredTaskOwner();
   if (!owner) {
     return [];
+  }
+  if (saveMode === "private") {
+    return listPrivateTasks(limit, owner.userId);
   }
   return listCaptureTasks(limit, owner.userId);
 }
@@ -109,6 +145,7 @@ async function captureTab(
   tabId: number,
   profile: CaptureProfile,
   owner: CaptureTaskOwner,
+  saveMode: SaveMode,
   options: {
     captureScreenshot?: boolean;
   } = {},
@@ -119,26 +156,53 @@ async function captureTab(
   const task: CaptureTask = {
     id: createCaptureId(),
     status: "queued",
+    saveMode,
+    isPrivate: saveMode === "private",
+    privateMode: saveMode === "private" ? "local-only" : undefined,
+    syncState: saveMode === "private" ? "local-only" : undefined,
     profile,
     owner,
     source,
     createdAt: now,
     updatedAt: now,
   };
-  await putCaptureTask(task);
-  await publishTask(task);
-    await logCapture("info", tabId, "Task queued.", {
-      taskId: task.id,
-      tabId,
-      url: source.url,
-      profile,
-      ownerUserId: owner.userId,
-    });
+  if (saveMode === "private") {
+    await putPrivateTaskShell(
+      buildPrivateTaskShell({
+        id: task.id,
+        status: task.status,
+        owner,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+  } else {
+    await putCaptureTask(task);
+  }
+  await publishTaskByMode(task.id, saveMode, owner.userId);
+  await logCapture(saveMode, "info", tabId, "Task queued.", {
+    taskId: task.id,
+    tabId,
+    url: source.url,
+    profile,
+    ownerUserId: owner.userId,
+  });
 
   try {
-    let workingTask = await transitionCaptureTaskStatus(task.id, "capturing");
-    await publishTask(workingTask);
-    await logCapture("info", tabId, "Collecting live page signals.", {
+    let workingTask = saveMode === "private"
+      ? {
+          ...task,
+          status: "capturing" as const,
+          updatedAt: new Date().toISOString(),
+        }
+      : await transitionCaptureTaskStatus(task.id, "capturing");
+    if (saveMode === "private") {
+      await patchPrivateTaskShell(task.id, {
+        status: "capturing",
+      });
+    }
+    await publishTaskByMode(task.id, saveMode, owner.userId);
+    await logCapture(saveMode, "info", tabId, "Collecting live page signals.", {
       taskId: task.id,
       tabId,
     });
@@ -152,7 +216,7 @@ async function captureTab(
     if (!liveResult.ok || !liveResult.liveSignals) {
       throw new Error(liveResult.error ?? "Failed to collect pre-capture signals.");
     }
-    await logCapture("info", tabId, "Live page signals collected.", {
+    await logCapture(saveMode, "info", tabId, "Live page signals collected.", {
       taskId: task.id,
       liveSignals: liveResult.liveSignals,
     });
@@ -161,10 +225,17 @@ async function captureTab(
       ...workingTask.source,
       ...liveResult.sourcePatch,
     };
-    workingTask = await patchCaptureTask(task.id, {
+    workingTask = {
+      ...workingTask,
       source: mergedSource,
-    });
-    await publishTask(workingTask);
+      updatedAt: new Date().toISOString(),
+    };
+    if (saveMode === "standard") {
+      workingTask = await patchCaptureTask(task.id, {
+        source: mergedSource,
+      });
+    }
+    await publishTaskByMode(task.id, saveMode, owner.userId);
 
     const archiveResult = await sendMessageToTab<
       CaptureArchiveHtmlRequest,
@@ -173,7 +244,7 @@ async function captureTab(
       type: MESSAGE_TYPE.CaptureArchiveHtml,
       profile,
     });
-    await logCapture("info", tabId, "Archive capture finished.", {
+    await logCapture(saveMode, "info", tabId, "Archive capture finished.", {
       taskId: task.id,
       archiveOk: archiveResult.ok,
       usedSingleFile: archiveResult.ok ? archiveResult.usedSingleFile : undefined,
@@ -187,7 +258,7 @@ async function captureTab(
       mergedSource.canonicalUrl ?? mergedSource.url,
     );
     if (!archiveResult.ok) {
-      await logCapture("warn", tabId, "Using fallback archive HTML.", {
+      await logCapture(saveMode, "warn", tabId, "Using fallback archive HTML.", {
         taskId: task.id,
         reason: archiveResult.error,
       });
@@ -203,7 +274,7 @@ async function captureTab(
       missingIframeLikely: archiveSignals.iframeCount < liveResult.liveSignals.iframeCount,
     });
     const localArchiveSha256 = await computeSha256Hex(archiveHtml);
-    await logCapture("info", tabId, "Archive prepared locally.", {
+    await logCapture(saveMode, "info", tabId, "Archive prepared locally.", {
       taskId: task.id,
       archiveSize: archiveHtml.length,
       extractedTextLength: extractedText.length,
@@ -212,8 +283,42 @@ async function captureTab(
       screenshotCaptured: Boolean(screenshotDataUrl),
     });
 
+    if (saveMode === "private") {
+      await patchPrivateTaskShell(task.id, {
+        status: "validating",
+      });
+      await publishTaskByMode(task.id, saveMode, owner.userId);
+      await patchPrivateTaskShell(task.id, {
+        status: "local_ready",
+      });
+      await putPrivateTaskPayload(task.id, {
+        profile,
+        source: mergedSource,
+        localArchiveSha256,
+        quality,
+        artifacts: {
+          archiveHtml,
+          extractedText,
+          screenshotDataUrl: screenshotDataUrl ?? undefined,
+          meta: {
+            usedSingleFile: archiveResult.ok && archiveResult.usedSingleFile === true,
+          },
+        },
+      });
+      const privateTask = await getPrivateTask(task.id, owner.userId);
+      await publishTaskByMode(task.id, saveMode, owner.userId);
+      if (!privateTask) {
+        throw new Error("Private task saved but could not be reloaded.");
+      }
+      await showInPageSuccessToast(tabId, privateTask);
+      await logCapture(saveMode, "info", tabId, "Private task stored locally.", {
+        taskId: task.id,
+      });
+      return privateTask;
+    }
+
     workingTask = await transitionCaptureTaskStatus(task.id, "validating");
-    await publishTask(workingTask);
+    await publishTaskByMode(task.id, saveMode, owner.userId);
     workingTask = await transitionCaptureTaskStatus(task.id, "local_ready", {
       localArchiveSha256,
       quality,
@@ -226,33 +331,52 @@ async function captureTab(
         },
       },
     });
-    await publishTask(workingTask);
+    await publishTaskByMode(task.id, saveMode, owner.userId);
     workingTask = await transitionCaptureTaskStatus(task.id, "upload_pending");
-    await publishTask(workingTask);
-    await logCapture("info", tabId, "Task ready for upload.", {
+    await publishTaskByMode(task.id, saveMode, owner.userId);
+    await logCapture(saveMode, "info", tabId, "Task ready for upload.", {
       taskId: task.id,
     });
     return syncTask(workingTask, tabId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await logCapture("error", tabId, "Capture pipeline failed.", {
+    await logCapture(saveMode, "error", tabId, "Capture pipeline failed.", {
       taskId: task.id,
       tabId,
       error: message,
     });
+    if (saveMode === "private") {
+      await patchPrivateTaskShell(task.id, {
+        status: "failed",
+        failureReason: "私密保存失败，请重试。",
+      });
+      await publishTaskByMode(task.id, saveMode, owner.userId);
+      const failedTask = await getPrivateTask(task.id, owner.userId);
+      if (!failedTask) {
+        throw error;
+      }
+      return failedTask;
+    }
     const failedTask = await transitionCaptureTaskStatus(task.id, "failed", {
       failureReason: message,
     });
-    await publishTask(failedTask);
+    await publishTaskByMode(task.id, saveMode, owner.userId);
     return failedTask;
   }
 }
 
-async function captureSourceUrl(url: string, profile: CaptureProfile) {
+async function captureSourceUrl(
+  url: string,
+  profile: CaptureProfile,
+  saveMode: SaveMode = "standard",
+) {
   const owner = await requireCurrentTaskOwner();
+  if (saveMode === "private") {
+    await requirePrivateVaultUnlocked();
+  }
   logger.info("Opening temporary tab for retry capture.", {
-    url,
     profile,
+    saveMode,
     ownerUserId: owner.userId,
   });
   const retryTab = await chrome.tabs.create({
@@ -265,7 +389,7 @@ async function captureSourceUrl(url: string, profile: CaptureProfile) {
 
   try {
     await waitForTabReady(retryTab.id);
-    return await captureTab(retryTab.id, profile, owner, {
+    return await captureTab(retryTab.id, profile, owner, saveMode, {
       captureScreenshot: false,
     });
   } finally {
@@ -283,8 +407,8 @@ async function syncTask(task: CaptureTask, debugTabId?: number) {
   let workingTask = await transitionCaptureTaskStatus(task.id, "uploading", {
     failureReason: undefined,
   });
-  await publishTask(workingTask);
-  await logCapture("info", debugTabId, "Uploading task to API.", {
+  await publishTaskByMode(task.id, "standard", owner.userId);
+  await logCapture("standard", "info", debugTabId, "Uploading task to API.", {
     taskId: task.id,
     url: task.source.url,
   });
@@ -296,11 +420,11 @@ async function syncTask(task: CaptureTask, debugTabId?: number) {
       versionId: syncResult.versionId,
       failureReason: undefined,
     });
-    await publishTask(workingTask);
+    await publishTaskByMode(task.id, "standard", owner.userId);
     workingTask = await transitionCaptureTaskStatus(task.id, "synced");
-    await publishTask(workingTask);
+    await publishTaskByMode(task.id, "standard", owner.userId);
     await showInPageSuccessToast(debugTabId, workingTask);
-    await logCapture("info", debugTabId, "Task synced successfully.", {
+    await logCapture("standard", "info", debugTabId, "Task synced successfully.", {
       taskId: task.id,
       bookmarkId: syncResult.bookmarkId,
       versionId: syncResult.versionId,
@@ -308,14 +432,14 @@ async function syncTask(task: CaptureTask, debugTabId?: number) {
     return workingTask;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await logCapture("error", debugTabId, "Task sync failed.", {
+    await logCapture("standard", "error", debugTabId, "Task sync failed.", {
       taskId: task.id,
       error: message,
     });
     workingTask = await transitionCaptureTaskStatus(task.id, "upload_pending", {
       failureReason: `同步失败，等待重试：${message}`,
     });
-    await publishTask(workingTask);
+    await publishTaskByMode(task.id, "standard", owner.userId);
     return workingTask;
   }
 }
@@ -328,7 +452,7 @@ async function showInPageSuccessToast(tabId: number | undefined, task: CaptureTa
   try {
     await sendMessageToTab<ShowInPageToastRequest, ShowInPageToastResponse>(tabId, {
       type: MESSAGE_TYPE.ShowInPageToast,
-      title: "已保存到 KeepPage",
+      title: task.isPrivate ? "已私密保存到 KeepPage" : "已保存到 KeepPage",
       message: buildTaskSyncedMessage(task),
       tone: "success",
     });
@@ -342,6 +466,9 @@ async function showInPageSuccessToast(tabId: number | undefined, task: CaptureTa
 }
 
 function buildTaskSyncedMessage(task: CaptureTask) {
+  if (task.isPrivate) {
+    return "内容已加密写入当前设备的私密库。";
+  }
   const pageTitle = task.source.title.trim() || task.source.url;
   return pageTitle.length > 84 ? `${pageTitle.slice(0, 81)}...` : pageTitle;
 }
@@ -504,6 +631,16 @@ async function publishTask(task: CaptureTask) {
   }
 }
 
+async function publishTaskByMode(taskId: string, saveMode: SaveMode, ownerUserId: string) {
+  const task = saveMode === "private"
+    ? await getPrivateTask(taskId, ownerUserId)
+    : await getCaptureTask(taskId);
+  if (!task) {
+    return;
+  }
+  await publishTask(task);
+}
+
 async function sendMessageToTab<TRequest, TResponse>(
   tabId: number,
   message: TRequest,
@@ -557,11 +694,28 @@ async function waitForTabReady(tabId: number, timeoutMs = 15000) {
 }
 
 async function logCapture(
+  saveMode: SaveMode,
   level: "info" | "warn" | "error",
   tabId: number | undefined,
   message: string,
   details?: unknown,
 ) {
-  logger[level](message, details);
-  await emitDebugLogToTab(tabId, "capture", level, message, details);
+  const sanitizedDetails = saveMode === "private"
+    ? sanitizePrivateCaptureLogDetails(details)
+    : details;
+  logger[level](message, sanitizedDetails);
+  await emitDebugLogToTab(tabId, "capture", level, message, sanitizedDetails);
+}
+
+function sanitizePrivateCaptureLogDetails(details: unknown) {
+  if (!details || typeof details !== "object") {
+    return undefined;
+  }
+  const maybe = details as Record<string, unknown>;
+  return {
+    taskId: typeof maybe.taskId === "string" ? maybe.taskId : undefined,
+    status: typeof maybe.status === "string" ? maybe.status : undefined,
+    profile: typeof maybe.profile === "string" ? maybe.profile : undefined,
+    ownerUserId: typeof maybe.ownerUserId === "string" ? maybe.ownerUserId : undefined,
+  };
 }

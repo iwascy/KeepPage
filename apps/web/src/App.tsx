@@ -1096,6 +1096,18 @@ export function App() {
               <h3>{summary.low}</h3>
             </article>
           </section>
+          <section className="private-mode-info">
+            <div className="private-mode-copy">
+              <p className="eyebrow">私密模式 · V1 本地方案</p>
+              <p>
+                当前私密库仅在 KeepPage 扩展内运行：归档在本地加密、锁定并保管，Web 端目前仍不展示解锁内容，只会提示扩展端的私密状态。
+              </p>
+            </div>
+            <div className="private-mode-meta">
+              <span>扩展端私密库即刻可用</span>
+              <span>Web 解锁查看计划在 V2 发布</span>
+            </div>
+          </section>
 
           {loadState === "loading" || isPending ? (
             <section className="loading">正在刷新归档列表...</section>

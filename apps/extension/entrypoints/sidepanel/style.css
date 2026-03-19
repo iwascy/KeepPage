@@ -88,7 +88,8 @@ body {
 }
 
 .compact-field select,
-.field-inline input {
+.field-inline input,
+.field-inline select {
   min-width: 0;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -112,6 +113,11 @@ body {
   cursor: progress;
 }
 
+.capture-btn-private {
+  border-color: #5f1743;
+  background: #5f1743;
+}
+
 .account-strip,
 .settings-strip {
   padding: 12px 16px;
@@ -120,6 +126,18 @@ body {
   gap: 12px;
   border-bottom: 1px solid var(--border);
   background: rgba(255, 253, 248, 0.85);
+  align-items: end;
+}
+
+.private-strip {
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 1fr) auto;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  background:
+    linear-gradient(135deg, rgba(95, 23, 67, 0.08), rgba(0, 59, 92, 0.08)),
+    rgba(255, 253, 248, 0.92);
   align-items: end;
 }
 
@@ -185,6 +203,62 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.settings-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.toggle-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.toggle-inline input {
+  margin: 0;
+}
+
+.vault-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vault-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.vault-facts span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.vault-summary-card,
+.vault-locked-panel {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vault-summary-card strong,
+.vault-locked-panel h2 {
+  margin: 0;
+  font-size: 14px;
 }
 
 .settings-title {
@@ -266,6 +340,11 @@ body {
   background: var(--accent-soft);
 }
 
+.task-card-private.active {
+  border-color: #5f1743;
+  background: rgba(95, 23, 67, 0.08);
+}
+
 .task-title {
   margin: 0;
   font-size: 13px;
@@ -308,6 +387,10 @@ body {
 
 .grade-low {
   color: var(--bad);
+}
+
+.grade-private {
+  color: #5f1743;
 }
 
 .preview-panel {
@@ -416,6 +499,7 @@ body {
 
 @media (max-width: 920px) {
   .header,
+  .private-strip,
   .account-strip,
   .settings-strip,
   .main {
@@ -435,6 +519,10 @@ body {
   }
 
   .account-form {
+    grid-template-columns: 1fr;
+  }
+
+  .vault-form {
     grid-template-columns: 1fr;
   }
 

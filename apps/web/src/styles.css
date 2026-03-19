@@ -263,6 +263,36 @@ select:focus {
   margin-bottom: 1rem;
 }
 
+.private-mode-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px dashed rgba(9, 86, 164, 0.3);
+  border-radius: 16px;
+  padding: 0.85rem 1rem;
+  background: linear-gradient(135deg, rgba(9, 86, 164, 0.08), rgba(255, 255, 255, 0));
+  margin-bottom: 1rem;
+}
+
+.private-mode-copy {
+  max-width: 70%;
+}
+
+.private-mode-copy p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.private-mode-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  color: #074576;
+  text-align: right;
+}
+
 .metric {
   border: 1px solid var(--line);
   border-radius: 14px;

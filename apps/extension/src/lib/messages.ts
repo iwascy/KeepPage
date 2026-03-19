@@ -3,6 +3,9 @@ import type {
   CaptureProfile,
   CaptureSource,
   CaptureTask,
+  PrivateAutoLock,
+  PrivateVaultSummary,
+  SaveMode,
 } from "@keeppage/domain";
 
 export const MESSAGE_TYPE = {
@@ -13,6 +16,10 @@ export const MESSAGE_TYPE = {
   TriggerCaptureActiveTab: "keeppage/trigger-capture-active-tab",
   RetryTask: "keeppage/retry-task",
   OpenTaskPreview: "keeppage/open-task-preview",
+  GetPrivateVaultState: "keeppage/get-private-vault-state",
+  CreatePrivateVault: "keeppage/create-private-vault",
+  UnlockPrivateVault: "keeppage/unlock-private-vault",
+  LockPrivateVault: "keeppage/lock-private-vault",
   TaskUpdated: "keeppage/task-updated",
   DebugLog: "keeppage/debug-log",
 } as const;
@@ -54,6 +61,7 @@ export interface ShowInPageToastResponse {
 export interface ListTasksRequest {
   type: typeof MESSAGE_TYPE.ListTasks;
   limit?: number;
+  saveMode?: SaveMode;
 }
 
 export interface ListTasksResponse {
@@ -64,17 +72,45 @@ export interface ListTasksResponse {
 export interface TriggerCaptureActiveTabRequest {
   type: typeof MESSAGE_TYPE.TriggerCaptureActiveTab;
   profile?: CaptureProfile;
+  saveMode?: SaveMode;
 }
 
 export interface RetryTaskRequest {
   type: typeof MESSAGE_TYPE.RetryTask;
   taskId: string;
   profile?: CaptureProfile;
+  saveMode?: SaveMode;
 }
 
 export interface OpenTaskPreviewRequest {
   type: typeof MESSAGE_TYPE.OpenTaskPreview;
   taskId: string;
+}
+
+export interface GetPrivateVaultStateRequest {
+  type: typeof MESSAGE_TYPE.GetPrivateVaultState;
+}
+
+export interface PrivateVaultStateResponse {
+  ok: boolean;
+  summary?: PrivateVaultSummary;
+  recoveryCode?: string;
+  error?: string;
+}
+
+export interface CreatePrivateVaultRequest {
+  type: typeof MESSAGE_TYPE.CreatePrivateVault;
+  passphrase: string;
+  autoLock: PrivateAutoLock;
+}
+
+export interface UnlockPrivateVaultRequest {
+  type: typeof MESSAGE_TYPE.UnlockPrivateVault;
+  passphrase: string;
+}
+
+export interface LockPrivateVaultRequest {
+  type: typeof MESSAGE_TYPE.LockPrivateVault;
 }
 
 export interface TaskUpdatedEvent {
@@ -98,7 +134,11 @@ export type BackgroundRequest =
   | ListTasksRequest
   | TriggerCaptureActiveTabRequest
   | RetryTaskRequest
-  | OpenTaskPreviewRequest;
+  | OpenTaskPreviewRequest
+  | GetPrivateVaultStateRequest
+  | CreatePrivateVaultRequest
+  | UnlockPrivateVaultRequest
+  | LockPrivateVaultRequest;
 
 export function isContentRequest(message: unknown): message is ContentRequest {
   if (!message || typeof message !== "object") {
@@ -129,6 +169,10 @@ export function isBackgroundRequest(message: unknown): message is BackgroundRequ
     maybe.type === MESSAGE_TYPE.ListTasks ||
     maybe.type === MESSAGE_TYPE.TriggerCaptureActiveTab ||
     maybe.type === MESSAGE_TYPE.RetryTask ||
-    maybe.type === MESSAGE_TYPE.OpenTaskPreview
+    maybe.type === MESSAGE_TYPE.OpenTaskPreview ||
+    maybe.type === MESSAGE_TYPE.GetPrivateVaultState ||
+    maybe.type === MESSAGE_TYPE.CreatePrivateVault ||
+    maybe.type === MESSAGE_TYPE.UnlockPrivateVault ||
+    maybe.type === MESSAGE_TYPE.LockPrivateVault
   );
 }
