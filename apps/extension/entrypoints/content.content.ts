@@ -1,9 +1,7 @@
-import {
-  capturePageSignalsSchema,
-  captureProfileSchema,
-  type CapturePageSignals,
-  type CaptureProfile,
-  type CaptureSource,
+import type {
+  CapturePageSignals,
+  CaptureProfile,
+  CaptureSource,
 } from "@keeppage/domain";
 import { defineContentScript } from "wxt/utils/define-content-script";
 import {
@@ -14,6 +12,10 @@ import {
   type CollectLiveSignalsResponse,
   type ShowInPageToastResponse,
 } from "../src/lib/messages";
+import {
+  capturePageSignalsSchema,
+  captureProfileSchema,
+} from "../src/lib/domain-runtime";
 import { createLogger, logToConsole } from "../src/lib/logger";
 
 type SingleFilePageData = {

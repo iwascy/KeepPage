@@ -1,8 +1,6 @@
-import {
-  authUserSchema,
-  type AuthUser,
-} from "@keeppage/domain";
+import type { AuthUser } from "@keeppage/domain";
 import { getStoredAuthToken, getStoredAuthUser } from "./auth-storage";
+import { authUserSchema } from "./domain-runtime";
 
 const AUTH_PAGE_FILE = "sidepanel.html";
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";

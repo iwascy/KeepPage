@@ -1,7 +1,5 @@
-import {
-  authUserSchema,
-  type AuthUser,
-} from "@keeppage/domain";
+import type { AuthUser } from "@keeppage/domain";
+import { authUserSchema } from "./domain-runtime";
 
 export async function getStoredAuthToken() {
   const result = await chrome.storage.local.get("authToken");

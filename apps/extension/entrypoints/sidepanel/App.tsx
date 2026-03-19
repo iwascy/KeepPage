@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  authSessionSchema,
-  authUserSchema,
-  ensureArchiveBaseHref,
-  type AuthUser,
-  type CaptureProfile,
-  type CaptureTask,
-  type PrivateAutoLock,
-  type PrivateVaultSummary,
-  type SaveMode,
+import type {
+  AuthUser,
+  CaptureProfile,
+  CaptureTask,
+  PrivateAutoLock,
+  PrivateVaultSummary,
+  SaveMode,
 } from "@keeppage/domain";
 import {
   MESSAGE_TYPE,
@@ -16,6 +13,11 @@ import {
   type TaskUpdatedEvent,
 } from "../../src/lib/messages";
 import { getStoredAuthToken, getStoredAuthUser } from "../../src/lib/auth-storage";
+import {
+  authSessionSchema,
+  authUserSchema,
+  ensureArchiveBaseHref,
+} from "../../src/lib/domain-runtime";
 import {
   openExtensionAuthPage,
   openSidePanelForCurrentWindow,
@@ -72,6 +74,7 @@ const AUTO_LOCK_OPTIONS: Array<{ value: PrivateAutoLock; label: string }> = [
 ];
 
 const AUTH_PAGE_VIEW = new URLSearchParams(window.location.search).get("view") === "auth";
+const AUTH_PAGE_REASON = new URLSearchParams(window.location.search).get("reason");
 
 export function App() {
   const [tasks, setTasks] = useState<CaptureTask[]>([]);
@@ -544,6 +547,161 @@ export function App() {
         testError instanceof Error ? testError.message : "无法连接到同步服务。",
       );
     }
+  }
+
+  if (AUTH_PAGE_VIEW) {
+    const authPageTitle = authUser ? "KeepPage 已连接" : "登录 KeepPage";
+    const authPageSubtitle = authUser
+      ? "当前浏览器已经绑定账号，可以回到侧边栏继续保存网页。"
+      : AUTH_PAGE_REASON === "session-expired"
+      ? "登录状态已失效，请重新登录后继续使用扩展。"
+      : "完成登录后，扩展会自动回到侧边栏，你就可以直接保存当前页面。";
+
+    return (
+      <div className="auth-page">
+        <main className="auth-page-shell">
+          <section className="auth-page-hero">
+            <p className="eyebrow">KeepPage Queue</p>
+            <h1>{authPageTitle}</h1>
+            <p className="auth-page-subtitle">{authPageSubtitle}</p>
+          </section>
+
+          <section className="auth-page-card">
+            <div className="auth-page-card-header">
+              <div>
+                <p className="settings-title">账号</p>
+                <p className="muted">
+                  {authUser
+                    ? "当前扩展会把后续归档同步到这个账号。"
+                    : "登录后，扩展中的新归档任务会自动归到当前账号。"}
+                </p>
+              </div>
+            </div>
+
+            {authUser ? (
+              <div className="auth-page-account">
+                <div className="account-chip">
+                  <strong>{authUser.name || authUser.email}</strong>
+                  <span>{authUser.email}</span>
+                </div>
+                <div className="auth-page-actions">
+                  <button onClick={() => void openSidePanelForCurrentWindow()} type="button">
+                    打开侧边栏
+                  </button>
+                  <button className="ghost-btn" onClick={logoutAuth} type="button">
+                    退出登录
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="auth-page-form">
+                  <div className="auth-switch">
+                    <button
+                      className={authMode === "login" ? "auth-switch-btn active" : "auth-switch-btn"}
+                      onClick={() => setAuthMode("login")}
+                      type="button"
+                    >
+                      登录
+                    </button>
+                    <button
+                      className={authMode === "register" ? "auth-switch-btn active" : "auth-switch-btn"}
+                      onClick={() => setAuthMode("register")}
+                      type="button"
+                    >
+                      注册
+                    </button>
+                  </div>
+                  {isRegister ? (
+                    <label className="field-inline">
+                      <span>昵称</span>
+                      <input
+                        value={authName}
+                        onChange={(event) => setAuthName(event.target.value)}
+                        placeholder="可选"
+                      />
+                    </label>
+                  ) : null}
+                  <label className="field-inline">
+                    <span>邮箱</span>
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(event) => setAuthEmail(event.target.value)}
+                      placeholder="you@example.com"
+                    />
+                  </label>
+                  <label className="field-inline">
+                    <span>密码</span>
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(event) => setAuthPassword(event.target.value)}
+                      placeholder={isRegister ? "至少 8 位" : "输入密码"}
+                    />
+                  </label>
+                </div>
+                <div className="auth-page-actions">
+                  <button onClick={submitAuth} type="button">
+                    {authState === "submitting" ? "提交中..." : isRegister ? "注册并登录" : "登录"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {authMessage ? (
+              <section className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
+            ) : null}
+
+            <div className="auth-page-settings">
+              <div className="settings-copy">
+                <p className="settings-title">连接设置</p>
+                <p className="muted">如果你使用自部署服务，可以在这里修改 API 地址。</p>
+              </div>
+              <div className="settings-fields">
+                <label className="field-inline">
+                  <span>API Base URL</span>
+                  <input
+                    value={apiBaseUrl}
+                    onChange={(event) => setApiBaseUrl(event.target.value)}
+                    placeholder={DEFAULT_API_BASE_URL}
+                    spellCheck={false}
+                  />
+                </label>
+                <label className="toggle-inline">
+                  <input
+                    checked={incognitoPrivateDefault}
+                    onChange={(event) => setIncognitoPrivateDefault(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>无痕窗口默认私密</span>
+                </label>
+              </div>
+              <div className="auth-page-actions auth-page-actions-wrap">
+                <button onClick={saveSettings} type="button">
+                  {settingsState === "saving" ? "保存中..." : "保存设置"}
+                </button>
+                <button className="ghost-btn" onClick={testConnection} type="button">
+                  {connectionState === "testing" ? "测试中..." : "测试连接"}
+                </button>
+                <button className="ghost-btn" onClick={resetApiBaseUrl} type="button">
+                  恢复默认
+                </button>
+              </div>
+            </div>
+
+            {settingsMessage ? (
+              <section className={`settings-banner settings-${settingsState}`}>{settingsMessage}</section>
+            ) : null}
+            {connectionMessage ? (
+              <section className={`settings-banner settings-${connectionState}`}>{connectionMessage}</section>
+            ) : null}
+          </section>
+        </main>
+
+        {error && <footer className="error-banner">{error}</footer>}
+      </div>
+    );
   }
 
   return (

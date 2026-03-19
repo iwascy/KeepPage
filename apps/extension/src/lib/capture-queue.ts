@@ -1,10 +1,12 @@
+import type {
+  CaptureStatus,
+  CaptureTask,
+} from "@keeppage/domain";
+import { dbPromise } from "./extension-db";
 import {
   assertCaptureStatusTransition,
   captureTaskSchema,
-  type CaptureStatus,
-  type CaptureTask,
-} from "@keeppage/domain";
-import { dbPromise } from "./extension-db";
+} from "./domain-runtime";
 
 export async function putCaptureTask(task: CaptureTask) {
   captureTaskSchema.parse(task);

@@ -1,13 +1,10 @@
-import {
-  createCaptureId,
-  ensureArchiveBaseHref,
-  evaluateQuality,
-  type SaveMode,
-  type CaptureTaskOwner,
-  type CapturePageSignals,
-  type CaptureProfile,
-  type CaptureSource,
-  type CaptureTask,
+import type {
+  SaveMode,
+  CaptureTaskOwner,
+  CapturePageSignals,
+  CaptureProfile,
+  CaptureSource,
+  CaptureTask,
 } from "@keeppage/domain";
 import {
   getCaptureTask,
@@ -39,6 +36,11 @@ import {
   getRefreshRequiredMessage,
   isStaleExtensionContextError,
 } from "./extension-errors";
+import {
+  createCaptureId,
+  ensureArchiveBaseHref,
+  evaluateQuality,
+} from "./domain-runtime";
 import { emitDebugLogToTab } from "./debug-log";
 import { getStoredAuthUser } from "./auth-storage";
 import { createLogger } from "./logger";

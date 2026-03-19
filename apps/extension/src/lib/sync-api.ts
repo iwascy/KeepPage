@@ -1,12 +1,12 @@
-import {
-  captureInitResponseSchema,
-  type CaptureCompleteRequest,
-  type CaptureInitRequest,
-  type CaptureTask,
+import type {
+  CaptureCompleteRequest,
+  CaptureInitRequest,
+  CaptureTask,
 } from "@keeppage/domain";
 import { getStoredAuthUser } from "./auth-storage";
 import { getConfiguredApiBaseUrl, recoverUnauthorizedSession } from "./auth-flow";
 import { emitDebugLogToTab } from "./debug-log";
+import { captureInitResponseSchema } from "./domain-runtime";
 import { createLogger } from "./logger";
 
 const CHUNK_SIZE_BYTES = 256 * 1024;

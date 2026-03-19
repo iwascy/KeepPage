@@ -1,41 +1,29 @@
-import {
-  captureArtifactsSchema,
-  captureProfileSchema,
-  captureSourceSchema,
-  captureTaskSchema,
-  privateAutoLockSchema,
-  privateCaptureTaskShellSchema,
-  privateVaultSummarySchema,
-  qualityReportSchema,
-  type CaptureTask,
-  type CaptureTaskOwner,
-  type PrivateAutoLock,
-  type PrivateCaptureTaskShell,
-  type PrivateVaultSummary,
+import type {
+  CaptureTask,
+  CaptureTaskOwner,
+  PrivateAutoLock,
+  PrivateCaptureTaskShell,
+  PrivateVaultSummary,
 } from "@keeppage/domain";
-import { z } from "zod";
 import {
   type PrivateCaptureTaskRecord,
   type PrivateTaskPayload,
   type PrivateVaultRecord,
   dbPromise,
 } from "./extension-db";
+import {
+  captureTaskSchema,
+  privateAutoLockSchema,
+  privateCaptureTaskShellSchema,
+  privateTaskPayloadSchema,
+  privateVaultSummarySchema,
+} from "./domain-runtime";
 
 const PRIMARY_VAULT_ID = "primary";
 const PBKDF2_ITERATIONS = 310_000;
 const REDACTED_TITLE = "私密条目（已锁定）";
 const REDACTED_URL = "https://private.local/locked";
 const REDACTED_DOMAIN = "private.local";
-
-const privateTaskPayloadSchema = z.object({
-  profile: captureProfileSchema,
-  source: captureSourceSchema,
-  quality: qualityReportSchema.optional(),
-  artifacts: captureArtifactsSchema.optional(),
-  localArchiveSha256: z.string().optional(),
-  bookmarkId: z.string().min(1).optional(),
-  versionId: z.string().min(1).optional(),
-});
 
 let activeVaultSession:
   | {
@@ -410,7 +398,7 @@ async function deriveVaultSecrets(passphrase: string, saltBase64: string) {
   };
 }
 
-async function encryptPayload(payload: z.infer<typeof privateTaskPayloadSchema>, key: CryptoKey) {
+async function encryptPayload(payload: PrivateTaskPayload, key: CryptoKey) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
   const ciphertext = await crypto.subtle.encrypt(

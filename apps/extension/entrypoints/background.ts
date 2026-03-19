@@ -1,8 +1,3 @@
-import {
-  captureProfileSchema,
-  privateAutoLockSchema,
-  saveModeSchema,
-} from "@keeppage/domain";
 import { defineBackground } from "wxt/utils/define-background";
 import {
   captureActiveTab,
@@ -17,6 +12,11 @@ import {
 } from "../src/lib/messages";
 import { createLogger } from "../src/lib/logger";
 import { getFetchChunkSize } from "../src/lib/singlefile-fetch";
+import {
+  captureProfileSchema,
+  privateAutoLockSchema,
+  saveModeSchema,
+} from "../src/lib/domain-runtime";
 import {
   recoverUnauthorizedSession,
   openExtensionAuthPage,
