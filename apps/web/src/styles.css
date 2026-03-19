@@ -416,6 +416,254 @@ textarea {
   color: var(--low);
 }
 
+.manager-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1.2rem;
+  background:
+    radial-gradient(circle at top, rgba(249, 217, 171, 0.24), transparent 38%),
+    rgba(26, 24, 21, 0.34);
+  backdrop-filter: blur(14px);
+}
+
+.manager-dialog {
+  position: relative;
+  width: min(620px, 100%);
+  overflow: hidden;
+  border: 1px solid rgba(39, 34, 23, 0.12);
+  border-radius: 28px;
+  background:
+    linear-gradient(145deg, rgba(255, 251, 244, 0.96), rgba(255, 246, 233, 0.94));
+  box-shadow:
+    0 34px 90px rgba(33, 29, 22, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  animation: dialog-rise 180ms ease;
+}
+
+.manager-dialog.is-danger {
+  background:
+    linear-gradient(145deg, rgba(255, 248, 246, 0.97), rgba(255, 241, 237, 0.95));
+}
+
+.manager-dialog-accent {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 6px;
+  background: linear-gradient(90deg, #0956a4 0%, #4fa3ff 52%, #f5a94a 100%);
+}
+
+.manager-dialog.is-danger .manager-dialog-accent {
+  background: linear-gradient(90deg, #b93e31 0%, #ea7a64 48%, #f6b16f 100%);
+}
+
+.manager-dialog-header,
+.manager-dialog-form {
+  position: relative;
+}
+
+.manager-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.35rem 1.35rem 0;
+}
+
+.manager-dialog-heading h2 {
+  margin: 0.25rem 0 0;
+  font-family: "Space Grotesk", ui-sans-serif, sans-serif;
+  font-size: clamp(1.2rem, 2vw, 1.6rem);
+  letter-spacing: -0.03em;
+}
+
+.manager-dialog-heading p:last-child {
+  margin: 0.45rem 0 0;
+  max-width: 44ch;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.manager-dialog-close {
+  flex: none;
+  min-height: 40px;
+  padding: 0.5rem 0.2rem 0.5rem 0.8rem;
+}
+
+.manager-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 1rem 1.35rem 1.35rem;
+}
+
+.manager-dialog-hero,
+.manager-dialog-warning,
+.manager-dialog-tag-preview {
+  border: 1px solid rgba(39, 34, 23, 0.08);
+  border-radius: 20px;
+}
+
+.manager-dialog-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem;
+  background:
+    linear-gradient(135deg, rgba(9, 86, 164, 0.1), rgba(79, 163, 255, 0.03)),
+    rgba(255, 255, 255, 0.6);
+}
+
+.manager-dialog.is-danger .manager-dialog-hero {
+  background:
+    linear-gradient(135deg, rgba(185, 62, 49, 0.11), rgba(246, 177, 111, 0.06)),
+    rgba(255, 255, 255, 0.6);
+}
+
+.manager-dialog-mark {
+  flex: none;
+  min-width: 58px;
+  min-height: 58px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  font-family: "Space Grotesk", ui-sans-serif, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.manager-dialog-mark.is-folder {
+  color: #074576;
+  background: linear-gradient(145deg, #dcecff, #f5f9ff);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+.manager-dialog-mark.is-tag {
+  color: #0b5e53;
+  background: linear-gradient(145deg, #ddfbf0, #f4fffb);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+.manager-dialog.is-danger .manager-dialog-mark {
+  color: #8e2b1f;
+  background: linear-gradient(145deg, #ffe2da, #fff5f1);
+}
+
+.manager-dialog-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.manager-dialog-hero-copy strong {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.manager-dialog-hero-copy span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.manager-dialog-tag-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 0.95rem;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.manager-dialog-tag-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #0956a4;
+  box-shadow: 0 0 0 5px rgba(9, 86, 164, 0.08);
+}
+
+.manager-dialog-tag-swatch.is-empty {
+  background:
+    linear-gradient(135deg, rgba(9, 86, 164, 0.18), rgba(245, 169, 74, 0.24));
+}
+
+.manager-dialog-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  background: rgba(9, 86, 164, 0.08);
+  color: var(--brand);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.manager-dialog-tag-preview small {
+  color: var(--muted);
+  margin-left: auto;
+  text-align: right;
+}
+
+.manager-dialog-warning {
+  margin: 1rem 1.35rem 0;
+  padding: 0.95rem 1rem;
+  background: rgba(185, 62, 49, 0.08);
+  border-color: rgba(185, 62, 49, 0.14);
+}
+
+.manager-dialog-warning strong,
+.manager-dialog-warning p {
+  display: block;
+}
+
+.manager-dialog-warning strong {
+  color: #8e2b1f;
+}
+
+.manager-dialog-warning p {
+  margin: 0.35rem 0 0;
+  color: #7a5247;
+  line-height: 1.55;
+}
+
+.manager-dialog-error {
+  margin: 0;
+  border: 1px solid rgba(154, 43, 43, 0.14);
+  border-radius: 14px;
+  background: rgba(154, 43, 43, 0.08);
+  color: var(--low);
+  padding: 0.78rem 0.9rem;
+  font-size: 0.88rem;
+}
+
+.manager-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.danger-fill {
+  border-color: rgba(154, 43, 43, 0.18);
+  background: linear-gradient(180deg, #c74938 0%, #a83224 100%);
+  box-shadow: 0 12px 24px rgba(168, 50, 36, 0.18);
+}
+
+@keyframes dialog-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .bookmark-card {
   border: 1px solid rgba(31, 43, 67, 0.12);
   border-radius: 16px;
@@ -2029,6 +2277,34 @@ textarea:focus {
   .panel-header-inline {
     flex-direction: column;
     align-items: start;
+  }
+
+  .manager-dialog-backdrop {
+    padding: 0.75rem;
+  }
+
+  .manager-dialog-header,
+  .manager-dialog-form {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .manager-dialog-header,
+  .manager-dialog-hero,
+  .manager-dialog-tag-preview,
+  .manager-dialog-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .manager-dialog-close,
+  .manager-dialog-actions button {
+    width: 100%;
+  }
+
+  .manager-dialog-tag-preview small {
+    margin-left: 0;
+    text-align: left;
   }
 
   .preview-actions,

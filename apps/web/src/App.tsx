@@ -1,6 +1,6 @@
 import {
   type FormEvent,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   useDeferredValue,
   useEffect,
@@ -29,7 +29,30 @@ import {
   updateFolder,
   updateTag,
 } from "./api";
-import { ImportDetailPanel, ImportHistoryPanel, ImportNewPanel } from "./imports";
+import {
+  ImportDetailPanel,
+  ImportHistoryPanel,
+  ImportNewPanel,
+  type ImportPanelAdapter,
+} from "./imports";
+import {
+  createDemoFolder,
+  createDemoImportTask,
+  createDemoTag,
+  createDemoWorkspace,
+  deleteDemoFolder,
+  deleteDemoTag,
+  filterDemoBookmarks,
+  getDemoArchiveHtml,
+  getDemoBookmarkDetail,
+  getDemoImportTaskDetail,
+  listDemoImportTasks,
+  previewDemoImport,
+  updateDemoBookmarkMetadata,
+  updateDemoFolder,
+  updateDemoTag,
+  type DemoWorkspace,
+} from "./demoData";
 
 type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -57,6 +80,15 @@ type InlineFeedback = {
   kind: "success" | "error";
   message: string;
 };
+
+type ManagerDialogState =
+  | { kind: "closed" }
+  | { kind: "create-folder"; parent?: Folder }
+  | { kind: "edit-folder"; folder: Folder }
+  | { kind: "delete-folder"; folder: Folder }
+  | { kind: "create-tag" }
+  | { kind: "edit-tag"; tag: Tag }
+  | { kind: "delete-tag"; tag: Tag };
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 
@@ -257,12 +289,21 @@ function getDomainMonogram(domain: string) {
   return letters || domain.slice(0, 2).toUpperCase();
 }
 
-function handleCardKeyDown(event: KeyboardEvent<HTMLElement>, onOpen: () => void) {
+function handleCardKeyDown(event: ReactKeyboardEvent<HTMLElement>, onOpen: () => void) {
   if (event.key !== "Enter" && event.key !== " ") {
     return;
   }
   event.preventDefault();
   onOpen();
+}
+
+function isManagerDialogOpen(state: ManagerDialogState) {
+  return state.kind !== "closed";
+}
+
+function buildFolderPreviewPath(name: string, parentPath?: string | null) {
+  const normalizedName = name.trim() || "新收藏夹";
+  return parentPath ? `${parentPath}/${normalizedName}` : normalizedName;
 }
 
 function LinkIcon() {
@@ -469,6 +510,7 @@ function HomePage({
   onOpenImportNew,
   onOpenImportHistory,
   onLogout,
+  logoutLabel = "退出登录",
 }: {
   user: AuthUser;
   items: Bookmark[];
@@ -497,6 +539,7 @@ function HomePage({
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
   onLogout: () => void;
+  logoutLabel?: string;
 }) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
 
@@ -727,7 +770,7 @@ function HomePage({
               导入历史
             </button>
             <button className="home-sidebar-link" type="button" onClick={onLogout}>
-              退出登录
+              {logoutLabel}
             </button>
           </div>
         </div>
@@ -901,6 +944,246 @@ function EmptyState({
       <p>{description ?? "登录后，扩展同步过来的页面会出现在这里。"}</p>
       {action}
     </section>
+  );
+}
+
+function ManagerDialog({
+  state,
+  busy,
+  error,
+  nameValue,
+  pathValue,
+  colorValue,
+  onClose,
+  onSubmit,
+  onConfirmDelete,
+  onNameChange,
+  onPathChange,
+  onColorChange,
+}: {
+  state: ManagerDialogState;
+  busy: boolean;
+  error: string | null;
+  nameValue: string;
+  pathValue: string;
+  colorValue: string;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onConfirmDelete: () => void;
+  onNameChange: (value: string) => void;
+  onPathChange: (value: string) => void;
+  onColorChange: (value: string) => void;
+}) {
+  if (state.kind === "closed") {
+    return null;
+  }
+
+  const isDeleteDialog = state.kind === "delete-folder" || state.kind === "delete-tag";
+  const isFolderDialog = state.kind === "create-folder" || state.kind === "edit-folder" || state.kind === "delete-folder";
+  const isTagDialog = state.kind === "create-tag" || state.kind === "edit-tag" || state.kind === "delete-tag";
+  const tagColor = colorValue.trim();
+
+  let title = "";
+  let description = "";
+  let eyebrow = "";
+  let submitLabel = "";
+
+  if (state.kind === "create-folder") {
+    eyebrow = state.parent ? "New Child Folder" : "New Folder";
+    title = state.parent ? "给当前目录加一个新分支" : "新建一个收藏夹";
+    description = state.parent
+      ? `会创建在“${state.parent.path}”下面，适合继续往下分层。`
+      : "给归档库起一个清晰入口，后续筛选和整理都会轻松很多。";
+    submitLabel = "创建收藏夹";
+  } else if (state.kind === "edit-folder") {
+    eyebrow = "Edit Folder Path";
+    title = "调整收藏夹路径";
+    description = "直接改完整路径，系统会自动识别父级并把它移动到正确位置。";
+    submitLabel = "保存路径";
+  } else if (state.kind === "delete-folder") {
+    eyebrow = "Delete Folder";
+    title = "确认删除这个收藏夹";
+    description = "它自己会被删除，子收藏夹会上移一层，当前文件夹下的网页会解除归档。";
+    submitLabel = "删除收藏夹";
+  } else if (state.kind === "create-tag") {
+    eyebrow = "New Tag";
+    title = "新建一个标签";
+    description = "做一个好记的主题标签，后续筛选、批量整理都会更顺手。";
+    submitLabel = "创建标签";
+  } else if (state.kind === "edit-tag") {
+    eyebrow = "Edit Tag";
+    title = "调整标签名称和颜色";
+    description = "标签名保持简短就好，颜色可以写成 `blue`、`#1d4ed8` 这类值。";
+    submitLabel = "保存标签";
+  } else {
+    eyebrow = "Delete Tag";
+    title = "确认删除这个标签";
+    description = "已经挂载到网页上的这个标签也会一起解除，但不会删除网页本身。";
+    submitLabel = "删除标签";
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      className="manager-dialog-backdrop"
+      onClick={() => {
+        if (!busy) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        aria-labelledby="manager-dialog-title"
+        aria-modal="true"
+        className={isDeleteDialog ? "manager-dialog is-danger" : "manager-dialog"}
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="manager-dialog-accent" />
+        <div className="manager-dialog-header">
+          <div className="manager-dialog-heading">
+            <p className="eyebrow">{eyebrow}</p>
+            <h2 id="manager-dialog-title">{title}</h2>
+            <p>{description}</p>
+          </div>
+          <button className="ghost-button manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
+            关闭
+          </button>
+        </div>
+
+        {isDeleteDialog ? (
+          <>
+            <section className="manager-dialog-hero">
+              <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
+                {isFolderDialog ? "DIR" : "TAG"}
+              </div>
+              <div className="manager-dialog-hero-copy">
+                <strong>
+                  {state.kind === "delete-folder" ? state.folder.path : `#${state.tag.name}`}
+                </strong>
+                <span>
+                  {state.kind === "delete-folder"
+                    ? "删除后会立即从收藏夹列表中消失。"
+                    : "删除后，这个标签会从所有相关网页上解绑。"}
+                </span>
+              </div>
+            </section>
+            <div className="manager-dialog-warning">
+              <strong>这个操作会立刻生效。</strong>
+              <p>如果你只是想暂时不用它，建议先改名或调整路径，而不是直接删除。</p>
+            </div>
+            {error ? <p className="manager-dialog-error">{error}</p> : null}
+            <div className="manager-dialog-actions">
+              <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
+                取消
+              </button>
+              <button className="primary-button danger-fill" type="button" onClick={onConfirmDelete} disabled={busy}>
+                {busy ? "处理中..." : submitLabel}
+              </button>
+            </div>
+          </>
+        ) : (
+          <form className="manager-dialog-form" onSubmit={onSubmit}>
+            <section className="manager-dialog-hero">
+              <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
+                {isFolderDialog ? "DIR" : "TAG"}
+              </div>
+              <div className="manager-dialog-hero-copy">
+                <strong>
+                  {state.kind === "create-folder"
+                    ? buildFolderPreviewPath(nameValue, state.parent?.path)
+                    : state.kind === "edit-folder"
+                      ? (pathValue.trim() || state.folder.path)
+                      : `#${nameValue.trim() || "新标签"}`}
+                </strong>
+                <span>
+                  {state.kind === "create-folder"
+                    ? (state.parent ? "会自动挂到当前父级下面。" : "会作为新的根目录出现。")
+                    : state.kind === "edit-folder"
+                      ? "完整路径支持多层结构，例如：工作/研究/案例。"
+                      : "先预览一下最终效果，不满意可以继续改。"}
+                </span>
+              </div>
+            </section>
+
+            {state.kind === "create-folder" ? (
+              <label className="field">
+                <span>收藏夹名称</span>
+                <input
+                  autoFocus
+                  maxLength={120}
+                  placeholder={state.parent ? "例如：灵感池" : "例如：工作台"}
+                  value={nameValue}
+                  onChange={(event) => onNameChange(event.target.value)}
+                />
+              </label>
+            ) : null}
+
+            {state.kind === "edit-folder" ? (
+              <label className="field">
+                <span>完整路径</span>
+                <input
+                  autoFocus
+                  maxLength={240}
+                  placeholder="例如：工作/研究"
+                  value={pathValue}
+                  onChange={(event) => onPathChange(event.target.value)}
+                />
+              </label>
+            ) : null}
+
+            {state.kind === "create-tag" || state.kind === "edit-tag" ? (
+              <>
+                <label className="field">
+                  <span>标签名称</span>
+                  <input
+                    autoFocus
+                    maxLength={80}
+                    placeholder="例如：稍后细读"
+                    value={nameValue}
+                    onChange={(event) => onNameChange(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>颜色说明</span>
+                  <input
+                    maxLength={32}
+                    placeholder="可选，例如 blue 或 #1d4ed8"
+                    value={colorValue}
+                    onChange={(event) => onColorChange(event.target.value)}
+                  />
+                </label>
+                <div className="manager-dialog-tag-preview">
+                  {tagColor ? (
+                    <span
+                      className="manager-dialog-tag-swatch"
+                      style={{ backgroundColor: tagColor }}
+                    />
+                  ) : (
+                    <span className="manager-dialog-tag-swatch is-empty" />
+                  )}
+                  <span className="manager-dialog-tag-chip">
+                    #{nameValue.trim() || "新标签"}
+                  </span>
+                  <small>{tagColor || "未设置颜色时会沿用默认样式。"}</small>
+                </div>
+              </>
+            ) : null}
+
+            {error ? <p className="manager-dialog-error">{error}</p> : null}
+
+            <div className="manager-dialog-actions">
+              <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
+                取消
+              </button>
+              <button className="primary-button" type="submit" disabled={busy}>
+                {busy ? "处理中..." : submitLabel}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1427,8 +1710,14 @@ function DetailPanel({
   );
 }
 
-export function App() {
+export function App({
+  mode = "live",
+}: {
+  mode?: "live" | "mock";
+}) {
+  const isDemoMode = mode === "mock";
   const [route, setRoute] = useState<ViewRoute>(() => parseRoute(window.location.hash));
+  const [demoState, setDemoState] = useState<DemoWorkspace>(() => createDemoWorkspace());
   const [session, setSession] = useState<SessionState>({
     status: "booting",
     token: null,
@@ -1458,6 +1747,11 @@ export function App() {
   });
   const [managerBusy, setManagerBusy] = useState(false);
   const [managerFeedback, setManagerFeedback] = useState<InlineFeedback | null>(null);
+  const [managerDialog, setManagerDialog] = useState<ManagerDialogState>({ kind: "closed" });
+  const [managerDialogName, setManagerDialogName] = useState("");
+  const [managerDialogPath, setManagerDialogPath] = useState("");
+  const [managerDialogColor, setManagerDialogColor] = useState("");
+  const [managerDialogError, setManagerDialogError] = useState<string | null>(null);
   const [metadataNote, setMetadataNote] = useState("");
   const [metadataFolderId, setMetadataFolderId] = useState("");
   const [metadataTagIds, setMetadataTagIds] = useState<string[]>([]);
@@ -1467,8 +1761,58 @@ export function App() {
 
   const deferredSearch = useDeferredValue(searchInput);
   const authToken = session.status === "authenticated" ? session.token : null;
+  const logoutLabel = isDemoMode ? "重置 Mock 数据" : "退出登录";
+  const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
+
+  const importAdapter = useMemo<ImportPanelAdapter | undefined>(() => {
+    if (!isDemoMode) {
+      return undefined;
+    }
+    return {
+      previewImport: async (input) => previewDemoImport(demoState, input),
+      createImportTask: async (input) => {
+        const result = createDemoImportTask(demoState, input);
+        setDemoState(result.workspace);
+        return { taskId: result.taskId };
+      },
+      fetchImportTasks: async () => listDemoImportTasks(demoState),
+      fetchImportTaskDetail: async (taskId) => getDemoImportTaskDetail(demoState, taskId),
+    };
+  }, [demoState, isDemoMode]);
 
   function logout(message?: string) {
+    if (isDemoMode) {
+      const nextWorkspace = createDemoWorkspace();
+      setDemoState(nextWorkspace);
+      goToList();
+      startTransition(() => {
+        setSession({
+          status: "authenticated",
+          token: "demo-token",
+          user: nextWorkspace.user,
+          error: null,
+        });
+        setSearchInput("");
+        setQualityFilter("all");
+        setSelectedFolderId("");
+        setSelectedTagId("");
+        setDetail(null);
+        setLoadState("idle");
+        setListError(null);
+        setDetailLoadState("idle");
+        setDetailError(null);
+        setArchivePreview({ status: "idle" });
+        setManagerFeedback({
+          kind: "success",
+          message: "Mock 数据已重置到初始状态。",
+        });
+        setManagerDialog({ kind: "closed" });
+        setManagerDialogError(null);
+        setMetadataFeedback(null);
+      });
+      return;
+    }
+
     clearStoredToken();
     goToList();
     startTransition(() => {
@@ -1490,8 +1834,20 @@ export function App() {
       setDetailError(null);
       setArchivePreview({ status: "idle" });
       setManagerFeedback(null);
+      setManagerDialog({ kind: "closed" });
+      setManagerDialogError(null);
       setMetadataFeedback(null);
     });
+  }
+
+  function closeManagerDialog() {
+    setManagerDialog({ kind: "closed" });
+    setManagerDialogError(null);
+  }
+
+  function openManagerDialog(nextState: ManagerDialogState) {
+    setManagerDialog(nextState);
+    setManagerDialogError(null);
   }
 
   function handleProtectedApiError(error: unknown) {
@@ -1518,6 +1874,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (isDemoMode) {
+      setSession({
+        status: "authenticated",
+        token: "demo-token",
+        user: demoState.user,
+        error: null,
+      });
+      return;
+    }
+
     let cancelled = false;
     const storedToken = getStoredToken();
     if (!storedToken) {
@@ -1558,13 +1924,25 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [demoState.user, isDemoMode]);
 
   useEffect(() => {
     if (!authToken) {
       setFolders([]);
       setTags([]);
       setManagerFeedback(null);
+      return;
+    }
+
+    if (isDemoMode) {
+      setFolders(demoState.folders);
+      setTags(demoState.tags);
+      setSelectedFolderId((current) => (
+        current && !demoState.folders.some((folder) => folder.id === current) ? "" : current
+      ));
+      setSelectedTagId((current) => (
+        current && !demoState.tags.some((tag) => tag.id === current) ? "" : current
+      ));
       return;
     }
 
@@ -1596,13 +1974,28 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [authToken]);
+  }, [authToken, demoState.folders, demoState.tags, isDemoMode]);
 
   useEffect(() => {
     if (!authToken) {
       setItems([]);
       setLoadState("idle");
       setListError(null);
+      return;
+    }
+
+    if (isDemoMode) {
+      setLoadState("loading");
+      setListError(null);
+      startTransition(() => {
+        setItems(filterDemoBookmarks(demoState, {
+          search: deferredSearch,
+          quality: qualityFilter,
+          folderId: selectedFolderId || undefined,
+          tagId: selectedTagId || undefined,
+        }));
+        setLoadState("ready");
+      });
       return;
     }
 
@@ -1642,13 +2035,24 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [authToken, deferredSearch, qualityFilter, selectedFolderId, selectedTagId]);
+  }, [authToken, deferredSearch, demoState, isDemoMode, qualityFilter, selectedFolderId, selectedTagId]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
       setDetailLoadState("idle");
       setDetailError(null);
       setDetail(null);
+      return;
+    }
+
+    if (isDemoMode) {
+      setDetailLoadState("loading");
+      setDetailError(null);
+      startTransition(() => {
+        const result = getDemoBookmarkDetail(demoState, route.bookmarkId);
+        setDetail(result);
+        setDetailLoadState(result ? "ready" : "not-found");
+      });
       return;
     }
 
@@ -1680,7 +2084,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [authToken, route]);
+  }, [authToken, demoState, isDemoMode, route]);
 
   useEffect(() => {
     if (!detail) {
@@ -1695,6 +2099,57 @@ export function App() {
     setMetadataTagIds(detail.bookmark.tags.map((tag) => tag.id));
     setMetadataFeedback(null);
   }, [detail]);
+
+  useEffect(() => {
+    setManagerDialogError(null);
+    if (managerDialog.kind === "create-folder") {
+      setManagerDialogName("");
+      setManagerDialogPath("");
+      setManagerDialogColor("");
+      return;
+    }
+    if (managerDialog.kind === "edit-folder") {
+      setManagerDialogName("");
+      setManagerDialogPath(managerDialog.folder.path);
+      setManagerDialogColor("");
+      return;
+    }
+    if (managerDialog.kind === "create-tag") {
+      setManagerDialogName("");
+      setManagerDialogPath("");
+      setManagerDialogColor("");
+      return;
+    }
+    if (managerDialog.kind === "edit-tag") {
+      setManagerDialogName(managerDialog.tag.name);
+      setManagerDialogPath("");
+      setManagerDialogColor(managerDialog.tag.color ?? "");
+      return;
+    }
+    setManagerDialogName("");
+    setManagerDialogPath("");
+    setManagerDialogColor("");
+  }, [managerDialog]);
+
+  useEffect(() => {
+    if (!isManagerDialogVisible) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !managerBusy) {
+        closeManagerDialog();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleWindowKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleWindowKeyDown);
+    };
+  }, [isManagerDialogVisible, managerBusy]);
 
   const selectedVersion = useMemo(() => {
     if (!detail || route.page !== "detail") {
@@ -1723,6 +2178,30 @@ export function App() {
     }
 
     setArchivePreview({ status: "loading" });
+
+    if (isDemoMode) {
+      const html = getDemoArchiveHtml(demoState, selectedVersion.id);
+      if (!html) {
+        setArchivePreview({
+          status: "error",
+          error: "未找到本地 Mock 归档内容。",
+        });
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+      revokedUrl = url;
+      setArchivePreview({
+        status: "ready",
+        url,
+      });
+      return () => {
+        cancelled = true;
+        if (revokedUrl) {
+          URL.revokeObjectURL(revokedUrl);
+        }
+      };
+    }
+
     createArchiveObjectUrl(
       authToken,
       selectedVersion.htmlObjectKey,
@@ -1757,9 +2236,12 @@ export function App() {
     };
   }, [
     authToken,
+    demoState,
+    isDemoMode,
     previewSourceUrl,
     selectedVersion?.archiveAvailable,
     selectedVersion?.htmlObjectKey,
+    selectedVersion?.id,
   ]);
 
   async function refreshCatalogs(currentToken: string) {
@@ -1801,7 +2283,7 @@ export function App() {
 
   async function runManagerAction(action: () => Promise<string>) {
     if (!authToken) {
-      return;
+      throw new Error("当前未登录，暂时无法执行这个操作。");
     }
     setManagerBusy(true);
     setManagerFeedback(null);
@@ -1818,54 +2300,82 @@ export function App() {
       });
     } catch (error) {
       if (handleProtectedApiError(error)) {
-        return;
+        throw error;
       }
+      const message = toErrorMessage(error);
       setManagerFeedback({
         kind: "error",
-        message: toErrorMessage(error),
+        message,
       });
+      throw error instanceof Error ? error : new Error(message);
     } finally {
       setManagerBusy(false);
     }
   }
 
-  async function handleCreateFolder(parent?: Folder) {
-    const name = window.prompt(parent ? `新建 “${parent.path}” 下的子收藏夹` : "新建根收藏夹");
-    if (!name?.trim()) {
+  async function handleCreateFolder(name: string, parent?: Folder) {
+    const trimmedName = name.trim();
+    if (isDemoMode) {
+      try {
+        const result = createDemoFolder(demoState, {
+          name: trimmedName,
+          parentId: parent?.id ?? null,
+        });
+        setDemoState(result.workspace);
+        setManagerFeedback({
+          kind: "success",
+          message: `已创建收藏夹：${result.folder.path}`,
+        });
+      } catch (error) {
+        setManagerFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+        throw error;
+      }
       return;
     }
 
     await runManagerAction(async () => {
       const folder = await createFolder({
-        name: name.trim(),
+        name: trimmedName,
         parentId: parent?.id ?? null,
       }, authToken!);
       return `已创建收藏夹：${folder.path}`;
     });
   }
 
-  async function handleEditFolderPath(folder: Folder) {
-    const nextPathInput = window.prompt("输入新的完整路径，例如：工作/研究", folder.path);
-    if (!nextPathInput?.trim()) {
-      return;
-    }
-
+  async function handleEditFolderPath(folder: Folder, nextPathInput: string) {
     const nextPath = nextPathInput
       .split("/")
       .map((segment) => segment.trim())
       .filter(Boolean);
-    if (nextPath.length === 0) {
-      return;
-    }
 
     const nextName = nextPath[nextPath.length - 1] ?? folder.name;
     const parentPath = nextPath.slice(0, -1).join("/");
     const parent = parentPath ? folders.find((item) => item.path === parentPath) : undefined;
     if (parentPath && !parent) {
-      setManagerFeedback({
-        kind: "error",
-        message: `未找到父收藏夹路径：${parentPath}`,
-      });
+      throw new Error(`未找到父收藏夹路径：${parentPath}`);
+    }
+
+    if (isDemoMode) {
+      try {
+        const result = updateDemoFolder(demoState, folder.id, {
+          name: nextName,
+          parentId: parent?.id ?? null,
+        });
+        setDemoState(result.workspace);
+        setManagerFeedback({
+          kind: "success",
+          message: `已更新收藏夹路径：${result.folder.path}`,
+        });
+      } catch (error) {
+        setManagerFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+        throw error;
+      }
       return;
     }
 
@@ -1879,10 +2389,20 @@ export function App() {
   }
 
   async function handleDeleteFolder(folder: Folder) {
-    const confirmed = window.confirm(
-      `确认删除收藏夹“${folder.path}”？它自身会被删除，子收藏夹会自动上移一层，该文件夹下的网页会取消归档。`,
-    );
-    if (!confirmed) {
+    if (isDemoMode) {
+      try {
+        setDemoState(deleteDemoFolder(demoState, folder.id));
+        setManagerFeedback({
+          kind: "success",
+          message: `已删除收藏夹：${folder.path}`,
+        });
+      } catch (error) {
+        setManagerFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+        throw error;
+      }
       return;
     }
 
@@ -1892,29 +2412,57 @@ export function App() {
     });
   }
 
-  async function handleCreateTag() {
-    const name = window.prompt("新建标签名称");
-    if (!name?.trim()) {
+  async function handleCreateTag(name: string, color?: string) {
+    const trimmedName = name.trim();
+    if (isDemoMode) {
+      try {
+        const result = createDemoTag(demoState, {
+          name: trimmedName,
+          color,
+        });
+        setDemoState(result.workspace);
+        setManagerFeedback({
+          kind: "success",
+          message: `已创建标签：#${result.tag.name}`,
+        });
+      } catch (error) {
+        setManagerFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+        throw error;
+      }
       return;
     }
-    const color = window.prompt("可选：标签颜色说明（例如 blue、#1d4ed8）", "")?.trim() || undefined;
 
     await runManagerAction(async () => {
       const tag = await createTag({
-        name: name.trim(),
+        name: trimmedName,
         color,
       }, authToken!);
       return `已创建标签：#${tag.name}`;
     });
   }
 
-  async function handleEditTag(tag: Tag) {
-    const nextName = window.prompt("编辑标签名称", tag.name);
-    if (!nextName?.trim()) {
-      return;
-    }
-    const nextColorRaw = window.prompt("编辑标签颜色说明，留空表示清空", tag.color ?? "");
-    if (nextColorRaw === null) {
+  async function handleEditTag(tag: Tag, nextName: string, nextColorRaw: string) {
+    if (isDemoMode) {
+      try {
+        const result = updateDemoTag(demoState, tag.id, {
+          name: nextName.trim(),
+          color: nextColorRaw.trim() || null,
+        });
+        setDemoState(result.workspace);
+        setManagerFeedback({
+          kind: "success",
+          message: `已更新标签：#${result.tag.name}`,
+        });
+      } catch (error) {
+        setManagerFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+        throw error;
+      }
       return;
     }
 
@@ -1928,8 +2476,20 @@ export function App() {
   }
 
   async function handleDeleteTag(tag: Tag) {
-    const confirmed = window.confirm(`确认删除标签“#${tag.name}”？已挂载到网页上的这个标签也会一起解除。`);
-    if (!confirmed) {
+    if (isDemoMode) {
+      try {
+        setDemoState(deleteDemoTag(demoState, tag.id));
+        setManagerFeedback({
+          kind: "success",
+          message: `已删除标签：#${tag.name}`,
+        });
+      } catch (error) {
+        setManagerFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+        throw error;
+      }
       return;
     }
 
@@ -1939,6 +2499,83 @@ export function App() {
     });
   }
 
+  async function handleManagerDialogSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setManagerDialogError(null);
+
+    try {
+      if (managerDialog.kind === "create-folder") {
+        const trimmedName = managerDialogName.trim();
+        if (!trimmedName) {
+          setManagerDialogError("收藏夹名称不能为空。");
+          return;
+        }
+        if (trimmedName.includes("/")) {
+          setManagerDialogError("收藏夹名称里不能包含 / 。");
+          return;
+        }
+        await handleCreateFolder(trimmedName, managerDialog.parent);
+        closeManagerDialog();
+        return;
+      }
+
+      if (managerDialog.kind === "edit-folder") {
+        const trimmedPath = managerDialogPath.trim();
+        if (!trimmedPath) {
+          setManagerDialogError("完整路径不能为空。");
+          return;
+        }
+        if (trimmedPath.split("/").map((segment) => segment.trim()).filter(Boolean).length === 0) {
+          setManagerDialogError("请输入至少一层有效路径。");
+          return;
+        }
+        await handleEditFolderPath(managerDialog.folder, trimmedPath);
+        closeManagerDialog();
+        return;
+      }
+
+      if (managerDialog.kind === "create-tag") {
+        const trimmedName = managerDialogName.trim();
+        if (!trimmedName) {
+          setManagerDialogError("标签名称不能为空。");
+          return;
+        }
+        await handleCreateTag(trimmedName, managerDialogColor.trim() || undefined);
+        closeManagerDialog();
+        return;
+      }
+
+      if (managerDialog.kind === "edit-tag") {
+        const trimmedName = managerDialogName.trim();
+        if (!trimmedName) {
+          setManagerDialogError("标签名称不能为空。");
+          return;
+        }
+        await handleEditTag(managerDialog.tag, trimmedName, managerDialogColor);
+        closeManagerDialog();
+      }
+    } catch (error) {
+      setManagerDialogError(toErrorMessage(error));
+    }
+  }
+
+  async function handleManagerDialogDelete() {
+    setManagerDialogError(null);
+    try {
+      if (managerDialog.kind === "delete-folder") {
+        await handleDeleteFolder(managerDialog.folder);
+        closeManagerDialog();
+        return;
+      }
+      if (managerDialog.kind === "delete-tag") {
+        await handleDeleteTag(managerDialog.tag);
+        closeManagerDialog();
+      }
+    } catch (error) {
+      setManagerDialogError(toErrorMessage(error));
+    }
+  }
+
   async function handleSaveMetadata() {
     if (!authToken || route.page !== "detail") {
       return;
@@ -1946,6 +2583,29 @@ export function App() {
 
     setMetadataSaving(true);
     setMetadataFeedback(null);
+    if (isDemoMode) {
+      try {
+        const result = updateDemoBookmarkMetadata(demoState, route.bookmarkId, {
+          note: metadataNote,
+          folderId: metadataFolderId || null,
+          tagIds: metadataTagIds,
+        });
+        setDemoState(result.workspace);
+        setMetadataFeedback({
+          kind: "success",
+          message: "Mock 数据中的书签元数据已更新。",
+        });
+      } catch (error) {
+        setMetadataFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+      } finally {
+        setMetadataSaving(false);
+      }
+      return;
+    }
+
     try {
       const updated = await updateBookmarkMetadata(
         route.bookmarkId,
@@ -2036,35 +2696,52 @@ export function App() {
 
   if (route.page === "list") {
     return (
-      <HomePage
-        user={session.user}
-        items={items}
-        loadState={loadState}
-        listError={listError}
-        searchInput={searchInput}
-        onSearchChange={setSearchInput}
-        folders={folders}
-        tags={tags}
-        selectedFolderId={selectedFolderId}
-        selectedTagId={selectedTagId}
-        hasActiveFilters={Boolean(searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId)}
-        isPending={isPending}
-        managerBusy={managerBusy}
-        managerFeedback={managerFeedback}
-        onSelectFolder={setSelectedFolderId}
-        onSelectTag={setSelectedTagId}
-        onOpenBookmark={openBookmark}
-        onCreateRootFolder={() => void handleCreateFolder()}
-        onCreateChildFolder={(folder) => void handleCreateFolder(folder)}
-        onEditFolderPath={(folder) => void handleEditFolderPath(folder)}
-        onDeleteFolder={(folder) => void handleDeleteFolder(folder)}
-        onCreateTag={() => void handleCreateTag()}
-        onEditTag={(tag) => void handleEditTag(tag)}
-        onDeleteTag={(tag) => void handleDeleteTag(tag)}
-        onOpenImportNew={goToImportNew}
-        onOpenImportHistory={goToImportList}
-        onLogout={() => logout()}
-      />
+      <>
+        <HomePage
+          user={session.user}
+          items={items}
+          loadState={loadState}
+          listError={listError}
+          searchInput={searchInput}
+          onSearchChange={setSearchInput}
+          folders={folders}
+          tags={tags}
+          selectedFolderId={selectedFolderId}
+          selectedTagId={selectedTagId}
+          hasActiveFilters={Boolean(searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId)}
+          isPending={isPending}
+          managerBusy={managerBusy}
+          managerFeedback={managerFeedback}
+          onSelectFolder={setSelectedFolderId}
+          onSelectTag={setSelectedTagId}
+          onOpenBookmark={openBookmark}
+          onCreateRootFolder={() => openManagerDialog({ kind: "create-folder" })}
+          onCreateChildFolder={(folder) => openManagerDialog({ kind: "create-folder", parent: folder })}
+          onEditFolderPath={(folder) => openManagerDialog({ kind: "edit-folder", folder })}
+          onDeleteFolder={(folder) => openManagerDialog({ kind: "delete-folder", folder })}
+          onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
+          onEditTag={(tag) => openManagerDialog({ kind: "edit-tag", tag })}
+          onDeleteTag={(tag) => openManagerDialog({ kind: "delete-tag", tag })}
+          onOpenImportNew={goToImportNew}
+          onOpenImportHistory={goToImportList}
+          onLogout={() => logout()}
+          logoutLabel={logoutLabel}
+        />
+        <ManagerDialog
+          state={managerDialog}
+          busy={managerBusy}
+          error={managerDialogError}
+          nameValue={managerDialogName}
+          pathValue={managerDialogPath}
+          colorValue={managerDialogColor}
+          onClose={closeManagerDialog}
+          onSubmit={(event) => void handleManagerDialogSubmit(event)}
+          onConfirmDelete={() => void handleManagerDialogDelete()}
+          onNameChange={setManagerDialogName}
+          onPathChange={setManagerDialogPath}
+          onColorChange={setManagerDialogColor}
+        />
+      </>
     );
   }
 
@@ -2100,10 +2777,10 @@ export function App() {
             <span>{session.user.email}</span>
           </div>
           <div className="sync-badge">
-            数据源：<b>实时 API</b>
+            数据源：<b>{isDemoMode ? "本地 Mock" : "实时 API"}</b>
           </div>
           <button className="ghost-button" type="button" onClick={() => logout()}>
-            退出登录
+            {logoutLabel}
           </button>
         </div>
       </section>
@@ -2168,6 +2845,7 @@ export function App() {
         <ImportNewPanel
           token={session.token}
           onApiError={handleProtectedApiError}
+          adapter={importAdapter}
           onOpenHistory={goToImportList}
           onOpenTask={openImportTask}
         />
@@ -2175,6 +2853,7 @@ export function App() {
         <ImportHistoryPanel
           token={session.token}
           onApiError={handleProtectedApiError}
+          adapter={importAdapter}
           onOpenTask={openImportTask}
           onOpenNew={goToImportNew}
         />
@@ -2183,6 +2862,7 @@ export function App() {
           token={session.token}
           taskId={route.taskId}
           onApiError={handleProtectedApiError}
+          adapter={importAdapter}
           onOpenHistory={goToImportList}
           onOpenBookmark={(bookmarkId) => openBookmark(bookmarkId)}
         />

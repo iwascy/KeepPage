@@ -10,6 +10,8 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev:api": "npm run dev -w @keeppage/api",
+    "dev:web:mock": "npm run dev:mock -w @keeppage/web",
+    "dev:demo": "npm run dev:demo -w @keeppage/web",
     "dev:web": "npm run dev -w @keeppage/web",
     "dev:extension": "npm run dev -w @keeppage/extension",
     "lint": "npm run lint --workspaces --if-present",
