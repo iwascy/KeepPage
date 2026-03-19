@@ -872,10 +872,12 @@ export function App() {
     );
   }
 
+  const isDetailRoute = route.page === "detail";
+
   return (
-    <main className="page-shell">
+    <main className={`page-shell${isDetailRoute ? " is-detail-route" : ""}`}>
       <div className="texture" />
-      <section className="topbar">
+      <section className={`topbar${isDetailRoute ? " is-detail-route" : ""}`}>
         <div>
           <p className="eyebrow">KeepPage Workspace</p>
           <h1>{route.page === "detail" ? "归档查看页" : "网页归档工作台"}</h1>
