@@ -344,6 +344,476 @@ function toErrorMessage(error: unknown) {
   return "请求失败，请稍后重试。";
 }
 
+function displayUserName(user: AuthUser) {
+  return user.name?.trim() || user.email;
+}
+
+function userInitials(user: AuthUser) {
+  const source = user.name?.trim() || user.email.split("@")[0] || user.email;
+  const segments = source
+    .split(/[\s._-]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (segments.length >= 2) {
+    return `${segments[0]?.[0] ?? ""}${segments[1]?.[0] ?? ""}`.toUpperCase();
+  }
+  return source.slice(0, 2).toUpperCase();
+}
+
+function homeCoverTone(domain: string) {
+  const tones = ["peach", "mist", "sand", "sky"] as const;
+  let hash = 0;
+  for (const char of domain) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  return tones[hash % tones.length];
+}
+
+function HomeBookmarkCard({
+  bookmark,
+  onOpen,
+}: {
+  bookmark: Bookmark;
+  onOpen: (bookmarkId: string) => void;
+}) {
+  const summary = summarizeBookmark(bookmark);
+  const hasPreview = bookmark.latestQuality?.archiveSignals.screenshotGenerated ?? false;
+  const folderLabel = bookmark.folder?.name ?? "未归类";
+  const coverTone = homeCoverTone(bookmark.domain);
+
+  return (
+    <article className={`home-bookmark-card${hasPreview ? " has-preview" : ""}`}>
+      <button
+        className="home-bookmark-hitarea"
+        type="button"
+        onClick={() => onOpen(bookmark.id)}
+        aria-label={`打开归档：${bookmark.title}`}
+      >
+        {hasPreview ? (
+          <div className={`home-bookmark-cover is-${coverTone}`}>
+            <span className="home-bookmark-chip home-bookmark-chip-cover">{folderLabel}</span>
+            <div className="home-bookmark-paper">
+              <div className="home-bookmark-paper-lines">
+                <span />
+                <span />
+                <span />
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <div className="home-bookmark-body">
+          {!hasPreview ? (
+            <span className="home-bookmark-chip home-bookmark-chip-inline">{folderLabel}</span>
+          ) : null}
+          <h2>{bookmark.title}</h2>
+          <p>{summary}</p>
+          <footer className="home-bookmark-meta">
+            <span className="home-bookmark-domain">{bookmark.domain}</span>
+            <span className="home-bookmark-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+          </footer>
+        </div>
+      </button>
+    </article>
+  );
+}
+
+function HomeBookmarkSkeleton({
+  withPreview,
+}: {
+  withPreview: boolean;
+}) {
+  return (
+    <article className={`home-bookmark-card home-bookmark-card-skeleton${withPreview ? " has-preview" : ""}`}>
+      <div className="home-bookmark-hitarea is-skeleton">
+        {withPreview ? <div className="home-skeleton-cover" /> : null}
+        <div className="home-bookmark-body">
+          {!withPreview ? <span className="home-skeleton-chip" /> : null}
+          <span className="home-skeleton-line is-title" />
+          <span className="home-skeleton-line" />
+          <span className="home-skeleton-line is-short" />
+          <footer className="home-bookmark-meta">
+            <span className="home-skeleton-line is-meta" />
+            <span className="home-skeleton-line is-meta-short" />
+          </footer>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function HomePage({
+  user,
+  items,
+  loadState,
+  listError,
+  searchInput,
+  onSearchChange,
+  folders,
+  tags,
+  selectedFolderId,
+  selectedTagId,
+  hasActiveFilters,
+  isPending,
+  managerBusy,
+  managerFeedback,
+  onSelectFolder,
+  onSelectTag,
+  onOpenBookmark,
+  onCreateRootFolder,
+  onCreateChildFolder,
+  onEditFolderPath,
+  onDeleteFolder,
+  onCreateTag,
+  onEditTag,
+  onDeleteTag,
+  onOpenImportNew,
+  onOpenImportHistory,
+  onLogout,
+}: {
+  user: AuthUser;
+  items: Bookmark[];
+  loadState: LoadState;
+  listError: string | null;
+  searchInput: string;
+  onSearchChange: (value: string) => void;
+  folders: Folder[];
+  tags: Tag[];
+  selectedFolderId: string;
+  selectedTagId: string;
+  hasActiveFilters: boolean;
+  isPending: boolean;
+  managerBusy: boolean;
+  managerFeedback: InlineFeedback | null;
+  onSelectFolder: (folderId: string) => void;
+  onSelectTag: (tagId: string) => void;
+  onOpenBookmark: (bookmarkId: string) => void;
+  onCreateRootFolder: () => void;
+  onCreateChildFolder: (folder: Folder) => void;
+  onEditFolderPath: (folder: Folder) => void;
+  onDeleteFolder: (folder: Folder) => void;
+  onCreateTag: () => void;
+  onEditTag: (tag: Tag) => void;
+  onDeleteTag: (tag: Tag) => void;
+  onOpenImportNew: () => void;
+  onOpenImportHistory: () => void;
+  onLogout: () => void;
+}) {
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
+
+  const sortedFolders = useMemo(
+    () => [...folders].sort((left, right) => left.path.localeCompare(right.path, "zh-CN")),
+    [folders],
+  );
+
+  const childrenByParent = useMemo(() => {
+    const mapping = new Map<string | null, Folder[]>();
+    for (const folder of sortedFolders) {
+      const key = folder.parentId ?? null;
+      const current = mapping.get(key) ?? [];
+      current.push(folder);
+      mapping.set(key, current);
+    }
+    return mapping;
+  }, [sortedFolders]);
+
+  const descendantIdsByFolder = useMemo(() => {
+    const mapping = new Map<string, string[]>();
+
+    function visit(folder: Folder): string[] {
+      const childIds = (childrenByParent.get(folder.id) ?? []).flatMap(visit);
+      const ids = [folder.id, ...childIds];
+      mapping.set(folder.id, ids);
+      return ids;
+    }
+
+    for (const folder of childrenByParent.get(null) ?? []) {
+      visit(folder);
+    }
+
+    return mapping;
+  }, [childrenByParent]);
+
+  const visibleFolderRows = useMemo(() => {
+    const rows: Array<{ folder: Folder; depth: number; hasChildren: boolean }> = [];
+
+    function append(folder: Folder, depth: number) {
+      const children = childrenByParent.get(folder.id) ?? [];
+      rows.push({
+        folder,
+        depth,
+        hasChildren: children.length > 0,
+      });
+      if (collapsedFolderIds.has(folder.id)) {
+        return;
+      }
+      for (const child of children) {
+        append(child, depth + 1);
+      }
+    }
+
+    for (const folder of childrenByParent.get(null) ?? []) {
+      append(folder, 0);
+    }
+
+    return rows;
+  }, [childrenByParent, collapsedFolderIds]);
+
+  const folderCounts = useMemo(() => {
+    const mapping = new Map<string, number>();
+    for (const folder of sortedFolders) {
+      const descendantIds = new Set(descendantIdsByFolder.get(folder.id) ?? [folder.id]);
+      let count = 0;
+      for (const item of items) {
+        const folderId = item.folder?.id;
+        if (folderId && descendantIds.has(folderId)) {
+          count += 1;
+        }
+      }
+      mapping.set(folder.id, count);
+    }
+    return mapping;
+  }, [descendantIdsByFolder, items, sortedFolders]);
+
+  useEffect(() => {
+    setCollapsedFolderIds((current) => {
+      const next = new Set(
+        [...current].filter((folderId) => sortedFolders.some((folder) => folder.id === folderId)),
+      );
+      if (next.size === current.size) {
+        let changed = false;
+        for (const folderId of next) {
+          if (!current.has(folderId)) {
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) {
+          return current;
+        }
+      }
+      return next;
+    });
+  }, [sortedFolders]);
+
+  const showLoading = loadState === "loading";
+  const showError = loadState === "error";
+  const showEmpty = !showLoading && !showError && items.length === 0;
+  const displayName = displayUserName(user);
+
+  function handleToggleFolder(folder: Folder) {
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+      if (next.has(folder.id)) {
+        next.delete(folder.id);
+        return next;
+      }
+
+      const descendantIds = descendantIdsByFolder.get(folder.id) ?? [folder.id];
+      if (selectedFolderId && selectedFolderId !== folder.id && descendantIds.includes(selectedFolderId)) {
+        onSelectFolder(folder.id);
+      }
+      next.add(folder.id);
+      return next;
+    });
+  }
+
+  return (
+    <main className="home-page">
+      <aside className="home-sidebar">
+        <div className="home-brand">
+          <div className="home-brand-mark">{userInitials(user).slice(0, 1)}</div>
+          <div>
+            <h1>KeepPage</h1>
+            <p>Your Archive Space</p>
+          </div>
+        </div>
+
+        <label className="home-search">
+          <span className="home-search-icon" aria-hidden="true" />
+          <input
+            className="home-search-input"
+            type="search"
+            value={searchInput}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="搜索标题、域名、标签..."
+          />
+        </label>
+
+        <section className="home-sidebar-section">
+          <header className="home-sidebar-section-head">
+            <span>Collections</span>
+            <button className="home-section-action" type="button" onClick={onCreateRootFolder} disabled={managerBusy}>
+              新建
+            </button>
+          </header>
+          <div className="home-folder-list">
+            <div className="home-folder-row">
+              <button
+                className={selectedFolderId ? "home-folder-main" : "home-folder-main is-active"}
+                type="button"
+                onClick={() => onSelectFolder("")}
+              >
+                <span className="home-folder-name">全部归档</span>
+                <span className="home-folder-count">{items.length}</span>
+              </button>
+              <span className="home-folder-toggle-spacer" aria-hidden="true" />
+            </div>
+            {visibleFolderRows.map(({ folder, depth, hasChildren }) => (
+              <div className="home-folder-row" key={folder.id}>
+                <button
+                  className={[
+                    "home-folder-main",
+                    selectedFolderId === folder.id ? "is-active" : "",
+                    depth > 0 ? "is-child" : "",
+                  ].filter(Boolean).join(" ")}
+                  type="button"
+                  style={{ paddingLeft: `${12 + depth * 14}px` }}
+                  onClick={() => onSelectFolder(selectedFolderId === folder.id ? "" : folder.id)}
+                >
+                  <span className="home-folder-name">{folder.name}</span>
+                  <span className="home-folder-count">{folderCounts.get(folder.id) ?? 0}</span>
+                </button>
+                {hasChildren ? (
+                  <button
+                    className={
+                      collapsedFolderIds.has(folder.id)
+                        ? "home-folder-toggle is-collapsed"
+                        : "home-folder-toggle"
+                    }
+                    type="button"
+                    onClick={() => handleToggleFolder(folder)}
+                    aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "收起"} ${folder.name}`}
+                  >
+                    ▾
+                  </button>
+                ) : (
+                  <span className="home-folder-toggle-spacer" aria-hidden="true" />
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="home-sidebar-section">
+          <header className="home-sidebar-section-head">
+            <span>Tags</span>
+            <button className="home-section-action" type="button" onClick={onCreateTag} disabled={managerBusy}>
+              新建
+            </button>
+          </header>
+          <div className="home-tag-list">
+            {tags.map((tag) => {
+              const active = selectedTagId === tag.id;
+              return (
+                <button
+                  key={tag.id}
+                  className={active ? "home-tag-chip is-active" : "home-tag-chip"}
+                  type="button"
+                  onClick={() => onSelectTag(active ? "" : tag.id)}
+                >
+                  #{tag.name}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <div className="home-sidebar-footer">
+          <button className="home-cta-button" type="button" onClick={onOpenImportNew}>
+            + 新建导入
+          </button>
+          <div className="home-sidebar-links">
+            <button className="home-sidebar-link" type="button" onClick={onOpenImportHistory}>
+              导入历史
+            </button>
+            <button className="home-sidebar-link" type="button" onClick={onLogout}>
+              退出登录
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div className="home-shell">
+        <header className="home-topbar">
+          <div className="home-profile">
+            <div className="home-profile-copy">
+              <strong>{displayName}</strong>
+            </div>
+            <div className="home-avatar">{userInitials(user)}</div>
+          </div>
+        </header>
+
+        <section className="home-content">
+          {managerFeedback ? (
+            <p className={managerFeedback.kind === "error" ? "home-feedback is-error" : "home-feedback"}>
+              {managerFeedback.message}
+            </p>
+          ) : null}
+
+          {showLoading && items.length > 0 ? (
+            <p className="home-loading-note">正在刷新归档列表...</p>
+          ) : null}
+
+          {showLoading && items.length === 0 ? (
+            <section className="home-grid">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <HomeBookmarkSkeleton key={index} withPreview={index % 3 !== 1} />
+              ))}
+            </section>
+          ) : showError ? (
+            <section className="home-empty-panel">
+              <h2>归档列表加载失败</h2>
+              <p>{listError ?? "暂时无法读取当前账号的归档列表。"}</p>
+            </section>
+          ) : showEmpty ? (
+            <section className="home-empty-panel">
+              <h2>{hasActiveFilters ? "当前筛选下没有匹配的归档" : "还没有归档记录"}</h2>
+              <p>{hasActiveFilters ? "换个关键词，或者切换收藏夹和标签试试。" : "扩展同步的网页归档会优先显示在这里。"}</p>
+            </section>
+          ) : (
+            <section className="home-grid">
+              {items.map((bookmark) => (
+                <HomeBookmarkCard key={bookmark.id} bookmark={bookmark} onOpen={onOpenBookmark} />
+              ))}
+            </section>
+          )}
+
+          <details className="home-manager">
+            <summary>高级管理</summary>
+            <div className="home-manager-body">
+              <p className="home-manager-note">需要新建子收藏夹、改路径、删除标签时，在这里处理。</p>
+              <LibraryManager
+                folders={folders}
+                tags={tags}
+                selectedFolderId={selectedFolderId}
+                selectedTagId={selectedTagId}
+                busy={managerBusy}
+                feedback={null}
+                onSelectFolderFilter={onSelectFolder}
+                onSelectTagFilter={onSelectTag}
+                onCreateRootFolder={onCreateRootFolder}
+                onCreateChildFolder={onCreateChildFolder}
+                onEditFolderPath={onEditFolderPath}
+                onDeleteFolder={onDeleteFolder}
+                onCreateTag={onCreateTag}
+                onEditTag={onEditTag}
+                onDeleteTag={onDeleteTag}
+              />
+            </div>
+          </details>
+
+          <footer className="home-footer">
+            <span>Privacy</span>
+            <span>Terms</span>
+            <span>Support</span>
+            <span>KeepPage</span>
+          </footer>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function BookmarkCard({
   bookmark,
   onOpen,
@@ -1226,13 +1696,6 @@ export function App() {
     setMetadataFeedback(null);
   }, [detail]);
 
-  const summary = useMemo(() => {
-    const high = items.filter((item) => item.latestQuality?.grade === "high").length;
-    const medium = items.filter((item) => item.latestQuality?.grade === "medium").length;
-    const low = items.filter((item) => item.latestQuality?.grade === "low").length;
-    return { total: items.length, high, medium, low };
-  }, [items]);
-
   const selectedVersion = useMemo(() => {
     if (!detail || route.page !== "detail") {
       return null;
@@ -1571,21 +2034,47 @@ export function App() {
     );
   }
 
+  if (route.page === "list") {
+    return (
+      <HomePage
+        user={session.user}
+        items={items}
+        loadState={loadState}
+        listError={listError}
+        searchInput={searchInput}
+        onSearchChange={setSearchInput}
+        folders={folders}
+        tags={tags}
+        selectedFolderId={selectedFolderId}
+        selectedTagId={selectedTagId}
+        hasActiveFilters={Boolean(searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId)}
+        isPending={isPending}
+        managerBusy={managerBusy}
+        managerFeedback={managerFeedback}
+        onSelectFolder={setSelectedFolderId}
+        onSelectTag={setSelectedTagId}
+        onOpenBookmark={openBookmark}
+        onCreateRootFolder={() => void handleCreateFolder()}
+        onCreateChildFolder={(folder) => void handleCreateFolder(folder)}
+        onEditFolderPath={(folder) => void handleEditFolderPath(folder)}
+        onDeleteFolder={(folder) => void handleDeleteFolder(folder)}
+        onCreateTag={() => void handleCreateTag()}
+        onEditTag={(tag) => void handleEditTag(tag)}
+        onDeleteTag={(tag) => void handleDeleteTag(tag)}
+        onOpenImportNew={goToImportNew}
+        onOpenImportHistory={goToImportList}
+        onLogout={() => logout()}
+      />
+    );
+  }
+
   const isDetailRoute = route.page === "detail";
-  const isImportRoute =
-    route.page === "imports-new" ||
-    route.page === "imports-list" ||
-    route.page === "imports-detail";
   const pageTitle = route.page === "detail"
     ? "归档查看页"
-    : isImportRoute
-    ? "批量导入工作台"
-    : "网页归档工作台";
+    : "批量导入工作台";
   const pageSubtitle = route.page === "detail"
     ? "查看主档、切换版本，并直接维护收藏夹、标签与备注。"
-    : isImportRoute
-    ? "先轻导入再按需归档，导入结果、失败原因和去重命中都可追踪。"
-    : "每个账号独立保存自己的网页归档、版本、收藏夹与标签。";
+    : "先轻导入再按需归档，导入结果、失败原因和去重命中都可追踪。";
 
   return (
     <main className={`page-shell${isDetailRoute ? " is-detail-route" : ""}`}>
@@ -1619,127 +2108,7 @@ export function App() {
         </div>
       </section>
 
-      {route.page === "list" ? (
-        <>
-          <section className="control-panel">
-            <label className="field">
-              <span>搜索</span>
-              <input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="标题、域名、标签、备注、文件夹"
-              />
-            </label>
-            <label className="field">
-              <span>质量</span>
-              <select
-                value={qualityFilter}
-                onChange={(event) => setQualityFilter(event.target.value as QualityFilter)}
-              >
-                <option value="all">全部</option>
-                <option value="high">高</option>
-                <option value="medium">中</option>
-                <option value="low">低</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>收藏夹</span>
-              <select value={selectedFolderId} onChange={(event) => setSelectedFolderId(event.target.value)}>
-                <option value="">全部收藏夹</option>
-                {folders.map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.path}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>标签</span>
-              <select value={selectedTagId} onChange={(event) => setSelectedTagId(event.target.value)}>
-                <option value="">全部标签</option>
-                {tags.map((tag) => (
-                  <option key={tag.id} value={tag.id}>
-                    #{tag.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </section>
-
-          <section className="summary">
-            <article className="metric">
-              <p>总归档数</p>
-              <h3>{summary.total}</h3>
-            </article>
-            <article className="metric">
-              <p>高质量</p>
-              <h3>{summary.high}</h3>
-            </article>
-            <article className="metric">
-              <p>中质量</p>
-              <h3>{summary.medium}</h3>
-            </article>
-            <article className="metric">
-              <p>低质量</p>
-              <h3>{summary.low}</h3>
-            </article>
-          </section>
-          <section className="private-mode-info">
-            <div className="private-mode-copy">
-              <p className="eyebrow">私密模式 · V1 本地方案</p>
-              <p>
-                当前私密库仅在 KeepPage 扩展内运行：归档在本地加密、锁定并保管，Web 端目前仍不展示解锁内容，只会提示扩展端的私密状态。
-              </p>
-            </div>
-            <div className="private-mode-meta">
-              <span>扩展端私密库即刻可用</span>
-              <span>Web 解锁查看计划在 V2 发布</span>
-            </div>
-          </section>
-
-          <LibraryManager
-            folders={folders}
-            tags={tags}
-            selectedFolderId={selectedFolderId}
-            selectedTagId={selectedTagId}
-            busy={managerBusy}
-            feedback={managerFeedback}
-            onSelectFolderFilter={setSelectedFolderId}
-            onSelectTagFilter={setSelectedTagId}
-            onCreateRootFolder={() => void handleCreateFolder()}
-            onCreateChildFolder={(folder) => void handleCreateFolder(folder)}
-            onEditFolderPath={(folder) => void handleEditFolderPath(folder)}
-            onDeleteFolder={(folder) => void handleDeleteFolder(folder)}
-            onCreateTag={() => void handleCreateTag()}
-            onEditTag={(tag) => void handleEditTag(tag)}
-            onDeleteTag={(tag) => void handleDeleteTag(tag)}
-          />
-
-          {loadState === "loading" || isPending ? (
-            <section className="loading">正在刷新归档列表...</section>
-          ) : loadState === "error" ? (
-            <EmptyState
-              mode="empty"
-              title="归档列表加载失败"
-              description={listError ?? "暂时无法读取当前账号的归档列表。"}
-            />
-          ) : items.length === 0 ? (
-            <EmptyState
-              mode={
-                searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId
-                  ? "search-empty"
-                  : "empty"
-              }
-            />
-          ) : (
-            <section className="card-grid">
-              {items.map((bookmark) => (
-                <BookmarkCard key={bookmark.id} bookmark={bookmark} onOpen={openBookmark} />
-              ))}
-            </section>
-          )}
-        </>
-      ) : route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
+      {route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
         <section className="loading">正在加载归档详情...</section>
       ) : route.page === "detail" && detailLoadState === "error" ? (
         <EmptyState
