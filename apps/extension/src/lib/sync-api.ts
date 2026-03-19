@@ -8,6 +8,8 @@ import { emitDebugLogToTab } from "./debug-log";
 import { createLogger } from "./logger";
 
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
+const CHUNK_SIZE_BYTES = 256 * 1024;
+const CHUNK_UPLOAD_THRESHOLD_BYTES = 512 * 1024;
 const logger = createLogger("sync-api");
 
 type SyncResult = {
@@ -15,30 +17,129 @@ type SyncResult = {
   versionId: string;
 };
 
-async function uploadArchiveHtml(uploadUrl: string, archiveHtml: string) {
-  const uploadPayload = await createUploadPayload(archiveHtml);
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: uploadPayload.headers,
-    body: uploadPayload.body,
-  });
+type UploadPayload = {
+  headers: Record<string, string>;
+  body: Uint8Array;
+  byteLength: number;
+  contentType: string;
+  contentEncoding?: string;
+};
 
-  if (!response.ok) {
-    const text = await response.text();
-    logger.error("Archive upload failed.", {
-      uploadUrl,
-      status: response.status,
-      body: text,
-    });
-    throw new Error(`Upload ${response.status}: ${text}`);
+type UploadResult = {
+  mode: "direct" | "chunked";
+  payloadBytes: number;
+  chunkCount: number;
+  contentEncoding?: string;
+};
+
+class UploadHttpError extends Error {
+  readonly status: number;
+  readonly responseBody: string;
+
+  constructor(status: number, responseBody: string) {
+    super(`Upload ${status}: ${responseBody}`);
+    this.name = "UploadHttpError";
+    this.status = status;
+    this.responseBody = responseBody;
   }
 }
 
-async function createUploadPayload(archiveHtml: string) {
+async function uploadArchiveHtml(uploadUrl: string, archiveHtml: string): Promise<UploadResult> {
+  const uploadPayload = await createUploadPayload(archiveHtml);
+  if (uploadPayload.byteLength > CHUNK_UPLOAD_THRESHOLD_BYTES) {
+    logger.info("Archive payload exceeds direct upload threshold, switching to chunked upload.", {
+      uploadUrl,
+      payloadBytes: uploadPayload.byteLength,
+      chunkSizeBytes: CHUNK_SIZE_BYTES,
+    });
+    return uploadArchiveHtmlInChunks(uploadUrl, uploadPayload);
+  }
+
+  try {
+    await uploadArchiveHtmlDirect(uploadUrl, uploadPayload);
+    return {
+      mode: "direct",
+      payloadBytes: uploadPayload.byteLength,
+      chunkCount: 1,
+      contentEncoding: uploadPayload.contentEncoding,
+    };
+  } catch (error) {
+    if (isPayloadTooLargeError(error)) {
+      logger.warn("Direct archive upload hit 413, retrying with chunked upload.", {
+        uploadUrl,
+        payloadBytes: uploadPayload.byteLength,
+        chunkSizeBytes: CHUNK_SIZE_BYTES,
+      });
+      return uploadArchiveHtmlInChunks(uploadUrl, uploadPayload);
+    }
+    throw error;
+  }
+}
+
+async function uploadArchiveHtmlDirect(uploadUrl: string, uploadPayload: UploadPayload) {
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: uploadPayload.headers,
+    body: toBinaryBody(uploadPayload.body),
+  });
+
+  if (!response.ok) {
+    throw await createUploadError(response, uploadUrl);
+  }
+}
+
+async function uploadArchiveHtmlInChunks(
+  uploadUrl: string,
+  uploadPayload: UploadPayload,
+): Promise<UploadResult> {
+  const uploadId = crypto.randomUUID();
+  const chunkUrl = `${uploadUrl}/chunks/${encodeURIComponent(uploadId)}`;
+  let offset = 0;
+  let chunkCount = 0;
+
+  while (offset < uploadPayload.byteLength) {
+    const chunk = uploadPayload.body.slice(offset, offset + CHUNK_SIZE_BYTES);
+    const isComplete = offset + chunk.byteLength >= uploadPayload.byteLength;
+    const response = await fetch(chunkUrl, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-keeppage-upload-offset": String(offset),
+        "x-keeppage-upload-total-size": String(uploadPayload.byteLength),
+        "x-keeppage-upload-complete": isComplete ? "1" : "0",
+        "x-keeppage-upload-content-type": uploadPayload.contentType,
+        ...(uploadPayload.contentEncoding
+          ? {
+              "x-keeppage-upload-content-encoding": uploadPayload.contentEncoding,
+            }
+          : {}),
+      },
+      body: toBinaryBody(chunk),
+    });
+
+    if (!response.ok) {
+      throw await createUploadError(response, chunkUrl);
+    }
+
+    offset += chunk.byteLength;
+    chunkCount += 1;
+  }
+
+  return {
+    mode: "chunked",
+    payloadBytes: uploadPayload.byteLength,
+    chunkCount,
+    contentEncoding: uploadPayload.contentEncoding,
+  };
+}
+
+async function createUploadPayload(archiveHtml: string): Promise<UploadPayload> {
+  const textEncoder = new TextEncoder();
+  const originalBytes = textEncoder.encode(archiveHtml);
   const compressed = await gzipContent(archiveHtml);
-  if (compressed && compressed.byteLength > 0 && compressed.byteLength < archiveHtml.length) {
+  if (compressed && compressed.byteLength > 0 && compressed.byteLength < originalBytes.byteLength) {
     logger.info("Uploading compressed archive payload.", {
-      originalBytes: archiveHtml.length,
+      originalBytes: originalBytes.byteLength,
       compressedBytes: compressed.byteLength,
     });
     return {
@@ -47,17 +148,22 @@ async function createUploadPayload(archiveHtml: string) {
         "content-encoding": "gzip",
       } as Record<string, string>,
       body: compressed,
+      byteLength: compressed.byteLength,
+      contentType: "text/html;charset=utf-8",
+      contentEncoding: "gzip",
     };
   }
 
   logger.info("Uploading plain archive payload.", {
-    originalBytes: archiveHtml.length,
+    originalBytes: originalBytes.byteLength,
   });
   return {
     headers: {
       "content-type": "text/html;charset=utf-8",
     } as Record<string, string>,
-    body: archiveHtml,
+    body: originalBytes,
+    byteLength: originalBytes.byteLength,
+    contentType: "text/html;charset=utf-8",
   };
 }
 
@@ -71,6 +177,27 @@ async function gzipContent(content: string) {
   }).stream().pipeThrough(new CompressionStream("gzip"));
   const compressedBuffer = await new Response(stream).arrayBuffer();
   return new Uint8Array(compressedBuffer);
+}
+
+async function createUploadError(response: Response, uploadUrl: string) {
+  const responseBody = await response.text();
+  logger.error("Archive upload failed.", {
+    uploadUrl,
+    status: response.status,
+    body: responseBody,
+  });
+  return new UploadHttpError(response.status, responseBody);
+}
+
+function isPayloadTooLargeError(error: unknown): error is UploadHttpError {
+  return error instanceof UploadHttpError && error.status === 413;
+}
+
+function toBinaryBody(content: Uint8Array) {
+  const buffer = Uint8Array.from(content).buffer;
+  return new Blob([buffer], {
+    type: "application/octet-stream",
+  });
 }
 
 async function getApiBaseUrl() {
@@ -191,10 +318,14 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     });
   }
 
-  await uploadArchiveHtml(uploadUrl, task.artifacts.archiveHtml);
+  const uploadResult = await uploadArchiveHtml(uploadUrl, task.artifacts.archiveHtml);
   await logSync("info", debugTabId, "Archive upload completed.", {
     taskId: task.id,
     uploadUrl,
+    uploadMode: uploadResult.mode,
+    uploadPayloadBytes: uploadResult.payloadBytes,
+    uploadChunkCount: uploadResult.chunkCount,
+    contentEncoding: uploadResult.contentEncoding ?? "identity",
   });
 
   const completePayload: CaptureCompleteRequest = {

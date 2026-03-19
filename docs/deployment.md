@@ -108,7 +108,7 @@ export API_PUBLIC_BASE_URL='https://keeppage.example.com/api'
 export STORAGE_DRIVER=postgres
 export OBJECT_STORAGE_DRIVER=localfs
 export OBJECT_STORAGE_ROOT='./data/object-storage'
-export UPLOAD_BODY_LIMIT_MB=32
+export UPLOAD_BODY_LIMIT_MB=64
 export LOG_LEVEL=info
 export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 ```
@@ -232,6 +232,7 @@ server {
 
   root /srv/keeppage/web/dist;
   index index.html;
+  client_max_body_size 64m;
 
   location / {
     try_files $uri $uri/ /index.html;
@@ -250,6 +251,7 @@ server {
 
 1. Web 仍然访问 `/api/...`
 2. Nginx 把 `/api/...` 转发到 API 的根路径 `/...`
+3. `client_max_body_size` 需要不小于 `UPLOAD_BODY_LIMIT_MB`，否则浏览器会先收到 Nginx 的 `413 Request Entity Too Large`
 
 这样前端、插件和 API 可以共享同一个公网地址前缀。
 
@@ -355,6 +357,9 @@ https://keeppage.example.com/api
 - 返回给插件的 `uploadUrl` 是否是公网可访问地址
 - 是否误返回了 `127.0.0.1` 或内网地址
 - 反向代理是否转发了 `PUT /uploads/*`
+- Nginx / 网关的请求体限制是否小于 `UPLOAD_BODY_LIMIT_MB`
+
+当前扩展已经支持分片上传，能规避一部分代理默认的小体积限制；但如果网关限制设置得过低，仍建议显式调大到至少 `16m` 以上。
 
 ### 2. Web 能打开，但看不到真实数据
 
