@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   authSessionSchema,
   authUserSchema,
+  ensureArchiveBaseHref,
   type AuthUser,
   type CaptureProfile,
   type CaptureTask,
@@ -548,7 +549,10 @@ export function App() {
                   <iframe
                     className="preview-frame"
                     sandbox="allow-same-origin"
-                    srcDoc={selectedTask.artifacts.archiveHtml}
+                    srcDoc={ensureArchiveBaseHref(
+                      selectedTask.artifacts.archiveHtml,
+                      selectedTask.source.canonicalUrl ?? selectedTask.source.url,
+                    )}
                     title="archive-preview"
                   />
                 ) : (

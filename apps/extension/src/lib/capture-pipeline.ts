@@ -1,5 +1,6 @@
 import {
   createCaptureId,
+  ensureArchiveBaseHref,
   evaluateQuality,
   type CaptureTaskOwner,
   type CapturePageSignals,
@@ -88,7 +89,11 @@ export async function openTaskPreview(taskId: string) {
     throw new Error("Task archive HTML is not available for preview.");
   }
   assertTaskOwnership(task, owner);
-  const previewUrl = `data:text/html;charset=utf-8,${encodeURIComponent(task.artifacts.archiveHtml)}`;
+  const previewHtml = ensureArchiveBaseHref(
+    task.artifacts.archiveHtml,
+    task.source.canonicalUrl ?? task.source.url,
+  );
+  const previewUrl = `data:text/html;charset=utf-8,${encodeURIComponent(previewHtml)}`;
   await chrome.tabs.create({ url: previewUrl, active: true });
 }
 
@@ -174,9 +179,13 @@ async function captureTab(
       usedSingleFile: archiveResult.ok ? archiveResult.usedSingleFile : undefined,
       error: archiveResult.ok ? undefined : archiveResult.error,
     });
-    const archiveHtml = archiveResult.ok && archiveResult.archiveHtml
+    const rawArchiveHtml = archiveResult.ok && archiveResult.archiveHtml
       ? archiveResult.archiveHtml
       : buildFallbackArchiveHtml(mergedSource, liveResult.liveSignals);
+    const archiveHtml = ensureArchiveBaseHref(
+      rawArchiveHtml,
+      mergedSource.canonicalUrl ?? mergedSource.url,
+    );
     if (!archiveResult.ok) {
       await logCapture("warn", tabId, "Using fallback archive HTML.", {
         taskId: task.id,
