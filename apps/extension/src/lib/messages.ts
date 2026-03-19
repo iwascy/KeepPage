@@ -121,7 +121,7 @@ export interface TaskUpdatedEvent {
 export interface DebugLogEvent {
   type: typeof MESSAGE_TYPE.DebugLog;
   scope: string;
-  level: "info" | "warn" | "error";
+  level: "debug" | "info" | "warn" | "error";
   message: string;
   details?: unknown;
 }

@@ -125,6 +125,14 @@ async function uploadArchiveHtmlInChunks(
   while (offset < uploadPayload.byteLength) {
     const chunk = uploadPayload.body.slice(offset, offset + CHUNK_SIZE_BYTES);
     const isComplete = offset + chunk.byteLength >= uploadPayload.byteLength;
+    logger.debug("Uploading archive chunk.", {
+      uploadId,
+      uploadUrl: chunkUrl,
+      offset,
+      chunkBytes: chunk.byteLength,
+      totalBytes: uploadPayload.byteLength,
+      isComplete,
+    });
     const response = await fetch(chunkUrl, {
       method: "PUT",
       headers: {
@@ -322,6 +330,14 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
   const deviceId = await getOrCreateDeviceId();
   const authHeaders = await getAuthHeaders();
   const archiveFileSize = new TextEncoder().encode(artifacts.archiveHtml).length;
+  await logSync("debug", debugTabId, "Prepared sync prerequisites.", {
+    taskId: task.id,
+    deviceId,
+    hasAuthorizationHeader: Boolean(authHeaders.authorization),
+    extractedTextLength: artifacts.extractedText.length,
+    qualityGrade: quality.grade,
+    qualityScore: quality.score,
+  });
   await logSync("info", debugTabId, "Starting sync task.", {
     taskId: task.id,
     url: task.source.url,
@@ -338,6 +354,10 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     profile: task.profile,
     deviceId,
   };
+  await logSync("debug", debugTabId, "Submitting capture init payload.", {
+    taskId: task.id,
+    payload: initPayload,
+  });
 
   const initResponse = captureInitResponseSchema.parse(
     await withUnauthorizedAuthRecovery(
@@ -404,6 +424,14 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     source: task.source,
     deviceId,
   };
+  await logSync("debug", debugTabId, "Submitting capture complete payload.", {
+    taskId: task.id,
+    objectKey: completePayload.objectKey,
+    sourceUrl: completePayload.source.url,
+    textSha256: completePayload.textSha256,
+    qualityGrade: completePayload.quality.grade,
+    qualityScore: completePayload.quality.score,
+  });
 
   const completeResponse = await withUnauthorizedAuthRecovery(
     () => postJson(
@@ -430,7 +458,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
 }
 
 async function logSync(
-  level: "info" | "warn" | "error",
+  level: "debug" | "info" | "warn" | "error",
   tabId: number | undefined,
   message: string,
   details?: unknown,

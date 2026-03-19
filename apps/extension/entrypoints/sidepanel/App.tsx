@@ -84,6 +84,7 @@ export function App() {
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>("standard");
   const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_API_BASE_URL);
   const [incognitoPrivateDefault, setIncognitoPrivateDefault] = useState(true);
+  const [debugMode, setDebugMode] = useState(false);
   const [settingsState, setSettingsState] = useState<SettingsState>("idle");
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
@@ -376,6 +377,7 @@ export function App() {
       "captureProfilePreference",
       "saveModePreference",
       "incognitoPrivateDefault",
+      "debugMode",
       "authToken",
       "authUser",
     ]);
@@ -395,6 +397,7 @@ export function App() {
 
     const nextIncognitoPrivateDefault = result.incognitoPrivateDefault !== false;
     setIncognitoPrivateDefault(nextIncognitoPrivateDefault);
+    setDebugMode(result.debugMode === true);
     const detectedInitialSaveMode = await resolveInitialSaveMode(
       typeof result.saveModePreference === "string" ? result.saveModePreference : undefined,
       nextIncognitoPrivateDefault,
@@ -446,6 +449,7 @@ export function App() {
         captureProfilePreference: captureProfile,
         saveModePreference: saveMode,
         incognitoPrivateDefault,
+        debugMode,
       });
       setApiBaseUrl(normalizedApiBaseUrl);
       setSettingsState("saved");
@@ -675,6 +679,14 @@ export function App() {
                     type="checkbox"
                   />
                   <span>无痕窗口默认私密</span>
+                </label>
+                <label className="toggle-inline">
+                  <input
+                    checked={debugMode}
+                    onChange={(event) => setDebugMode(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>开启调试模式（打印详细日志）</span>
                 </label>
               </div>
               <div className="auth-page-actions auth-page-actions-wrap">
@@ -965,6 +977,14 @@ export function App() {
               type="checkbox"
             />
             <span>无痕窗口默认私密</span>
+          </label>
+          <label className="toggle-inline">
+            <input
+              checked={debugMode}
+              onChange={(event) => setDebugMode(event.target.checked)}
+              type="checkbox"
+            />
+            <span>开启调试模式（打印详细日志）</span>
           </label>
         </div>
         <div className="settings-actions">

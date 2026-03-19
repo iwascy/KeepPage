@@ -1,9 +1,11 @@
 import type { AuthUser } from "@keeppage/domain";
 import { getStoredAuthToken, getStoredAuthUser } from "./auth-storage";
 import { authUserSchema } from "./domain-runtime";
+import { createLogger } from "./logger";
 
 const AUTH_PAGE_FILE = "sidepanel.html";
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
+const logger = createLogger("auth-flow");
 
 type SessionValidationResult =
   | {
@@ -34,7 +36,12 @@ export async function clearStoredAuthSession() {
 export async function getConfiguredApiBaseUrl() {
   const result = await chrome.storage.local.get("apiBaseUrl");
   const configured = typeof result.apiBaseUrl === "string" ? result.apiBaseUrl.trim() : "";
-  return normalizeApiBaseUrl(configured || DEFAULT_API_BASE_URL);
+  const apiBaseUrl = normalizeApiBaseUrl(configured || DEFAULT_API_BASE_URL);
+  logger.debug("Resolved configured API base URL.", {
+    configured: configured || undefined,
+    apiBaseUrl,
+  });
+  return apiBaseUrl;
 }
 
 export async function validateStoredAuthSession(): Promise<SessionValidationResult> {
@@ -45,6 +52,11 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
   ]);
 
   if (!token || !storedUser) {
+    logger.debug("Stored auth session is incomplete.", {
+      hasToken: Boolean(token),
+      hasUser: Boolean(storedUser),
+      apiBaseUrl,
+    });
     return {
       ok: false,
       reason: "missing",
@@ -54,6 +66,11 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
   }
 
   try {
+    logger.debug("Validating stored auth session.", {
+      apiBaseUrl,
+      userId: storedUser.id,
+      email: storedUser.email,
+    });
     const response = await fetch(`${apiBaseUrl}/auth/me`, {
       headers: {
         accept: "application/json",
@@ -62,6 +79,11 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
     });
 
     if (response.status === 401 || response.status === 403) {
+      logger.warn("Stored auth session is unauthorized.", {
+        apiBaseUrl,
+        status: response.status,
+        userId: storedUser.id,
+      });
       return {
         ok: false,
         reason: "unauthorized",
@@ -72,6 +94,11 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
 
     if (!response.ok) {
       const text = await response.text();
+      logger.warn("Stored auth session validation hit non-success response.", {
+        apiBaseUrl,
+        status: response.status,
+        body: text,
+      });
       return {
         ok: false,
         reason: "unreachable",
@@ -82,6 +109,11 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
 
     const user = authUserSchema.parse(await response.json());
     await chrome.storage.local.set({ authUser: user });
+    logger.debug("Stored auth session validated successfully.", {
+      apiBaseUrl,
+      userId: user.id,
+      email: user.email,
+    });
     return {
       ok: true,
       token,
@@ -89,6 +121,10 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
       apiBaseUrl,
     };
   } catch (error) {
+    logger.warn("Stored auth session validation failed due to fetch error.", {
+      apiBaseUrl,
+      error: error instanceof Error ? error.message : "无法验证当前登录状态。",
+    });
     return {
       ok: false,
       reason: "unreachable",
@@ -100,10 +136,12 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
 
 export async function recoverUnauthorizedSession(reason = "session-expired") {
   await clearStoredAuthSession();
+  logger.info("Recovering unauthorized session by opening auth page.", { reason });
   await openExtensionAuthPage(reason);
 }
 
 export async function openExtensionAuthPage(reason = "login") {
+  logger.debug("Opening extension auth page.", { reason });
   await openExtensionPage(buildExtensionAuthPageUrl(reason));
 }
 
@@ -113,11 +151,16 @@ export async function openSidePanelForCurrentWindow() {
 }
 
 export async function openExtensionWorkspacePage() {
+  logger.debug("Opening extension workspace page.");
   await openExtensionPage(chrome.runtime.getURL(AUTH_PAGE_FILE));
 }
 
 export async function openWorkspaceUi(windowId: number | undefined) {
   const sidePanelOpened = await openSidePanelForWindow(windowId);
+  logger.debug("Resolved workspace UI target.", {
+    windowId,
+    sidePanelOpened,
+  });
   if (sidePanelOpened) {
     return;
   }
@@ -126,13 +169,19 @@ export async function openWorkspaceUi(windowId: number | undefined) {
 
 export async function openSidePanelForWindow(windowId: number | undefined) {
   if (windowId == null) {
+    logger.debug("Skipping side panel open because windowId is missing.");
     return false;
   }
 
   try {
     await chrome.sidePanel.open({ windowId });
+    logger.debug("Side panel opened successfully.", { windowId });
     return true;
-  } catch {
+  } catch (error) {
+    logger.warn("Failed to open side panel.", {
+      windowId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }
@@ -156,6 +205,10 @@ async function openExtensionPage(pageUrl: string) {
   );
 
   if (existingTab?.id != null) {
+    logger.debug("Reusing existing extension tab.", {
+      tabId: existingTab.id,
+      pageUrl,
+    });
     await chrome.tabs.update(existingTab.id, {
       active: true,
       url: pageUrl,
@@ -168,6 +221,7 @@ async function openExtensionPage(pageUrl: string) {
     return;
   }
 
+  logger.debug("Creating new extension tab.", { pageUrl });
   await chrome.tabs.create({
     url: pageUrl,
     active: true,

@@ -1,4 +1,5 @@
 import { MESSAGE_TYPE, type DebugLogEvent } from "./messages";
+import { isDebugLoggingEnabled } from "./logger";
 
 export async function emitDebugLogToTab(
   tabId: number | undefined,
@@ -7,7 +8,7 @@ export async function emitDebugLogToTab(
   message: string,
   details?: unknown,
 ) {
-  if (typeof tabId !== "number") {
+  if (typeof tabId !== "number" || (level === "debug" && !isDebugLoggingEnabled())) {
     return;
   }
 

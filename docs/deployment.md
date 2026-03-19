@@ -109,6 +109,7 @@ export STORAGE_DRIVER=postgres
 export OBJECT_STORAGE_DRIVER=localfs
 export OBJECT_STORAGE_ROOT='./data/object-storage'
 export UPLOAD_BODY_LIMIT_MB=64
+export DEBUG_MODE=false
 export LOG_LEVEL=info
 export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 ```
@@ -125,6 +126,7 @@ export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 | `OBJECT_STORAGE_DRIVER` | 必填 | 当前只能是 `localfs` |
 | `OBJECT_STORAGE_ROOT` | 建议 | 显式指定对象存储目录，避免工作目录变化造成路径偏移 |
 | `UPLOAD_BODY_LIMIT_MB` | 视情况 | 根据归档大小调整 |
+| `DEBUG_MODE` | 可选 | 临时排障时可设为 `true`，会输出更详细请求日志 |
 | `LOG_LEVEL` | 建议 | 推荐 `info` 或 `warn` |
 | `DATABASE_URL` | `postgres` 模式必填 | Postgres 连接串 |
 

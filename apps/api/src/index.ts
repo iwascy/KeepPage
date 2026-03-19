@@ -8,6 +8,13 @@ async function start() {
     host: config.API_HOST,
     port: config.API_PORT,
   });
+  server.log.info({
+    host: config.API_HOST,
+    port: config.API_PORT,
+    storageDriver: config.STORAGE_DRIVER,
+    debugMode: config.DEBUG_MODE,
+    logLevel: config.LOG_LEVEL,
+  }, "KeepPage API started");
 }
 
 start().catch((error) => {

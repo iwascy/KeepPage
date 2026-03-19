@@ -193,8 +193,18 @@ npm run start -w @keeppage/api
 | `OBJECT_STORAGE_DRIVER` | `localfs` | 对象存储驱动，当前仅支持 `localfs` |
 | `OBJECT_STORAGE_ROOT` | `./data/object-storage` | 本地对象存储目录 |
 | `UPLOAD_BODY_LIMIT_MB` | `32` | 上传体积限制，单位 MB |
+| `DEBUG_MODE` | `false` | 开启后自动启用更详细的 API 调试日志 |
 | `LOG_LEVEL` | `info` | Fastify 日志级别 |
 | `DATABASE_URL` | 空 | 使用 Postgres 时必填 |
+
+如果需要排查接口问题，可以直接开启：
+
+```bash
+export DEBUG_MODE=true
+npm run start -w @keeppage/api
+```
+
+开启后会额外打印请求头摘要、参数、请求体摘要、响应状态和耗时；敏感头和口令字段会自动脱敏。
 
 ### 健康检查
 
@@ -231,6 +241,12 @@ curl -sS http://127.0.0.1:8787/health
 - 展示质量评分与失败原因
 - 本地预览归档内容
 - 调用 API 进行初始化、上传和完成同步
+
+插件侧也支持“调试模式”：
+
+- 打开扩展侧边栏
+- 在“同步与默认规则”或登录页“连接设置”里勾选“开启调试模式（打印详细日志）”
+- 然后查看扩展的 `service worker` 控制台，以及当前页面的 content script 控制台日志
 
 ### 启动与构建
 

@@ -69,6 +69,12 @@ export default defineContentScript({
           logger.info("Collecting live signals.", {
             url: location.href,
           });
+          logger.debug("Collecting source patch and DOM-based live signals.", {
+            canonicalUrl: readCanonicalUrl(),
+            referrer: document.referrer || undefined,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+          });
           const response: CollectLiveSignalsResponse = {
             ok: true,
             sourcePatch: collectSourcePatch(),
@@ -176,6 +182,10 @@ async function captureArchiveHtml(profile: CaptureProfile) {
   const singlefile = (globalThis as SingleFileGlobal).singlefile;
   const options = profileToSingleFileOptions(profile);
   const logger = createLogger("content");
+  logger.debug("Resolved SingleFile capture options.", {
+    profile,
+    options,
+  });
 
   // Official integration slot:
   // Once SingleFile MV3 core bundles are wired in document_start hooks,

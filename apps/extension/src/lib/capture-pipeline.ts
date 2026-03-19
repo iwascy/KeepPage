@@ -189,6 +189,10 @@ async function captureTab(
     profile,
     ownerUserId: owner.userId,
   });
+  await logCapture(saveMode, "debug", tabId, "Initial capture source prepared.", {
+    taskId: task.id,
+    source,
+  });
 
   try {
     let workingTask = saveMode === "private"
@@ -227,6 +231,11 @@ async function captureTab(
       ...workingTask.source,
       ...liveResult.sourcePatch,
     };
+    await logCapture(saveMode, "debug", tabId, "Merged capture source after live signals.", {
+      taskId: task.id,
+      sourcePatch: liveResult.sourcePatch,
+      mergedSource,
+    });
     workingTask = {
       ...workingTask,
       source: mergedSource,
@@ -276,6 +285,11 @@ async function captureTab(
       missingIframeLikely: archiveSignals.iframeCount < liveResult.liveSignals.iframeCount,
     });
     const localArchiveSha256 = await computeSha256Hex(archiveHtml);
+    await logCapture(saveMode, "debug", tabId, "Archive diagnostics computed.", {
+      taskId: task.id,
+      archiveSignals,
+      liveSignals: liveResult.liveSignals,
+    });
     await logCapture(saveMode, "info", tabId, "Archive prepared locally.", {
       taskId: task.id,
       archiveSize: archiveHtml.length,
@@ -391,6 +405,10 @@ async function captureSourceUrl(
 
   try {
     await waitForTabReady(retryTab.id);
+    logger.debug("Temporary retry tab is ready.", {
+      retryTabId: retryTab.id,
+      url,
+    });
     return await captureTab(retryTab.id, profile, owner, saveMode, {
       captureScreenshot: false,
     });
@@ -697,7 +715,7 @@ async function waitForTabReady(tabId: number, timeoutMs = 15000) {
 
 async function logCapture(
   saveMode: SaveMode,
-  level: "info" | "warn" | "error",
+  level: "debug" | "info" | "warn" | "error",
   tabId: number | undefined,
   message: string,
   details?: unknown,
