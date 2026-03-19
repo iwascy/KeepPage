@@ -6,6 +6,7 @@ import {
 } from "@keeppage/domain";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
+import type { AuthService } from "../lib/auth-service";
 import type { BookmarkRepository } from "../repositories";
 import type { ObjectStorage } from "../storage/object-storage";
 
@@ -19,12 +20,14 @@ const captureCompleteResponseSchema = z.object({
 export async function registerCaptureRoutes(
   app: FastifyInstance,
   config: ApiConfig,
+  authService: AuthService,
   repository: BookmarkRepository,
   objectStorage: ObjectStorage,
 ) {
   app.post("/captures/init", async (request, reply) => {
+    const user = await authService.requireUser(request);
     const payload = captureInitRequestSchema.parse(request.body);
-    const result = await repository.initCapture(payload);
+    const result = await repository.initCapture(user.id, payload);
     const publicBaseUrl = resolvePublicBaseUrl(request, config);
     const response = captureInitResponseSchema.parse({
       ...result,
@@ -34,8 +37,9 @@ export async function registerCaptureRoutes(
   });
 
   app.post("/captures/complete", async (request, reply) => {
+    const user = await authService.requireUser(request);
     const payload = captureCompleteRequestSchema.parse(request.body);
-    const result = await repository.completeCapture(payload);
+    const result = await repository.completeCapture(user.id, payload);
     const response = captureCompleteResponseSchema.parse({
       bookmarkId: result.bookmark.id,
       versionId: result.versionId,

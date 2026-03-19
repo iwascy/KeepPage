@@ -1,8 +1,10 @@
 import {
+  authUserSchema,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
   bookmarkVersionSchema,
   qualityReportSchema,
+  type AuthUser,
   type Bookmark,
   type BookmarkVersion,
   type CaptureCompleteRequest,
@@ -18,7 +20,16 @@ import {
   users,
 } from "@keeppage/db";
 import * as dbSchema from "@keeppage/db";
-import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
@@ -28,6 +39,7 @@ import type {
   BookmarkSearchQuery,
   CompleteCaptureResult,
   InitCaptureResult,
+  UserAuthRecord,
 } from "./bookmark-repository";
 
 type PostgresBookmarkRepositoryOptions = {
@@ -35,15 +47,11 @@ type PostgresBookmarkRepositoryOptions = {
   objectStorage: ObjectStorage;
 };
 
-const DEFAULT_USER_ID = "6f8326ce-830f-46b6-a2ab-2be2f102f5fe";
-const DEFAULT_USER_EMAIL = "cyan@keeppage.local";
-
 export class PostgresBookmarkRepository implements BookmarkRepository {
   readonly kind = "postgres" as const;
 
   private readonly pool: Pool;
   private readonly db: NodePgDatabase<typeof dbSchema>;
-  private readonly bootstrapPromise: Promise<void>;
   private readonly objectStorage: ObjectStorage;
 
   constructor(options: PostgresBookmarkRepositoryOptions) {
@@ -55,12 +63,71 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       schema: dbSchema,
     });
     this.objectStorage = options.objectStorage;
-    this.bootstrapPromise = this.ensureBootstrap();
   }
 
-  async initCapture(input: CaptureInitRequest): Promise<InitCaptureResult> {
-    await this.bootstrapPromise;
+  async createUser(input: {
+    email: string;
+    name?: string;
+    passwordHash: string;
+  }): Promise<AuthUser> {
+    const rows = await this.db
+      .insert(users)
+      .values({
+        email: input.email,
+        name: input.name,
+        passwordHash: input.passwordHash,
+      })
+      .returning({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        createdAt: users.createdAt,
+      });
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Failed to create user.");
+    }
+    return this.mapUserRow(row);
+  }
 
+  async findUserByEmail(email: string): Promise<UserAuthRecord | null> {
+    const rows = await this.db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        passwordHash: users.passwordHash,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    return {
+      user: this.mapUserRow(row),
+      passwordHash: row.passwordHash,
+    };
+  }
+
+  async getUserById(userId: string): Promise<AuthUser | null> {
+    const rows = await this.db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const row = rows[0];
+    return row ? this.mapUserRow(row) : null;
+  }
+
+  async initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
     const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(input.url));
     const existing = await this.db
       .select({
@@ -72,7 +139,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .innerJoin(bookmarkVersions, eq(bookmarks.id, bookmarkVersions.bookmarkId))
       .where(
         and(
-          eq(bookmarks.userId, DEFAULT_USER_ID),
+          eq(bookmarks.userId, userId),
           eq(bookmarks.normalizedUrlHash, normalizedUrlHash),
           eq(bookmarkVersions.htmlSha256, input.htmlSha256),
         ),
@@ -96,6 +163,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .from(captureUploads)
       .where(
         and(
+          eq(captureUploads.userId, userId),
           eq(captureUploads.normalizedUrlHash, normalizedUrlHash),
           eq(captureUploads.htmlSha256, input.htmlSha256),
         ),
@@ -110,11 +178,12 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       };
     }
 
-    const objectKey = this.createObjectKey();
+    const objectKey = this.createObjectKey(userId);
     await this.db
       .insert(captureUploads)
       .values({
         objectKey,
+        userId,
         normalizedUrlHash,
         sourceUrl: input.url,
         title: input.title,
@@ -124,7 +193,11 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         deviceId: input.deviceId,
       })
       .onConflictDoNothing({
-        target: [captureUploads.normalizedUrlHash, captureUploads.htmlSha256],
+        target: [
+          captureUploads.userId,
+          captureUploads.normalizedUrlHash,
+          captureUploads.htmlSha256,
+        ],
       });
 
     const claimedPending = await this.db
@@ -134,6 +207,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .from(captureUploads)
       .where(
         and(
+          eq(captureUploads.userId, userId),
           eq(captureUploads.normalizedUrlHash, normalizedUrlHash),
           eq(captureUploads.htmlSha256, input.htmlSha256),
         ),
@@ -151,9 +225,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     };
   }
 
-  async completeCapture(input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
-    await this.bootstrapPromise;
-
+  async completeCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
     const existingByObjectKey = await this.db
       .select({
         bookmarkId: bookmarks.id,
@@ -163,14 +235,14 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .innerJoin(bookmarks, eq(bookmarks.id, bookmarkVersions.bookmarkId))
       .where(
         and(
-          eq(bookmarks.userId, DEFAULT_USER_ID),
+          eq(bookmarks.userId, userId),
           eq(bookmarkVersions.htmlObjectKey, input.objectKey),
         ),
       )
       .limit(1);
 
     if (existingByObjectKey[0]) {
-      const bookmark = await this.loadBookmark(existingByObjectKey[0].bookmarkId);
+      const bookmark = await this.loadBookmark(existingByObjectKey[0].bookmarkId, userId);
       return {
         bookmark,
         versionId: existingByObjectKey[0].versionId,
@@ -190,7 +262,12 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       const pendingUpload = await tx
         .select()
         .from(captureUploads)
-        .where(eq(captureUploads.objectKey, input.objectKey))
+        .where(
+          and(
+            eq(captureUploads.objectKey, input.objectKey),
+            eq(captureUploads.userId, userId),
+          ),
+        )
         .limit(1);
       const pending = pendingUpload[0];
       if (!pending) {
@@ -204,7 +281,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         .from(bookmarks)
         .where(
           and(
-            eq(bookmarks.userId, DEFAULT_USER_ID),
+            eq(bookmarks.userId, userId),
             eq(bookmarks.normalizedUrlHash, normalizedUrlHash),
           ),
         )
@@ -215,7 +292,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       if (!existingBookmarkRows[0]) {
         await tx.insert(bookmarks).values({
           id: bookmarkId,
-          userId: DEFAULT_USER_ID,
+          userId,
           sourceUrl: input.source.url,
           canonicalUrl: input.source.canonicalUrl,
           normalizedUrlHash,
@@ -281,14 +358,12 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         htmlSha256: input.htmlSha256,
         textSha256: input.textSha256,
         textSimhash: input.textSimhash,
-        captureProfile: pending?.captureProfile ?? "standard",
-        captureOptionsJson: pending
-          ? {
-              fileSize: pending.fileSize,
-              uploadedSize: objectStat?.size ?? pending.fileSize,
-              deviceId: pending.deviceId,
-            }
-          : {},
+        captureProfile: pending.captureProfile ?? "standard",
+        captureOptionsJson: {
+          fileSize: pending.fileSize,
+          uploadedSize: objectStat?.size ?? pending.fileSize,
+          deviceId: pending.deviceId,
+        },
         qualityScore: input.quality.score,
         qualityGrade: input.quality.grade,
         qualityReasonsJson: input.quality.reasons,
@@ -323,7 +398,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       };
     });
 
-    const bookmark = await this.loadBookmark(transactionResult.bookmarkId);
+    const bookmark = await this.loadBookmark(transactionResult.bookmarkId, userId);
     return {
       bookmark,
       versionId: transactionResult.versionId,
@@ -332,10 +407,8 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     };
   }
 
-  async searchBookmarks(query: BookmarkSearchQuery) {
-    await this.bootstrapPromise;
-
-    const conditions = [eq(bookmarks.userId, DEFAULT_USER_ID)];
+  async searchBookmarks(userId: string, query: BookmarkSearchQuery) {
+    const conditions = [eq(bookmarks.userId, userId)];
     if (query.domain) {
       conditions.push(eq(bookmarks.domain, query.domain));
     }
@@ -404,36 +477,72 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     });
   }
 
-  async getBookmarkDetail(bookmarkId: string) {
-    await this.bootstrapPromise;
-
-    const bookmark = await this.loadBookmarkOrNull(bookmarkId);
+  async getBookmarkDetail(userId: string, bookmarkId: string) {
+    const bookmark = await this.loadBookmarkOrNull(bookmarkId, userId);
     if (!bookmark) {
       return null;
     }
 
-    const versions = await this.loadVersionsByBookmarkId(bookmarkId);
+    const versions = await this.loadVersionsByBookmarkId(bookmarkId, userId);
     return {
       bookmark,
       versions,
     };
   }
 
-  private async ensureBootstrap() {
-    await this.db
-      .insert(users)
-      .values({
-        id: DEFAULT_USER_ID,
-        email: DEFAULT_USER_EMAIL,
-        name: "KeepPage Local User",
+  async userCanReadObject(userId: string, objectKey: string) {
+    const rows = await this.db
+      .select({
+        id: bookmarkVersions.id,
       })
-      .onConflictDoNothing({
-        target: users.id,
-      });
+      .from(bookmarkVersions)
+      .innerJoin(bookmarks, eq(bookmarks.id, bookmarkVersions.bookmarkId))
+      .where(
+        and(
+          eq(bookmarks.userId, userId),
+          eq(bookmarkVersions.htmlObjectKey, objectKey),
+        ),
+      )
+      .limit(1);
+    return Boolean(rows[0]);
   }
 
-  private async loadBookmark(bookmarkId: string): Promise<Bookmark> {
-    const bookmark = await this.loadBookmarkOrNull(bookmarkId);
+  async userCanWriteObject(userId: string, objectKey: string) {
+    const pendingRows = await this.db
+      .select({
+        objectKey: captureUploads.objectKey,
+      })
+      .from(captureUploads)
+      .where(
+        and(
+          eq(captureUploads.userId, userId),
+          eq(captureUploads.objectKey, objectKey),
+        ),
+      )
+      .limit(1);
+    if (pendingRows[0]) {
+      return true;
+    }
+
+    return this.userCanReadObject(userId, objectKey);
+  }
+
+  private mapUserRow(row: {
+    id: string;
+    email: string;
+    name: string | null;
+    createdAt: Date;
+  }) {
+    return authUserSchema.parse({
+      id: row.id,
+      email: row.email,
+      name: row.name ?? undefined,
+      createdAt: row.createdAt.toISOString(),
+    });
+  }
+
+  private async loadBookmark(bookmarkId: string, userId: string): Promise<Bookmark> {
+    const bookmark = await this.loadBookmarkOrNull(bookmarkId, userId);
     if (!bookmark) {
       throw new Error(`Bookmark not found: ${bookmarkId}`);
     }
@@ -441,7 +550,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     return bookmark;
   }
 
-  private async loadBookmarkOrNull(bookmarkId: string): Promise<Bookmark | null> {
+  private async loadBookmarkOrNull(bookmarkId: string, userId: string): Promise<Bookmark | null> {
     const rows = await this.db
       .select({
         id: bookmarks.id,
@@ -463,7 +572,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .leftJoin(folders, eq(bookmarks.folderId, folders.id))
       .where(
         and(
-          eq(bookmarks.userId, DEFAULT_USER_ID),
+          eq(bookmarks.userId, userId),
           eq(bookmarks.id, bookmarkId),
         ),
       )
@@ -482,7 +591,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     });
   }
 
-  private async loadVersionsByBookmarkId(bookmarkId: string): Promise<BookmarkVersion[]> {
+  private async loadVersionsByBookmarkId(bookmarkId: string, userId: string): Promise<BookmarkVersion[]> {
     const rows = await this.db
       .select({
         id: bookmarkVersions.id,
@@ -500,7 +609,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .innerJoin(bookmarks, eq(bookmarks.id, bookmarkVersions.bookmarkId))
       .where(
         and(
-          eq(bookmarks.userId, DEFAULT_USER_ID),
+          eq(bookmarks.userId, userId),
           eq(bookmarkVersions.bookmarkId, bookmarkId),
         ),
       )
@@ -625,8 +734,8 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     return parsed.data;
   }
 
-  private createObjectKey() {
+  private createObjectKey(userId: string) {
     const day = new Date().toISOString().slice(0, 10);
-    return `captures/${day}/${crypto.randomUUID()}.html`;
+    return `captures/${userId}/${day}/${crypto.randomUUID()}.html`;
   }
 }

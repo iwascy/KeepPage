@@ -1,18 +1,45 @@
-import { type ReactNode, useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
-import type { Bookmark, QualityGrade, QualityReport } from "@keeppage/domain";
 import {
+  type FormEvent,
+  type ReactNode,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
+import type { AuthUser, Bookmark, QualityGrade, QualityReport } from "@keeppage/domain";
+import {
+  ApiError,
   type BookmarkDetailResult,
   type BookmarkViewerVersion,
+  createArchiveObjectUrl,
   fetchBookmarkDetail,
   fetchBookmarks,
+  fetchCurrentUser,
+  loginAccount,
+  registerAccount,
 } from "./api";
 
 type QualityFilter = "all" | QualityGrade;
-type LoadState = "idle" | "loading" | "ready";
-type DetailLoadState = "idle" | "loading" | "ready" | "not-found";
+type LoadState = "idle" | "loading" | "ready" | "error";
+type DetailLoadState = "idle" | "loading" | "ready" | "not-found" | "error";
+type AuthMode = "login" | "register";
 type ViewRoute =
   | { page: "list" }
   | { page: "detail"; bookmarkId: string; versionId?: string };
+
+type SessionState =
+  | { status: "booting"; token: null; user: null; error: string | null }
+  | { status: "anonymous"; token: null; user: null; error: string | null }
+  | { status: "authenticated"; token: string; user: AuthUser; error: null };
+
+type ArchivePreviewState =
+  | { status: "idle"; url?: undefined; error?: undefined }
+  | { status: "loading"; url?: undefined; error?: undefined }
+  | { status: "ready"; url: string; error?: undefined }
+  | { status: "error"; url?: undefined; error: string };
+
+const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 
 function qualityLabel(grade?: QualityGrade) {
   if (!grade) {
@@ -112,7 +139,36 @@ function openBookmark(bookmarkId: string, versionId?: string) {
   window.location.hash = buildDetailHash(bookmarkId, versionId);
 }
 
-function BookmarkCard({ bookmark, onOpen }: { bookmark: Bookmark; onOpen: (bookmarkId: string) => void }) {
+function getStoredToken() {
+  const stored = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
+  return stored || null;
+}
+
+function setStoredToken(token: string) {
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+}
+
+function clearStoredToken() {
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+function toErrorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "请求失败，请稍后重试。";
+}
+
+function BookmarkCard({
+  bookmark,
+  onOpen,
+}: {
+  bookmark: Bookmark;
+  onOpen: (bookmarkId: string) => void;
+}) {
   return (
     <article className="bookmark-card">
       <header className="card-header">
@@ -153,16 +209,20 @@ function BookmarkCard({ bookmark, onOpen }: { bookmark: Bookmark; onOpen: (bookm
 
 function EmptyState({
   mode,
+  title,
+  description,
   action,
 }: {
   mode: "empty" | "search-empty" | "missing-detail";
+  title?: string;
+  description?: string;
   action?: ReactNode;
 }) {
   if (mode === "search-empty") {
     return (
       <section className="empty-state">
-        <h2>没有匹配的归档</h2>
-        <p>试试别的关键词，或者调整质量筛选条件。</p>
+        <h2>{title ?? "没有匹配的归档"}</h2>
+        <p>{description ?? "试试别的关键词，或者调整质量筛选条件。"}</p>
         {action}
       </section>
     );
@@ -170,30 +230,128 @@ function EmptyState({
   if (mode === "missing-detail") {
     return (
       <section className="empty-state">
-        <h2>没有找到这个归档</h2>
-        <p>它可能还未同步完成，或者当前数据源里不存在该书签。</p>
+        <h2>{title ?? "没有找到这个归档"}</h2>
+        <p>{description ?? "它可能还未同步完成，或者当前账号下不存在该书签。"}</p>
         {action}
       </section>
     );
   }
   return (
     <section className="empty-state">
-      <h2>还没有归档记录</h2>
-      <p>当扩展开始同步后，你保存的页面会出现在这里。</p>
+      <h2>{title ?? "还没有归档记录"}</h2>
+      <p>{description ?? "登录后，扩展同步过来的页面会出现在这里。"}</p>
       {action}
     </section>
+  );
+}
+
+function AuthPanel({
+  mode,
+  name,
+  email,
+  password,
+  submitting,
+  error,
+  onModeChange,
+  onNameChange,
+  onEmailChange,
+  onPasswordChange,
+  onSubmit,
+}: {
+  mode: AuthMode;
+  name: string;
+  email: string;
+  password: string;
+  submitting: boolean;
+  error: string | null;
+  onModeChange: (mode: AuthMode) => void;
+  onNameChange: (value: string) => void;
+  onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const isRegister = mode === "register";
+  return (
+    <main className="auth-shell">
+      <section className="auth-card">
+        <p className="eyebrow">KeepPage Account</p>
+        <h1>{isRegister ? "注册你的归档空间" : "登录 KeepPage"}</h1>
+        <p className="subtitle">
+          {isRegister
+            ? "注册后，每个账号会拥有独立的网页归档列表、详情和版本记录。"
+            : "登录后才能查看自己的归档，并继续让扩展把页面同步到当前账号。"}
+        </p>
+
+        <div className="auth-switch">
+          <button
+            className={mode === "login" ? "auth-switch-btn is-active" : "auth-switch-btn"}
+            type="button"
+            onClick={() => onModeChange("login")}
+          >
+            登录
+          </button>
+          <button
+            className={mode === "register" ? "auth-switch-btn is-active" : "auth-switch-btn"}
+            type="button"
+            onClick={() => onModeChange("register")}
+          >
+            注册
+          </button>
+        </div>
+
+        <form className="auth-form" onSubmit={onSubmit}>
+          {isRegister ? (
+            <label className="field">
+              <span>昵称</span>
+              <input
+                value={name}
+                onChange={(event) => onNameChange(event.target.value)}
+                placeholder="给自己起个名字，可选"
+              />
+            </label>
+          ) : null}
+          <label className="field">
+            <span>邮箱</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => onEmailChange(event.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+            />
+          </label>
+          <label className="field">
+            <span>密码</span>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => onPasswordChange(event.target.value)}
+              placeholder={isRegister ? "至少 8 位" : "输入密码"}
+              autoComplete={isRegister ? "new-password" : "current-password"}
+              required
+            />
+          </label>
+          {error ? <p className="auth-error">{error}</p> : null}
+          <button className="primary-button auth-submit" type="submit" disabled={submitting}>
+            {submitting ? "提交中..." : isRegister ? "注册并进入工作台" : "登录进入工作台"}
+          </button>
+        </form>
+      </section>
+    </main>
   );
 }
 
 function DetailPanel({
   detail,
   selectedVersion,
+  previewState,
 }: {
   detail: BookmarkDetailResult;
   selectedVersion: BookmarkViewerVersion;
+  previewState: ArchivePreviewState;
 }) {
   const quality: QualityReport = selectedVersion.quality;
-  const previewUrl = selectedVersion.previewUrl ?? selectedVersion.downloadUrl;
 
   return (
     <section className="detail-shell">
@@ -281,10 +439,10 @@ function DetailPanel({
             <a className="secondary-button" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
               打开原网页
             </a>
-            {previewUrl ? (
+            {previewState.status === "ready" ? (
               <a
                 className="primary-button"
-                href={selectedVersion.downloadUrl ?? previewUrl}
+                href={previewState.url}
                 download={`keeppage-${detail.bookmark.id}-v${selectedVersion.versionNo}.html`}
               >
                 下载归档 HTML
@@ -293,18 +451,25 @@ function DetailPanel({
           </div>
         </header>
 
-        {selectedVersion.archiveAvailable && previewUrl ? (
-          <iframe
-            className="archive-frame"
-            src={previewUrl}
-            title={`${detail.bookmark.title} v${selectedVersion.versionNo}`}
-          />
-        ) : (
+        {!selectedVersion.archiveAvailable ? (
           <section className="empty-state preview-empty">
             <h2>当前版本缺少真实归档对象</h2>
-            <p>版本元数据已经存在，但 `archive.html` 目前不可读，因此不展示 iframe 预览。</p>
+            <p>版本元数据已经存在，但 `archive.html` 目前不可读，因此不展示预览。</p>
           </section>
-        )}
+        ) : previewState.status === "loading" ? (
+          <section className="loading preview-empty">正在拉取归档 HTML...</section>
+        ) : previewState.status === "error" ? (
+          <section className="empty-state preview-empty">
+            <h2>归档对象加载失败</h2>
+            <p>{previewState.error}</p>
+          </section>
+        ) : previewState.status === "ready" ? (
+          <iframe
+            className="archive-frame"
+            src={previewState.url}
+            title={`${detail.bookmark.title} v${selectedVersion.versionNo}`}
+          />
+        ) : null}
       </section>
 
       <aside className="detail-panel">
@@ -392,16 +557,61 @@ function DetailPanel({
 
 export function App() {
   const [route, setRoute] = useState<ViewRoute>(() => parseRoute(window.location.hash));
+  const [session, setSession] = useState<SessionState>({
+    status: "booting",
+    token: null,
+    user: null,
+    error: null,
+  });
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>("all");
   const [items, setItems] = useState<Bookmark[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
-  const [source, setSource] = useState<"api" | "mock">("api");
+  const [listError, setListError] = useState<string | null>(null);
   const [detail, setDetail] = useState<BookmarkDetailResult | null>(null);
   const [detailLoadState, setDetailLoadState] = useState<DetailLoadState>("idle");
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [archivePreview, setArchivePreview] = useState<ArchivePreviewState>({
+    status: "idle",
+  });
   const [isPending, startTransition] = useTransition();
 
   const deferredSearch = useDeferredValue(searchInput);
+  const authToken = session.status === "authenticated" ? session.token : null;
+
+  function logout(message?: string) {
+    clearStoredToken();
+    goToList();
+    startTransition(() => {
+      setSession({
+        status: "anonymous",
+        token: null,
+        user: null,
+        error: message ?? null,
+      });
+      setItems([]);
+      setDetail(null);
+      setLoadState("idle");
+      setListError(null);
+      setDetailLoadState("idle");
+      setDetailError(null);
+      setArchivePreview({ status: "idle" });
+    });
+  }
+
+  function handleProtectedApiError(error: unknown) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      logout(error.message);
+      return true;
+    }
+    return false;
+  }
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -420,51 +630,128 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoadState("loading");
-
-    fetchBookmarks({
-      search: deferredSearch,
-      quality: qualityFilter,
-    }).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      startTransition(() => {
-        setItems(result.items);
-        setSource(result.source);
-        setLoadState("ready");
+    const storedToken = getStoredToken();
+    if (!storedToken) {
+      setSession({
+        status: "anonymous",
+        token: null,
+        user: null,
+        error: null,
       });
-    });
+      return;
+    }
+
+    fetchCurrentUser(storedToken)
+      .then((user) => {
+        if (cancelled) {
+          return;
+        }
+        setSession({
+          status: "authenticated",
+          token: storedToken,
+          user,
+          error: null,
+        });
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        clearStoredToken();
+        setSession({
+          status: "anonymous",
+          token: null,
+          user: null,
+          error: toErrorMessage(error),
+        });
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [deferredSearch, qualityFilter]);
+  }, []);
 
   useEffect(() => {
-    if (route.page !== "detail") {
+    if (!authToken) {
+      setItems([]);
+      setLoadState("idle");
+      setListError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadState("loading");
+    setListError(null);
+
+    fetchBookmarks(
+      {
+        search: deferredSearch,
+        quality: qualityFilter,
+      },
+      authToken,
+    )
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        startTransition(() => {
+          setItems(result.items);
+          setLoadState("ready");
+        });
+      })
+      .catch((error) => {
+        if (cancelled || handleProtectedApiError(error)) {
+          return;
+        }
+        startTransition(() => {
+          setItems([]);
+          setLoadState("error");
+          setListError(toErrorMessage(error));
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, deferredSearch, qualityFilter]);
+
+  useEffect(() => {
+    if (!authToken || route.page !== "detail") {
       setDetailLoadState("idle");
+      setDetailError(null);
       setDetail(null);
       return;
     }
 
     let cancelled = false;
     setDetailLoadState("loading");
+    setDetailError(null);
 
-    fetchBookmarkDetail(route.bookmarkId).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      startTransition(() => {
-        setDetail(result);
-        setDetailLoadState(result ? "ready" : "not-found");
+    fetchBookmarkDetail(route.bookmarkId, authToken)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        startTransition(() => {
+          setDetail(result);
+          setDetailLoadState(result ? "ready" : "not-found");
+        });
+      })
+      .catch((error) => {
+        if (cancelled || handleProtectedApiError(error)) {
+          return;
+        }
+        startTransition(() => {
+          setDetail(null);
+          setDetailLoadState("error");
+          setDetailError(toErrorMessage(error));
+        });
       });
-    });
 
     return () => {
       cancelled = true;
     };
-  }, [route]);
+  }, [authToken, route]);
 
   const summary = useMemo(() => {
     const high = items.filter((item) => item.latestQuality?.grade === "high").length;
@@ -486,7 +773,104 @@ export function App() {
     );
   }, [detail, route]);
 
-  const activeSource = route.page === "detail" && detail ? detail.source : source;
+  useEffect(() => {
+    let revokedUrl: string | null = null;
+    let cancelled = false;
+
+    if (!authToken || !selectedVersion?.archiveAvailable) {
+      setArchivePreview({ status: "idle" });
+      return;
+    }
+
+    setArchivePreview({ status: "loading" });
+    createArchiveObjectUrl(authToken, selectedVersion.htmlObjectKey)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        revokedUrl = url;
+        setArchivePreview({
+          status: "ready",
+          url,
+        });
+      })
+      .catch((error) => {
+        if (cancelled || handleProtectedApiError(error)) {
+          return;
+        }
+        setArchivePreview({
+          status: "error",
+          error: toErrorMessage(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+      if (revokedUrl) {
+        URL.revokeObjectURL(revokedUrl);
+      }
+    };
+  }, [authToken, selectedVersion?.archiveAvailable, selectedVersion?.htmlObjectKey]);
+
+  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthSubmitting(true);
+    setAuthError(null);
+
+    try {
+      const sessionResult = authMode === "register"
+        ? await registerAccount({
+            name: authName.trim() || undefined,
+            email: authEmail.trim(),
+            password: authPassword,
+          })
+        : await loginAccount({
+            email: authEmail.trim(),
+            password: authPassword,
+          });
+
+      setStoredToken(sessionResult.token);
+      setSession({
+        status: "authenticated",
+        token: sessionResult.token,
+        user: sessionResult.user,
+        error: null,
+      });
+      setAuthPassword("");
+      goToList();
+    } catch (error) {
+      clearStoredToken();
+      setAuthError(toErrorMessage(error));
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  if (session.status !== "authenticated") {
+    return session.status === "booting" ? (
+      <main className="auth-shell">
+        <section className="loading auth-loading">正在恢复登录状态...</section>
+      </main>
+    ) : (
+      <AuthPanel
+        mode={authMode}
+        name={authName}
+        email={authEmail}
+        password={authPassword}
+        submitting={authSubmitting}
+        error={authError ?? session.error}
+        onModeChange={(mode) => {
+          setAuthMode(mode);
+          setAuthError(null);
+        }}
+        onNameChange={setAuthName}
+        onEmailChange={setAuthEmail}
+        onPasswordChange={setAuthPassword}
+        onSubmit={handleAuthSubmit}
+      />
+    );
+  }
 
   return (
     <main className="page-shell">
@@ -498,11 +882,20 @@ export function App() {
           <p className="subtitle">
             {route.page === "detail"
               ? "查看主档、切换版本，并直接核对质量诊断与 archive.html 是否真实可读。"
-              : "以归档为先的收藏系统，先看得到保存质量，再谈同步、搜索和版本管理。"}
+              : "每个账号独立保存自己的网页归档、版本和详情预览。"}
           </p>
         </div>
-        <div className="sync-badge">
-          数据源：<b>{activeSource === "api" ? "实时 API" : "Mock 回退"}</b>
+        <div className="topbar-actions">
+          <div className="user-chip">
+            <strong>{session.user.name || session.user.email}</strong>
+            <span>{session.user.email}</span>
+          </div>
+          <div className="sync-badge">
+            数据源：<b>实时 API</b>
+          </div>
+          <button className="ghost-button" type="button" onClick={() => logout()}>
+            退出登录
+          </button>
         </div>
       </section>
 
@@ -552,6 +945,12 @@ export function App() {
 
           {loadState === "loading" || isPending ? (
             <section className="loading">正在刷新归档列表...</section>
+          ) : loadState === "error" ? (
+            <EmptyState
+              mode="empty"
+              title="归档列表加载失败"
+              description={listError ?? "暂时无法读取当前账号的归档列表。"}
+            />
           ) : items.length === 0 ? (
             <EmptyState mode={searchInput.trim() || qualityFilter !== "all" ? "search-empty" : "empty"} />
           ) : (
@@ -564,6 +963,17 @@ export function App() {
         </>
       ) : detailLoadState === "loading" || isPending ? (
         <section className="loading">正在加载归档详情...</section>
+      ) : detailLoadState === "error" ? (
+        <EmptyState
+          mode="missing-detail"
+          title="归档详情加载失败"
+          description={detailError ?? "暂时无法读取这条归档。"}
+          action={
+            <button className="primary-button" type="button" onClick={goToList}>
+              返回列表
+            </button>
+          }
+        />
       ) : detailLoadState === "not-found" || !detail || !selectedVersion ? (
         <EmptyState
           mode="missing-detail"
@@ -574,7 +984,7 @@ export function App() {
           }
         />
       ) : (
-        <DetailPanel detail={detail} selectedVersion={selectedVersion} />
+        <DetailPanel detail={detail} selectedVersion={selectedVersion} previewState={archivePreview} />
       )}
     </main>
   );

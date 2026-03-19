@@ -1,6 +1,8 @@
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { type ApiConfig } from "./config";
+import { AuthService } from "./lib/auth-service";
+import { isHttpError } from "./lib/http-error";
 import { createRepository } from "./repositories";
 import { registerRoutes } from "./routes";
 import { createObjectStorage } from "./storage/object-storage";
@@ -22,12 +24,24 @@ export function buildServer(config: ApiConfig) {
 
   const objectStorage = createObjectStorage(config);
   const repository = createRepository(config, objectStorage);
+  const authService = new AuthService({
+    config,
+    repository,
+  });
 
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: "ValidationError",
         issues: error.issues,
+      });
+    }
+
+    if (isHttpError(error)) {
+      return reply.status(error.statusCode).send({
+        error: error.code,
+        message: error.message,
+        details: error.details,
       });
     }
 
@@ -47,7 +61,7 @@ export function buildServer(config: ApiConfig) {
   });
 
   app.register(async (instance) => {
-    await registerRoutes(instance, config, repository, objectStorage);
+    await registerRoutes(instance, config, authService, repository, objectStorage);
   });
 
   return app;

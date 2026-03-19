@@ -1,7 +1,7 @@
 import {
-  bookmarkSearchResponseSchema,
   createBookmarkId,
   createVersionId,
+  type AuthUser,
   type Bookmark,
   type BookmarkVersion,
   type CaptureCompleteRequest,
@@ -11,14 +11,24 @@ import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
 import type { ObjectStorage } from "../storage/object-storage";
 import type {
   BookmarkRepository,
-  InitCaptureResult,
   BookmarkSearchQuery,
   CompleteCaptureResult,
+  InitCaptureResult,
+  UserAuthRecord,
 } from "./bookmark-repository";
 
 type PendingCapture = {
   objectKey: string;
   request: CaptureInitRequest;
+};
+
+type StoredUser = UserAuthRecord;
+
+type UserBookmarkState = {
+  bookmarks: Map<string, Bookmark>;
+  versionsByBookmark: Map<string, BookmarkVersion[]>;
+  pendingByObjectKey: Map<string, PendingCapture>;
+  versionsByObjectKey: Map<string, BookmarkVersion>;
 };
 
 type InMemoryBookmarkRepositoryOptions = {
@@ -28,42 +38,74 @@ type InMemoryBookmarkRepositoryOptions = {
 export class InMemoryBookmarkRepository implements BookmarkRepository {
   readonly kind = "memory" as const;
 
-  private readonly bookmarks = new Map<string, Bookmark>();
-  private readonly versionsByBookmark = new Map<string, BookmarkVersion[]>();
-  private readonly pendingByObjectKey = new Map<string, PendingCapture>();
-  private readonly versionsByObjectKey = new Map<string, BookmarkVersion>();
+  private readonly usersById = new Map<string, StoredUser>();
+  private readonly userIdsByEmail = new Map<string, string>();
+  private readonly stateByUserId = new Map<string, UserBookmarkState>();
   private readonly objectStorage: ObjectStorage;
 
   constructor(options: InMemoryBookmarkRepositoryOptions) {
     this.objectStorage = options.objectStorage;
   }
 
-  async initCapture(input: CaptureInitRequest): Promise<InitCaptureResult> {
+  async createUser(input: {
+    email: string;
+    name?: string;
+    passwordHash: string;
+  }): Promise<AuthUser> {
+    const user: AuthUser = {
+      id: crypto.randomUUID(),
+      email: input.email,
+      name: input.name,
+      createdAt: new Date().toISOString(),
+    };
+    this.usersById.set(user.id, {
+      user,
+      passwordHash: input.passwordHash,
+    });
+    this.userIdsByEmail.set(input.email, user.id);
+    this.ensureUserState(user.id);
+    return user;
+  }
+
+  async findUserByEmail(email: string): Promise<UserAuthRecord | null> {
+    const userId = this.userIdsByEmail.get(email);
+    if (!userId) {
+      return null;
+    }
+    return this.usersById.get(userId) ?? null;
+  }
+
+  async getUserById(userId: string): Promise<AuthUser | null> {
+    return this.usersById.get(userId)?.user ?? null;
+  }
+
+  async initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
+    const state = this.ensureUserState(userId);
     const normalizedUrl = normalizeSourceUrl(input.url);
     const normalizedUrlHash = hashNormalizedUrl(normalizedUrl);
 
-    for (const bookmark of this.bookmarks.values()) {
+    for (const bookmark of state.bookmarks.values()) {
       const bookmarkHash = hashNormalizedUrl(normalizeSourceUrl(bookmark.sourceUrl));
       if (bookmarkHash !== normalizedUrlHash) {
         continue;
       }
 
-      const versions = this.versionsByBookmark.get(bookmark.id) ?? [];
+      const versions = state.versionsByBookmark.get(bookmark.id) ?? [];
       const matchedVersion = versions.find((version) => version.htmlSha256 === input.htmlSha256);
       if (!matchedVersion) {
         continue;
       }
 
-      const existingObjectKey = this.findObjectKeyByVersionId(matchedVersion.id);
+      const existingObjectKey = this.findObjectKeyByVersionId(state, matchedVersion.id);
       return {
         alreadyExists: true,
         bookmarkId: bookmark.id,
         versionId: matchedVersion.id,
-        objectKey: existingObjectKey ?? this.createObjectKey(),
+        objectKey: existingObjectKey ?? this.createObjectKey(userId),
       };
     }
 
-    for (const pendingCapture of this.pendingByObjectKey.values()) {
+    for (const pendingCapture of state.pendingByObjectKey.values()) {
       const pendingHash = hashNormalizedUrl(normalizeSourceUrl(pendingCapture.request.url));
       if (
         pendingHash === normalizedUrlHash &&
@@ -76,16 +118,17 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       }
     }
 
-    const objectKey = this.createObjectKey();
-    this.pendingByObjectKey.set(objectKey, { objectKey, request: input });
+    const objectKey = this.createObjectKey(userId);
+    state.pendingByObjectKey.set(objectKey, { objectKey, request: input });
     return { alreadyExists: false, objectKey };
   }
 
-  async completeCapture(input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
-    const pendingCapture = this.pendingByObjectKey.get(input.objectKey);
-    const existingByObjectKey = this.versionsByObjectKey.get(input.objectKey);
+  async completeCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
+    const state = this.ensureUserState(userId);
+    const pendingCapture = state.pendingByObjectKey.get(input.objectKey);
+    const existingByObjectKey = state.versionsByObjectKey.get(input.objectKey);
     if (!pendingCapture && existingByObjectKey) {
-      const bookmark = this.findBookmarkByVersionId(existingByObjectKey.id);
+      const bookmark = this.findBookmarkByVersionId(state, existingByObjectKey.id);
       if (!bookmark) {
         throw new Error("Existing version not linked to bookmark.");
       }
@@ -106,16 +149,21 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     const normalizedUrl = normalizeSourceUrl(input.source.url);
     const normalizedUrlHash = hashNormalizedUrl(normalizedUrl);
     const now = new Date().toISOString();
-    const bookmark = this.findBookmarkByNormalizedHash(normalizedUrlHash) ?? this.createBookmark(input, now);
-    const versions = this.versionsByBookmark.get(bookmark.id) ?? [];
+    const bookmark = this.findBookmarkByNormalizedHash(state, normalizedUrlHash) ?? this.createBookmark(
+      state,
+      input,
+      now,
+    );
+    const versions = state.versionsByBookmark.get(bookmark.id) ?? [];
     const matchedVersion = versions.find((version) => version.htmlSha256 === input.htmlSha256);
 
     if (matchedVersion) {
-      this.pendingByObjectKey.delete(input.objectKey);
+      state.pendingByObjectKey.delete(input.objectKey);
       bookmark.latestVersionId = matchedVersion.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
-      this.bookmarks.set(bookmark.id, bookmark);
+      bookmark.versionCount = versions.length;
+      state.bookmarks.set(bookmark.id, bookmark);
       return {
         bookmark,
         versionId: matchedVersion.id,
@@ -132,21 +180,21 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       htmlSha256: input.htmlSha256,
       textSha256: input.textSha256,
       textSimhash: input.textSimhash,
-      captureProfile: pendingCapture?.request.profile ?? "standard",
+      captureProfile: pendingCapture.request.profile ?? "standard",
       quality: input.quality,
       createdAt: now,
     };
 
     versions.push(version);
-    this.versionsByBookmark.set(bookmark.id, versions);
-    this.versionsByObjectKey.set(input.objectKey, version);
-    this.pendingByObjectKey.delete(input.objectKey);
+    state.versionsByBookmark.set(bookmark.id, versions);
+    state.versionsByObjectKey.set(input.objectKey, version);
+    state.pendingByObjectKey.delete(input.objectKey);
 
     bookmark.latestVersionId = version.id;
     bookmark.latestQuality = input.quality;
     bookmark.versionCount = versions.length;
     bookmark.updatedAt = now;
-    this.bookmarks.set(bookmark.id, bookmark);
+    state.bookmarks.set(bookmark.id, bookmark);
 
     return {
       bookmark,
@@ -156,9 +204,10 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     };
   }
 
-  async searchBookmarks(query: BookmarkSearchQuery) {
+  async searchBookmarks(userId: string, query: BookmarkSearchQuery) {
+    const state = this.ensureUserState(userId);
     const keyword = query.q?.trim().toLowerCase();
-    const filtered = [...this.bookmarks.values()].filter((bookmark) => {
+    const filtered = [...state.bookmarks.values()].filter((bookmark) => {
       if (query.domain && bookmark.domain !== query.domain) {
         return false;
       }
@@ -183,22 +232,22 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       return searchable.includes(keyword);
     });
 
-    filtered.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    filtered.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
-    const paginated = filtered.slice(query.offset, query.offset + query.limit);
-    return bookmarkSearchResponseSchema.parse({
-      items: paginated,
+    return {
+      items: filtered.slice(query.offset, query.offset + query.limit),
       total: filtered.length,
-    });
+    };
   }
 
-  async getBookmarkDetail(bookmarkId: string) {
-    const bookmark = this.bookmarks.get(bookmarkId);
+  async getBookmarkDetail(userId: string, bookmarkId: string) {
+    const state = this.ensureUserState(userId);
+    const bookmark = state.bookmarks.get(bookmarkId);
     if (!bookmark) {
       return null;
     }
 
-    const versions = [...(this.versionsByBookmark.get(bookmarkId) ?? [])].sort(
+    const versions = [...(state.versionsByBookmark.get(bookmarkId) ?? [])].sort(
       (left, right) => right.versionNo - left.versionNo,
     );
 
@@ -208,8 +257,33 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     };
   }
 
-  private findBookmarkByNormalizedHash(normalizedHash: string) {
-    for (const bookmark of this.bookmarks.values()) {
+  async userCanReadObject(userId: string, objectKey: string) {
+    const state = this.ensureUserState(userId);
+    return state.versionsByObjectKey.has(objectKey);
+  }
+
+  async userCanWriteObject(userId: string, objectKey: string) {
+    const state = this.ensureUserState(userId);
+    return state.pendingByObjectKey.has(objectKey) || state.versionsByObjectKey.has(objectKey);
+  }
+
+  private ensureUserState(userId: string): UserBookmarkState {
+    const existing = this.stateByUserId.get(userId);
+    if (existing) {
+      return existing;
+    }
+    const created: UserBookmarkState = {
+      bookmarks: new Map(),
+      versionsByBookmark: new Map(),
+      pendingByObjectKey: new Map(),
+      versionsByObjectKey: new Map(),
+    };
+    this.stateByUserId.set(userId, created);
+    return created;
+  }
+
+  private findBookmarkByNormalizedHash(state: UserBookmarkState, normalizedHash: string) {
+    for (const bookmark of state.bookmarks.values()) {
       const bookmarkHash = hashNormalizedUrl(normalizeSourceUrl(bookmark.sourceUrl));
       if (bookmarkHash === normalizedHash) {
         return bookmark;
@@ -218,7 +292,11 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     return undefined;
   }
 
-  private createBookmark(input: CaptureCompleteRequest, now: string): Bookmark {
+  private createBookmark(
+    state: UserBookmarkState,
+    input: CaptureCompleteRequest,
+    now: string,
+  ): Bookmark {
     const bookmark: Bookmark = {
       id: createBookmarkId(),
       sourceUrl: input.source.url,
@@ -232,12 +310,12 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       createdAt: now,
       updatedAt: now,
     };
-    this.bookmarks.set(bookmark.id, bookmark);
+    state.bookmarks.set(bookmark.id, bookmark);
     return bookmark;
   }
 
-  private findObjectKeyByVersionId(versionId: string) {
-    for (const [objectKey, version] of this.versionsByObjectKey.entries()) {
+  private findObjectKeyByVersionId(state: UserBookmarkState, versionId: string) {
+    for (const [objectKey, version] of state.versionsByObjectKey.entries()) {
       if (version.id === versionId) {
         return objectKey;
       }
@@ -245,19 +323,19 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     return undefined;
   }
 
-  private findBookmarkByVersionId(versionId: string) {
-    for (const [bookmarkId, versions] of this.versionsByBookmark.entries()) {
+  private findBookmarkByVersionId(state: UserBookmarkState, versionId: string) {
+    for (const [bookmarkId, versions] of state.versionsByBookmark.entries()) {
       const hasVersion = versions.some((version) => version.id === versionId);
       if (!hasVersion) {
         continue;
       }
-      return this.bookmarks.get(bookmarkId);
+      return state.bookmarks.get(bookmarkId);
     }
     return undefined;
   }
 
-  private createObjectKey() {
+  private createObjectKey(userId: string) {
     const day = new Date().toISOString().slice(0, 10);
-    return `captures/${day}/${crypto.randomUUID()}.html`;
+    return `captures/${userId}/${day}/${crypto.randomUUID()}.html`;
   }
 }

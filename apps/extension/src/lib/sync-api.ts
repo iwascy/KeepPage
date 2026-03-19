@@ -4,6 +4,7 @@ import {
   type CaptureInitRequest,
   type CaptureTask,
 } from "@keeppage/domain";
+import { getStoredAuthUser } from "./auth-storage";
 import { emitDebugLogToTab } from "./debug-log";
 import { createLogger } from "./logger";
 
@@ -36,15 +37,19 @@ class UploadHttpError extends Error {
   readonly status: number;
   readonly responseBody: string;
 
-  constructor(status: number, responseBody: string) {
-    super(`Upload ${status}: ${responseBody}`);
+  constructor(status: number, responseBody: string, message?: string) {
+    super(message ?? `Upload ${status}: ${responseBody}`);
     this.name = "UploadHttpError";
     this.status = status;
     this.responseBody = responseBody;
   }
 }
 
-async function uploadArchiveHtml(uploadUrl: string, archiveHtml: string): Promise<UploadResult> {
+async function uploadArchiveHtml(
+  uploadUrl: string,
+  authHeaders: Record<string, string>,
+  archiveHtml: string,
+): Promise<UploadResult> {
   const uploadPayload = await createUploadPayload(archiveHtml);
   if (uploadPayload.byteLength > CHUNK_UPLOAD_THRESHOLD_BYTES) {
     logger.info("Archive payload exceeds direct upload threshold, switching to chunked upload.", {
@@ -52,11 +57,11 @@ async function uploadArchiveHtml(uploadUrl: string, archiveHtml: string): Promis
       payloadBytes: uploadPayload.byteLength,
       chunkSizeBytes: CHUNK_SIZE_BYTES,
     });
-    return uploadArchiveHtmlInChunks(uploadUrl, uploadPayload);
+    return uploadArchiveHtmlInChunks(uploadUrl, authHeaders, uploadPayload);
   }
 
   try {
-    await uploadArchiveHtmlDirect(uploadUrl, uploadPayload);
+    await uploadArchiveHtmlDirect(uploadUrl, authHeaders, uploadPayload);
     return {
       mode: "direct",
       payloadBytes: uploadPayload.byteLength,
@@ -70,16 +75,23 @@ async function uploadArchiveHtml(uploadUrl: string, archiveHtml: string): Promis
         payloadBytes: uploadPayload.byteLength,
         chunkSizeBytes: CHUNK_SIZE_BYTES,
       });
-      return uploadArchiveHtmlInChunks(uploadUrl, uploadPayload);
+      return uploadArchiveHtmlInChunks(uploadUrl, authHeaders, uploadPayload);
     }
     throw error;
   }
 }
 
-async function uploadArchiveHtmlDirect(uploadUrl: string, uploadPayload: UploadPayload) {
+async function uploadArchiveHtmlDirect(
+  uploadUrl: string,
+  authHeaders: Record<string, string>,
+  uploadPayload: UploadPayload,
+) {
   const response = await fetch(uploadUrl, {
     method: "PUT",
-    headers: uploadPayload.headers,
+    headers: {
+      ...authHeaders,
+      ...uploadPayload.headers,
+    },
     body: toBinaryBody(uploadPayload.body),
   });
 
@@ -90,6 +102,7 @@ async function uploadArchiveHtmlDirect(uploadUrl: string, uploadPayload: UploadP
 
 async function uploadArchiveHtmlInChunks(
   uploadUrl: string,
+  authHeaders: Record<string, string>,
   uploadPayload: UploadPayload,
 ): Promise<UploadResult> {
   const uploadId = crypto.randomUUID();
@@ -103,6 +116,7 @@ async function uploadArchiveHtmlInChunks(
     const response = await fetch(chunkUrl, {
       method: "PUT",
       headers: {
+        ...authHeaders,
         "content-type": "application/octet-stream",
         "x-keeppage-upload-offset": String(offset),
         "x-keeppage-upload-total-size": String(uploadPayload.byteLength),
@@ -186,7 +200,11 @@ async function createUploadError(response: Response, uploadUrl: string) {
     status: response.status,
     body: responseBody,
   });
-  return new UploadHttpError(response.status, responseBody);
+  return new UploadHttpError(
+    response.status,
+    responseBody,
+    formatApiErrorMessage(response.status, responseBody),
+  );
 }
 
 function isPayloadTooLargeError(error: unknown): error is UploadHttpError {
@@ -204,6 +222,22 @@ async function getApiBaseUrl() {
   const result = await chrome.storage.local.get("apiBaseUrl");
   const configured = typeof result.apiBaseUrl === "string" ? result.apiBaseUrl.trim() : "";
   return (configured || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+}
+
+async function getAuthToken() {
+  const result = await chrome.storage.local.get("authToken");
+  const configured = typeof result.authToken === "string" ? result.authToken.trim() : "";
+  return configured || "";
+}
+
+async function getAuthHeaders() {
+  const token = await getAuthToken();
+  if (!token) {
+    throw new Error("未登录账号，请先在扩展侧登录后再同步。");
+  }
+  return {
+    authorization: `Bearer ${token}`,
+  } satisfies Record<string, string>;
 }
 
 async function getOrCreateDeviceId() {
@@ -239,7 +273,7 @@ async function postJson(
       status: response.status,
       body: text,
     });
-    throw new Error(`API ${response.status}: ${text}`);
+    throw new Error(formatApiErrorMessage(response.status, text));
   }
 
   logger.info("POST request succeeded.", {
@@ -261,8 +295,20 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     throw new Error("Archive SHA-256 is missing.");
   }
 
+  const authUser = await getStoredAuthUser();
+  if (!authUser) {
+    throw new Error("未登录账号，请先在扩展侧登录后再同步。");
+  }
+  if (!task.owner) {
+    throw new Error("这条本地任务没有账号归属，请重新抓取后再同步。");
+  }
+  if (task.owner.userId !== authUser.id) {
+    throw new Error(`这条本地任务属于 ${task.owner.email}，请切回对应账号后再同步。`);
+  }
+
   const apiBaseUrl = await getApiBaseUrl();
   const deviceId = await getOrCreateDeviceId();
+  const authHeaders = await getAuthHeaders();
   const archiveFileSize = new TextEncoder().encode(task.artifacts.archiveHtml).length;
   await logSync("info", debugTabId, "Starting sync task.", {
     taskId: task.id,
@@ -283,6 +329,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
 
   const initResponse = captureInitResponseSchema.parse(
     await postJson(`${apiBaseUrl}/captures/init`, initPayload, {
+      ...authHeaders,
       "x-keeppage-public-base-url": apiBaseUrl,
     }),
   );
@@ -318,7 +365,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     });
   }
 
-  const uploadResult = await uploadArchiveHtml(uploadUrl, task.artifacts.archiveHtml);
+  const uploadResult = await uploadArchiveHtml(uploadUrl, authHeaders, task.artifacts.archiveHtml);
   await logSync("info", debugTabId, "Archive upload completed.", {
     taskId: task.id,
     uploadUrl,
@@ -341,6 +388,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
   const completeResponse = await postJson(
     `${apiBaseUrl}/captures/complete`,
     completePayload,
+    authHeaders,
   ) as {
     bookmarkId: string;
     versionId: string;
@@ -398,4 +446,11 @@ async function computeSha256Hex(content: string) {
   return Array.from(new Uint8Array(digest))
     .map((item) => item.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function formatApiErrorMessage(status: number, body: string) {
+  if (status === 401 || status === 403) {
+    return "未登录或登录已失效，请在扩展侧重新登录后再试。";
+  }
+  return body ? `API ${status}: ${body}` : `API ${status}`;
 }

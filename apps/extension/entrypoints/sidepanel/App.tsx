@@ -1,10 +1,19 @@
 import { useEffect, useState } from "react";
-import type { CaptureProfile, CaptureTask } from "@keeppage/domain";
+import {
+  authSessionSchema,
+  authUserSchema,
+  type AuthUser,
+  type CaptureProfile,
+  type CaptureTask,
+} from "@keeppage/domain";
 import { MESSAGE_TYPE, type TaskUpdatedEvent } from "../../src/lib/messages";
+import { getStoredAuthToken, getStoredAuthUser } from "../../src/lib/auth-storage";
 
 type AsyncState = "idle" | "capturing" | "error";
 type SettingsState = "idle" | "saving" | "saved" | "error";
 type ConnectionState = "idle" | "testing" | "ok" | "error";
+type AuthState = "idle" | "submitting" | "ok" | "error";
+type AuthMode = "login" | "register";
 
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
 const PROFILE_OPTIONS: Array<{
@@ -44,6 +53,13 @@ export function App() {
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [authState, setAuthState] = useState<AuthState>("idle");
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -85,7 +101,12 @@ export function App() {
     }
     const nextTasks = (response.tasks as CaptureTask[]) ?? [];
     setTasks(nextTasks);
-    setSelectedTaskId((current) => current ?? nextTasks[0]?.id ?? null);
+    setSelectedTaskId((current) => {
+      if (current && nextTasks.some((task) => task.id === current)) {
+        return current;
+      }
+      return nextTasks[0]?.id ?? null;
+    });
   }
 
   async function captureCurrentPage() {
@@ -137,10 +158,14 @@ export function App() {
     const result = await chrome.storage.local.get([
       "apiBaseUrl",
       "captureProfilePreference",
+      "authToken",
+      "authUser",
     ]);
-    if (typeof result.apiBaseUrl === "string" && result.apiBaseUrl.trim()) {
-      setApiBaseUrl(result.apiBaseUrl.trim());
-    }
+    const normalizedApiBaseUrl = typeof result.apiBaseUrl === "string" && result.apiBaseUrl.trim()
+      ? normalizeApiBaseUrl(result.apiBaseUrl)
+      : DEFAULT_API_BASE_URL;
+    setApiBaseUrl(normalizedApiBaseUrl);
+
     if (typeof result.captureProfilePreference === "string") {
       const matched = PROFILE_OPTIONS.find(
         (option) => option.value === result.captureProfilePreference,
@@ -148,6 +173,36 @@ export function App() {
       if (matched) {
         setCaptureProfile(matched.value);
       }
+    }
+
+    const storedToken = typeof result.authToken === "string" ? result.authToken.trim() : "";
+    if (!storedToken) {
+      setTasks([]);
+      setSelectedTaskId(null);
+      return;
+    }
+
+    const parsedUser = await getStoredAuthUser();
+    if (parsedUser) {
+      setAuthUser(parsedUser);
+    }
+
+    try {
+      const user = await fetchCurrentAccount(normalizedApiBaseUrl, storedToken);
+      setAuthUser(user);
+      await chrome.storage.local.set({ authUser: user });
+      setAuthState("ok");
+      setAuthMessage(`已登录 ${user.email}，后续同步将归到这个账号。`);
+      await refreshTasks();
+    } catch (loadError) {
+      await chrome.storage.local.remove(["authToken", "authUser"]);
+      setAuthUser(null);
+      setTasks([]);
+      setSelectedTaskId(null);
+      setAuthState("error");
+      setAuthMessage(
+        loadError instanceof Error ? loadError.message : "已保存的登录状态失效，请重新登录。",
+      );
     }
   }
 
@@ -193,26 +248,60 @@ export function App() {
     }
   }
 
+  async function submitAuth() {
+    setAuthState("submitting");
+    setAuthMessage(null);
+    try {
+      const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
+      const session = await authenticateAccount(normalizedApiBaseUrl, authMode, {
+        email: authEmail.trim(),
+        password: authPassword,
+        name: authName.trim() || undefined,
+      });
+      await chrome.storage.local.set({
+        authToken: session.token,
+        authUser: session.user,
+      });
+      setAuthUser(session.user);
+      setAuthPassword("");
+      setAuthState("ok");
+      setAuthMessage(`已登录 ${session.user.email}，新的保存会同步到这个账号。`);
+      setConnectionState("idle");
+      setConnectionMessage(null);
+      await refreshTasks();
+    } catch (authError) {
+      setAuthState("error");
+      setAuthMessage(
+        authError instanceof Error ? authError.message : "登录失败。",
+      );
+    }
+  }
+
+  async function logoutAuth() {
+    await chrome.storage.local.remove(["authToken", "authUser"]);
+    setAuthUser(null);
+    setTasks([]);
+    setSelectedTaskId(null);
+    setAuthState("idle");
+    setAuthMessage("已退出当前账号。要继续保存网页，请先重新登录。");
+    setConnectionState("idle");
+    setConnectionMessage(null);
+  }
+
   async function testConnection() {
     setConnectionState("testing");
     setConnectionMessage(null);
     try {
-      const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/health`, {
-        headers: {
-          accept: "application/json",
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`服务返回 ${response.status}`);
+      const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
+      const token = await getStoredAuthToken();
+      if (!token) {
+        throw new Error("请先登录账号，再测试同步连接。");
       }
-      const payload = (await response.json()) as {
-        storage?: string;
-        status?: string;
-      };
+      const user = await fetchCurrentAccount(normalizedApiBaseUrl, token);
+      setAuthUser(user);
+      await chrome.storage.local.set({ authUser: user });
       setConnectionState("ok");
-      setConnectionMessage(
-        `连接正常，后端状态 ${payload.status ?? "ok"}，存储驱动 ${payload.storage ?? "unknown"}。`,
-      );
+      setConnectionMessage(`连接正常，当前账号 ${user.email}。`);
     } catch (testError) {
       setConnectionState("error");
       setConnectionMessage(
@@ -233,6 +322,9 @@ export function App() {
   const retryLabel = canResumeSync && selectedTask?.profile === captureProfile
     ? "继续同步"
     : "按当前 Profile 重抓";
+  const authBannerTone = authState === "ok" ? "ok" : authState;
+  const isRegister = authMode === "register";
+  const canCapture = Boolean(authUser) && state !== "capturing";
 
   return (
     <div className="layout">
@@ -258,14 +350,94 @@ export function App() {
           </label>
           <button
             className="capture-btn"
-            disabled={state === "capturing"}
+            disabled={!canCapture}
             onClick={captureCurrentPage}
             type="button"
           >
-            {state === "capturing" ? "保存中..." : "保存当前页"}
+            {!authUser ? "请先登录" : state === "capturing" ? "保存中..." : "保存当前页"}
           </button>
         </div>
       </header>
+
+      <section className="account-strip">
+        <div className="settings-copy">
+          <p className="settings-title">账号状态</p>
+          <p className="muted">
+            {authUser
+              ? "当前扩展会把新归档同步到这个账号。"
+              : "请先注册或登录账号，新的本地归档任务也会绑定到当前账号。"}
+          </p>
+        </div>
+
+        {authUser ? (
+          <div className="account-summary">
+            <div className="account-chip">
+              <strong>{authUser.name || authUser.email}</strong>
+              <span>{authUser.email}</span>
+            </div>
+            <button className="ghost-btn" onClick={logoutAuth} type="button">
+              退出登录
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="account-form">
+              <div className="auth-switch">
+                <button
+                  className={authMode === "login" ? "auth-switch-btn active" : "auth-switch-btn"}
+                  onClick={() => setAuthMode("login")}
+                  type="button"
+                >
+                  登录
+                </button>
+                <button
+                  className={authMode === "register" ? "auth-switch-btn active" : "auth-switch-btn"}
+                  onClick={() => setAuthMode("register")}
+                  type="button"
+                >
+                  注册
+                </button>
+              </div>
+              {isRegister ? (
+                <label className="field-inline">
+                  <span>昵称</span>
+                  <input
+                    value={authName}
+                    onChange={(event) => setAuthName(event.target.value)}
+                    placeholder="可选"
+                  />
+                </label>
+              ) : null}
+              <label className="field-inline">
+                <span>邮箱</span>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="you@example.com"
+                />
+              </label>
+              <label className="field-inline">
+                <span>密码</span>
+                <input
+                  type="password"
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder={isRegister ? "至少 8 位" : "输入密码"}
+                />
+              </label>
+            </div>
+            <div className="settings-actions">
+              <button onClick={submitAuth} type="button">
+                {authState === "submitting" ? "提交中..." : isRegister ? "注册并登录" : "登录"}
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+      {authMessage && (
+        <section className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
+      )}
 
       <section className="settings-strip">
         <div className="settings-copy">
@@ -307,7 +479,9 @@ export function App() {
         <section className="task-list">
           {tasks.length === 0 && (
             <p className="muted">
-              还没有保存记录。点击「保存当前页」，先生成本地归档，再异步进入上传队列。
+              {authUser
+                ? "当前账号还没有保存记录。点击「保存当前页」，先生成本地归档，再异步进入上传队列。"
+                : "登录后，这里只会显示当前账号的本地保存记录。"}
             </p>
           )}
           {tasks.map((task) => {
@@ -349,6 +523,7 @@ export function App() {
               </div>
               <p className="muted">{selectedTask.source.url}</p>
               <div className="task-facts">
+                {selectedTask.owner ? <span>账号：{selectedTask.owner.email}</span> : null}
                 <span>状态：{selectedTask.status}</span>
                 <span>Profile：{selectedTask.profile}</span>
                 {selectedTask.bookmarkId && <span>Bookmark：{selectedTask.bookmarkId}</span>}
@@ -396,4 +571,54 @@ export function App() {
 function normalizeApiBaseUrl(input: string) {
   const normalized = input.trim();
   return (normalized || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+}
+
+async function authenticateAccount(
+  apiBaseUrl: string,
+  mode: AuthMode,
+  payload: {
+    email: string;
+    password: string;
+    name?: string;
+  },
+) {
+  const response = await fetch(`${apiBaseUrl}/auth/${mode === "register" ? "register" : "login"}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response));
+  }
+
+  return authSessionSchema.parse(await response.json());
+}
+
+async function fetchCurrentAccount(apiBaseUrl: string, authToken: string) {
+  const response = await fetch(`${apiBaseUrl}/auth/me`, {
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${authToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response));
+  }
+
+  return authUserSchema.parse(await response.json());
+}
+
+async function readApiErrorMessage(response: Response) {
+  try {
+    const payload = await response.json() as { message?: string };
+    return payload.message ?? `API ${response.status}`;
+  } catch {
+    const text = await response.text();
+    return text || `API ${response.status}`;
+  }
 }

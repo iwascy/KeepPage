@@ -8,6 +8,8 @@ const configSchema = z.object({
   STORAGE_DRIVER: z.enum(["memory", "postgres"]).default("memory"),
   OBJECT_STORAGE_DRIVER: z.enum(["localfs"]).default("localfs"),
   OBJECT_STORAGE_ROOT: z.string().default("./data/object-storage"),
+  AUTH_TOKEN_SECRET: z.string().default("keeppage-dev-secret"),
+  AUTH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
   UPLOAD_BODY_LIMIT_MB: z.coerce.number().int().positive().default(32),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   DATABASE_URL: z.string().optional(),

@@ -112,6 +112,7 @@ body {
   cursor: progress;
 }
 
+.account-strip,
 .settings-strip {
   padding: 12px 16px;
   display: grid;
@@ -120,6 +121,64 @@ body {
   border-bottom: 1px solid var(--border);
   background: rgba(255, 253, 248, 0.85);
   align-items: end;
+}
+
+.account-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.account-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.account-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.account-chip strong {
+  font-size: 13px;
+}
+
+.account-chip span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.auth-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.auth-switch-btn {
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--muted);
+}
+
+.auth-switch-btn.active {
+  background: var(--accent);
+  color: white;
 }
 
 .settings-copy {
@@ -357,6 +416,7 @@ body {
 
 @media (max-width: 920px) {
   .header,
+  .account-strip,
   .settings-strip,
   .main {
     grid-template-columns: 1fr;
@@ -372,5 +432,14 @@ body {
   .settings-actions,
   .actions {
     flex-wrap: wrap;
+  }
+
+  .account-form {
+    grid-template-columns: 1fr;
+  }
+
+  .account-summary {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

@@ -5,6 +5,7 @@ import {
 } from "@keeppage/domain";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { AuthService } from "../lib/auth-service";
 import type { BookmarkRepository } from "../repositories";
 import type { ObjectStorage } from "../storage/object-storage";
 
@@ -22,19 +23,22 @@ const bookmarkParamsSchema = z.object({
 
 export async function registerBookmarkRoutes(
   app: FastifyInstance,
+  authService: AuthService,
   repository: BookmarkRepository,
   objectStorage: ObjectStorage,
 ) {
   app.get("/bookmarks", async (request, reply) => {
+    const user = await authService.requireUser(request);
     const query = searchQuerySchema.parse(request.query);
-    const result = await repository.searchBookmarks(query);
+    const result = await repository.searchBookmarks(user.id, query);
     const payload = bookmarkSearchResponseSchema.parse(result);
     return reply.send(payload);
   });
 
   app.get<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId", async (request, reply) => {
+    const user = await authService.requireUser(request);
     const params = bookmarkParamsSchema.parse(request.params);
-    const detail = await repository.getBookmarkDetail(params.bookmarkId);
+    const detail = await repository.getBookmarkDetail(user.id, params.bookmarkId);
     if (!detail) {
       return reply.status(404).send({
         error: "BookmarkNotFound",

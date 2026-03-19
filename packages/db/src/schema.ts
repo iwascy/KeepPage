@@ -24,8 +24,11 @@ export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: varchar("email", { length: 320 }).notNull(),
   name: varchar("name", { length: 120 }),
+  passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  userEmailIdx: uniqueIndex("users_email_idx").on(table.email),
+}));
 
 export const devices = pgTable("devices", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -83,6 +86,9 @@ export const captureUploads = pgTable(
   "capture_uploads",
   {
     objectKey: text("object_key").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     normalizedUrlHash: varchar("normalized_url_hash", { length: 128 }).notNull(),
     sourceUrl: text("source_url").notNull(),
     title: text("title").notNull(),
@@ -94,6 +100,7 @@ export const captureUploads = pgTable(
   },
   (table) => ({
     captureUploadsHashIdx: uniqueIndex("capture_uploads_hash_idx").on(
+      table.userId,
       table.normalizedUrlHash,
       table.htmlSha256,
     ),

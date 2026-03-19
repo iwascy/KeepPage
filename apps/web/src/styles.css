@@ -28,6 +28,77 @@ body {
     linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.auth-card {
+  width: min(520px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(255, 251, 243, 0.82);
+  backdrop-filter: blur(6px);
+  padding: 1.35rem;
+  box-shadow:
+    0 26px 54px rgba(57, 50, 35, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.auth-switch {
+  display: inline-flex;
+  gap: 0.45rem;
+  padding: 0.25rem;
+  margin-top: 1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+}
+
+.auth-switch-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.auth-switch-btn.is-active {
+  background: var(--brand);
+  color: white;
+}
+
+.auth-error {
+  margin: 0;
+  border: 1px solid rgba(154, 43, 43, 0.16);
+  border-radius: 12px;
+  background: rgba(154, 43, 43, 0.08);
+  color: var(--low);
+  padding: 0.75rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+.auth-submit {
+  width: 100%;
+}
+
+.auth-loading {
+  width: min(520px, 100%);
+  min-height: 180px;
+}
+
 .page-shell {
   position: relative;
   width: min(1200px, 100% - 2rem);
@@ -112,6 +183,29 @@ h1 {
   padding: 0.5rem 0.9rem;
   background: rgba(255, 255, 255, 0.72);
   font-size: 0.86rem;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.user-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.76);
+  font-size: 0.82rem;
+}
+
+.user-chip span {
+  color: var(--muted);
 }
 
 .control-panel {
@@ -349,6 +443,11 @@ select:focus {
     flex-direction: column;
   }
 
+  .topbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .control-panel {
     grid-template-columns: 1fr;
   }
@@ -371,6 +470,14 @@ button {
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.ghost-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
 }
 
 .primary-button:hover,

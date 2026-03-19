@@ -35,9 +35,8 @@ export default defineBackground(() => {
       tabId: tab.id,
       url: tab.url,
     });
-    await captureActiveTab("standard");
     if (tab.windowId != null) {
-      await openSidePanel(tab.windowId);
+      await attemptQuickCapture(tab.windowId, "standard");
     }
   });
 
@@ -49,16 +48,16 @@ export default defineBackground(() => {
       tabId: tab.id,
       url: tab.url,
     });
-    await captureActiveTab("standard");
     if (tab.windowId != null) {
-      await openSidePanel(tab.windowId);
+      await attemptQuickCapture(tab.windowId, "standard");
     }
   });
 
   chrome.commands.onCommand.addListener(async (command) => {
     logger.info("Command received.", { command });
     if (command === "save-current-page") {
-      await captureActiveTab("standard");
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      await attemptQuickCapture(tab?.windowId, "standard");
       return;
     }
     if (command === "open-side-panel") {
@@ -160,6 +159,20 @@ async function openSidePanel(windowId: number) {
     await chrome.sidePanel.open({ windowId });
   } catch {
     // Ignore: old browser versions may not support sidePanel.open.
+  }
+}
+
+async function attemptQuickCapture(windowId: number | undefined, profile: "standard") {
+  try {
+    await captureActiveTab(profile);
+  } catch (error) {
+    logger.warn("Quick capture failed.", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    if (windowId != null) {
+      await openSidePanel(windowId);
+    }
   }
 }
 

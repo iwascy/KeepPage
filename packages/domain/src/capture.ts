@@ -81,12 +81,19 @@ export const captureArtifactsSchema = z.object({
   meta: z.record(z.string(), z.unknown()).default({}),
 });
 
+export const captureTaskOwnerSchema = z.object({
+  userId: z.string().min(1),
+  email: z.string().email(),
+  name: z.string().min(1).optional(),
+});
+
 export const captureTaskSchema = z.object({
   id: z.string().min(1),
   bookmarkId: z.string().min(1).optional(),
   versionId: z.string().min(1).optional(),
   status: captureStatusSchema,
   profile: captureProfileSchema,
+  owner: captureTaskOwnerSchema.optional(),
   source: captureSourceSchema,
   quality: qualityReportSchema.optional(),
   artifacts: captureArtifactsSchema.optional(),
@@ -100,6 +107,29 @@ export const tagSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   color: z.string().optional(),
+});
+
+export const authUserSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().email(),
+  name: z.string().min(1).optional(),
+  createdAt: z.string().datetime(),
+});
+
+export const authRegisterRequestSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).max(128),
+  name: z.string().max(120).optional(),
+});
+
+export const authLoginRequestSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1).max(128),
+});
+
+export const authSessionSchema = z.object({
+  token: z.string().min(1),
+  user: authUserSchema,
 });
 
 export const folderSchema = z.object({
@@ -187,10 +217,15 @@ export type CapturePageSignals = z.infer<typeof capturePageSignalsSchema>;
 export type QualityReason = z.infer<typeof qualityReasonSchema>;
 export type QualityReport = z.infer<typeof qualityReportSchema>;
 export type CaptureArtifacts = z.infer<typeof captureArtifactsSchema>;
+export type CaptureTaskOwner = z.infer<typeof captureTaskOwnerSchema>;
 export type CaptureTask = z.infer<typeof captureTaskSchema>;
 export type Bookmark = z.infer<typeof bookmarkSchema>;
 export type BookmarkVersion = z.infer<typeof bookmarkVersionSchema>;
 export type BookmarkDetailVersion = z.infer<typeof bookmarkDetailVersionSchema>;
+export type AuthUser = z.infer<typeof authUserSchema>;
+export type AuthRegisterRequest = z.infer<typeof authRegisterRequestSchema>;
+export type AuthLoginRequest = z.infer<typeof authLoginRequestSchema>;
+export type AuthSession = z.infer<typeof authSessionSchema>;
 export type CaptureInitRequest = z.infer<typeof captureInitRequestSchema>;
 export type CaptureInitResponse = z.infer<typeof captureInitResponseSchema>;
 export type CaptureCompleteRequest = z.infer<typeof captureCompleteRequestSchema>;

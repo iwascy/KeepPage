@@ -5,7 +5,9 @@ import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
 import type { ApiConfig } from "../config";
+import type { AuthService } from "../lib/auth-service";
 import { z } from "zod";
+import type { BookmarkRepository } from "../repositories";
 import type { ObjectStorage } from "../storage/object-storage";
 
 const gunzipAsync = promisify(gunzip);
@@ -22,14 +24,18 @@ const uploadChunkParamsSchema = z.object({
 export async function registerUploadRoutes(
   app: FastifyInstance,
   config: ApiConfig,
+  authService: AuthService,
+  repository: BookmarkRepository,
   objectStorage: ObjectStorage,
 ) {
   app.get<{ Params: { encodedObjectKey: string } }>(
     "/objects/:encodedObjectKey",
     async (request, reply) => {
+      const user = await authService.requireUser(request);
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = decodeObjectKey(params.encodedObjectKey);
-      if (!(await objectStorage.hasObject(objectKey))) {
+      const canRead = await repository.userCanReadObject(user.id, objectKey);
+      if (!canRead || !(await objectStorage.hasObject(objectKey))) {
         return reply.status(404).send({
           error: "ObjectNotFound",
           message: "Object not found.",
@@ -45,8 +51,16 @@ export async function registerUploadRoutes(
   app.put<{ Params: { encodedObjectKey: string }; Body: Buffer }>(
     "/uploads/:encodedObjectKey",
     async (request, reply) => {
+      const user = await authService.requireUser(request);
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = decodeObjectKey(params.encodedObjectKey);
+      const canWrite = await repository.userCanWriteObject(user.id, objectKey);
+      if (!canWrite) {
+        return reply.status(403).send({
+          error: "UploadForbidden",
+          message: "Current user cannot upload to this object key.",
+        });
+      }
       const body = await decodeUploadBody(request.body, request.headers["content-encoding"]);
       if (body.byteLength === 0) {
         return reply.status(400).send({
@@ -65,8 +79,16 @@ export async function registerUploadRoutes(
   app.put<{ Params: { encodedObjectKey: string; uploadId: string }; Body: Buffer }>(
     "/uploads/:encodedObjectKey/chunks/:uploadId",
     async (request, reply) => {
+      const user = await authService.requireUser(request);
       const params = uploadChunkParamsSchema.parse(request.params);
       const objectKey = decodeObjectKey(params.encodedObjectKey);
+      const canWrite = await repository.userCanWriteObject(user.id, objectKey);
+      if (!canWrite) {
+        return reply.status(403).send({
+          error: "UploadForbidden",
+          message: "Current user cannot upload to this object key.",
+        });
+      }
       const chunk = toBuffer(request.body);
       if (chunk.byteLength === 0) {
         return reply.status(400).send({

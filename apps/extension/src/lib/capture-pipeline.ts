@@ -1,6 +1,7 @@
 import {
   createCaptureId,
   evaluateQuality,
+  type CaptureTaskOwner,
   type CapturePageSignals,
   type CaptureProfile,
   type CaptureSource,
@@ -26,6 +27,7 @@ import {
   isStaleExtensionContextError,
 } from "./extension-errors";
 import { emitDebugLogToTab } from "./debug-log";
+import { getStoredAuthUser } from "./auth-storage";
 import { createLogger } from "./logger";
 import { syncTaskToApi } from "./sync-api";
 
@@ -33,6 +35,7 @@ const DEFAULT_PROFILE: CaptureProfile = "standard";
 const logger = createLogger("capture");
 
 export async function captureActiveTab(profile: CaptureProfile = DEFAULT_PROFILE) {
+  const owner = await requireCurrentTaskOwner();
   const [activeTab] = await chrome.tabs.query({
     active: true,
     lastFocusedWindow: true,
@@ -44,19 +47,23 @@ export async function captureActiveTab(profile: CaptureProfile = DEFAULT_PROFILE
     tabId: activeTab.id,
     url: activeTab.url,
     profile,
+    ownerUserId: owner.userId,
   });
-  return captureTab(activeTab.id, profile);
+  return captureTab(activeTab.id, profile, owner);
 }
 
 export async function retryTask(taskId: string, profileOverride?: CaptureProfile) {
+  const owner = await requireCurrentTaskOwner();
   const task = await getCaptureTask(taskId);
   if (!task) {
     throw new Error("Task not found.");
   }
+  assertTaskOwnership(task, owner);
   logger.info("Retry requested.", {
     taskId,
     taskStatus: task.status,
     profileOverride,
+    ownerUserId: owner.userId,
   });
   const retryProfile = profileOverride ?? task.profile;
   if (
@@ -65,7 +72,7 @@ export async function retryTask(taskId: string, profileOverride?: CaptureProfile
     task.artifacts?.archiveHtml &&
     typeof task.artifacts.extractedText === "string" &&
     task.quality &&
-    task.localArchiveSha256
+      task.localArchiveSha256
   ) {
     return syncTask(task);
   }
@@ -73,21 +80,28 @@ export async function retryTask(taskId: string, profileOverride?: CaptureProfile
 }
 
 export async function openTaskPreview(taskId: string) {
+  const owner = await requireCurrentTaskOwner();
   const task = await getCaptureTask(taskId);
   if (!task?.artifacts?.archiveHtml) {
     throw new Error("Task archive HTML is not available for preview.");
   }
+  assertTaskOwnership(task, owner);
   const previewUrl = `data:text/html;charset=utf-8,${encodeURIComponent(task.artifacts.archiveHtml)}`;
   await chrome.tabs.create({ url: previewUrl, active: true });
 }
 
 export async function listRecentTasks(limit = 20) {
-  return listCaptureTasks(limit);
+  const owner = await getStoredTaskOwner();
+  if (!owner) {
+    return [];
+  }
+  return listCaptureTasks(limit, owner.userId);
 }
 
 async function captureTab(
   tabId: number,
   profile: CaptureProfile,
+  owner: CaptureTaskOwner,
   options: {
     captureScreenshot?: boolean;
   } = {},
@@ -99,18 +113,20 @@ async function captureTab(
     id: createCaptureId(),
     status: "queued",
     profile,
+    owner,
     source,
     createdAt: now,
     updatedAt: now,
   };
   await putCaptureTask(task);
   await publishTask(task);
-  await logCapture("info", tabId, "Task queued.", {
-    taskId: task.id,
-    tabId,
-    url: source.url,
-    profile,
-  });
+    await logCapture("info", tabId, "Task queued.", {
+      taskId: task.id,
+      tabId,
+      url: source.url,
+      profile,
+      ownerUserId: owner.userId,
+    });
 
   try {
     let workingTask = await transitionCaptureTaskStatus(task.id, "capturing");
@@ -222,9 +238,11 @@ async function captureTab(
 }
 
 async function captureSourceUrl(url: string, profile: CaptureProfile) {
+  const owner = await requireCurrentTaskOwner();
   logger.info("Opening temporary tab for retry capture.", {
     url,
     profile,
+    ownerUserId: owner.userId,
   });
   const retryTab = await chrome.tabs.create({
     url,
@@ -236,7 +254,7 @@ async function captureSourceUrl(url: string, profile: CaptureProfile) {
 
   try {
     await waitForTabReady(retryTab.id);
-    return await captureTab(retryTab.id, profile, {
+    return await captureTab(retryTab.id, profile, owner, {
       captureScreenshot: false,
     });
   } finally {
@@ -249,6 +267,8 @@ async function captureSourceUrl(url: string, profile: CaptureProfile) {
 }
 
 async function syncTask(task: CaptureTask, debugTabId?: number) {
+  const owner = await requireCurrentTaskOwner();
+  assertTaskOwnership(task, owner);
   let workingTask = await transitionCaptureTaskStatus(task.id, "uploading", {
     failureReason: undefined,
   });
@@ -285,6 +305,35 @@ async function syncTask(task: CaptureTask, debugTabId?: number) {
     });
     await publishTask(workingTask);
     return workingTask;
+  }
+}
+
+async function getStoredTaskOwner(): Promise<CaptureTaskOwner | null> {
+  const authUser = await getStoredAuthUser();
+  if (!authUser) {
+    return null;
+  }
+  return {
+    userId: authUser.id,
+    email: authUser.email,
+    name: authUser.name,
+  };
+}
+
+async function requireCurrentTaskOwner(): Promise<CaptureTaskOwner> {
+  const owner = await getStoredTaskOwner();
+  if (!owner) {
+    throw new Error("请先在扩展里登录账号，再开始保存网页。");
+  }
+  return owner;
+}
+
+function assertTaskOwnership(task: CaptureTask, owner: CaptureTaskOwner) {
+  if (!task.owner) {
+    throw new Error("这条本地任务没有账号归属，请重新抓取后再同步。");
+  }
+  if (task.owner.userId !== owner.userId) {
+    throw new Error(`这条本地任务属于 ${task.owner.email}，请切回对应账号后再操作。`);
   }
 }
 

@@ -43,11 +43,12 @@ export async function getCaptureTask(taskId: string) {
   return task ? captureTaskSchema.parse(task) : null;
 }
 
-export async function listCaptureTasks(limit = 20) {
+export async function listCaptureTasks(limit = 20, ownerUserId?: string) {
   const database = await dbPromise;
   const tasks = await database.getAll("captureTasks");
   return tasks
     .map((task) => captureTaskSchema.parse(task))
+    .filter((task) => (ownerUserId ? task.owner?.userId === ownerUserId : true))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, limit);
 }
