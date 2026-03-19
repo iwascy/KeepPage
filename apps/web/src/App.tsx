@@ -773,17 +773,25 @@ export function App() {
     );
   }, [detail, route]);
 
+  const previewSourceUrl = detail
+    ? (detail.bookmark.canonicalUrl ?? detail.bookmark.sourceUrl)
+    : null;
+
   useEffect(() => {
     let revokedUrl: string | null = null;
     let cancelled = false;
 
-    if (!authToken || !selectedVersion?.archiveAvailable) {
+    if (!authToken || !selectedVersion?.archiveAvailable || !previewSourceUrl) {
       setArchivePreview({ status: "idle" });
       return;
     }
 
     setArchivePreview({ status: "loading" });
-    createArchiveObjectUrl(authToken, selectedVersion.htmlObjectKey)
+    createArchiveObjectUrl(
+      authToken,
+      selectedVersion.htmlObjectKey,
+      previewSourceUrl,
+    )
       .then((url) => {
         if (cancelled) {
           URL.revokeObjectURL(url);
@@ -811,7 +819,12 @@ export function App() {
         URL.revokeObjectURL(revokedUrl);
       }
     };
-  }, [authToken, selectedVersion?.archiveAvailable, selectedVersion?.htmlObjectKey]);
+  }, [
+    authToken,
+    previewSourceUrl,
+    selectedVersion?.archiveAvailable,
+    selectedVersion?.htmlObjectKey,
+  ]);
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
