@@ -50,6 +50,7 @@ export default defineContentScript({
     const logger = createLogger("content");
     logger.info("Content script ready.", {
       url: location.href,
+      extensionVersion: chrome.runtime.getManifest().version,
     });
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (isDebugLogEvent(message)) {

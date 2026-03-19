@@ -1,4 +1,9 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "wxt";
+
+const extensionPackage = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf8"),
+) as { version: string };
 
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
@@ -8,7 +13,7 @@ export default defineConfig({
     name: "KeepPage",
     description:
       "Archive-first 书签扩展：先本地归档，再异步同步，带质量诊断与可预览队列。",
-    version: "0.1.0",
+    version: extensionPackage.version,
     permissions: [
       "activeTab",
       "storage",
