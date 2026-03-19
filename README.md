@@ -39,6 +39,7 @@ export KEEPPAGE_API_PROXY_TARGET='http://127.0.0.1:8787'
 - 使用文档：`docs/usage.md`
 - 部署文档：`docs/deployment.md`
 - 架构基线：`docs/architecture.md`
+- 私密模式 PRD：`docs/private-mode-prd.md`
 
 ## 当前约束
 

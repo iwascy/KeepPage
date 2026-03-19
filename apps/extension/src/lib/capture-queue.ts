@@ -4,31 +4,7 @@ import {
   type CaptureStatus,
   type CaptureTask,
 } from "@keeppage/domain";
-import { openDB, type DBSchema } from "idb";
-
-const DB_NAME = "keeppage-extension";
-const DB_VERSION = 1;
-
-interface KeepPageExtensionDB extends DBSchema {
-  captureTasks: {
-    key: string;
-    value: CaptureTask;
-    indexes: {
-      "by-updated-at": string;
-      "by-status": CaptureStatus;
-    };
-  };
-}
-
-const dbPromise = openDB<KeepPageExtensionDB>(DB_NAME, DB_VERSION, {
-  upgrade(database) {
-    const taskStore = database.createObjectStore("captureTasks", {
-      keyPath: "id",
-    });
-    taskStore.createIndex("by-updated-at", "updatedAt");
-    taskStore.createIndex("by-status", "status");
-  },
-});
+import { dbPromise } from "./extension-db";
 
 export async function putCaptureTask(task: CaptureTask) {
   captureTaskSchema.parse(task);

@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  privateModeSchema,
+  privateSyncStateSchema,
+  saveModeSchema,
+} from "./private-vault";
 
 export const captureStatusValues = [
   "queued",
@@ -92,6 +97,10 @@ export const captureTaskSchema = z.object({
   bookmarkId: z.string().min(1).optional(),
   versionId: z.string().min(1).optional(),
   status: captureStatusSchema,
+  saveMode: saveModeSchema.default("standard"),
+  isPrivate: z.boolean().default(false),
+  privateMode: privateModeSchema.optional(),
+  syncState: privateSyncStateSchema.optional(),
   profile: captureProfileSchema,
   owner: captureTaskOwnerSchema.optional(),
   source: captureSourceSchema,
