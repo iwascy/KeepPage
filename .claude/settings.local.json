@@ -1,7 +1,5 @@
 {
   "permissions": {
-    "allow": [
-      "mcp__contextweaver__codebase-retrieval"
-    ]
+    "allow": []
   }
 }
