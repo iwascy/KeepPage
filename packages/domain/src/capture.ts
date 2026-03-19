@@ -109,6 +109,18 @@ export const tagSchema = z.object({
   color: z.string().optional(),
 });
 
+const folderNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .refine((value) => !value.includes("/"), {
+    message: "Folder name cannot contain '/'.",
+  });
+
+const tagNameSchema = z.string().trim().min(1).max(80);
+const tagColorSchema = z.string().trim().min(1).max(32);
+
 export const authUserSchema = z.object({
   id: z.string().min(1),
   email: z.string().email(),
@@ -136,6 +148,7 @@ export const folderSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   path: z.string().min(1),
+  parentId: z.string().min(1).nullable().optional(),
 });
 
 export const bookmarkVersionSchema = z.object({
@@ -202,6 +215,56 @@ export const bookmarkSearchResponseSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 
+export const folderListResponseSchema = z.object({
+  items: z.array(folderSchema),
+});
+
+export const folderCreateRequestSchema = z.object({
+  name: folderNameSchema,
+  parentId: z.string().min(1).nullable().optional(),
+});
+
+export const folderUpdateRequestSchema = z.object({
+  name: folderNameSchema.optional(),
+  parentId: z.string().min(1).nullable().optional(),
+}).refine(
+  (value) => value.name !== undefined || value.parentId !== undefined,
+  {
+    message: "At least one field must be updated.",
+  },
+);
+
+export const tagListResponseSchema = z.object({
+  items: z.array(tagSchema),
+});
+
+export const tagCreateRequestSchema = z.object({
+  name: tagNameSchema,
+  color: tagColorSchema.optional(),
+});
+
+export const tagUpdateRequestSchema = z.object({
+  name: tagNameSchema.optional(),
+  color: tagColorSchema.nullable().optional(),
+}).refine(
+  (value) => value.name !== undefined || value.color !== undefined,
+  {
+    message: "At least one field must be updated.",
+  },
+);
+
+export const bookmarkMetadataUpdateRequestSchema = z.object({
+  note: z.string().max(4000).optional(),
+  folderId: z.string().min(1).nullable().optional(),
+  tagIds: z.array(z.string().min(1)).max(100).optional(),
+}).refine(
+  (value) =>
+    value.note !== undefined || value.folderId !== undefined || value.tagIds !== undefined,
+  {
+    message: "At least one field must be updated.",
+  },
+);
+
 export const bookmarkDetailVersionSchema = bookmarkVersionSchema.extend({
   archiveAvailable: z.boolean(),
   archiveSizeBytes: z.number().int().positive().optional(),
@@ -219,6 +282,8 @@ export type QualityReport = z.infer<typeof qualityReportSchema>;
 export type CaptureArtifacts = z.infer<typeof captureArtifactsSchema>;
 export type CaptureTaskOwner = z.infer<typeof captureTaskOwnerSchema>;
 export type CaptureTask = z.infer<typeof captureTaskSchema>;
+export type Tag = z.infer<typeof tagSchema>;
+export type Folder = z.infer<typeof folderSchema>;
 export type Bookmark = z.infer<typeof bookmarkSchema>;
 export type BookmarkVersion = z.infer<typeof bookmarkVersionSchema>;
 export type BookmarkDetailVersion = z.infer<typeof bookmarkDetailVersionSchema>;
@@ -231,6 +296,13 @@ export type CaptureInitResponse = z.infer<typeof captureInitResponseSchema>;
 export type CaptureCompleteRequest = z.infer<typeof captureCompleteRequestSchema>;
 export type BookmarkSearchResponse = z.infer<typeof bookmarkSearchResponseSchema>;
 export type BookmarkDetailResponse = z.infer<typeof bookmarkDetailResponseSchema>;
+export type FolderListResponse = z.infer<typeof folderListResponseSchema>;
+export type FolderCreateRequest = z.infer<typeof folderCreateRequestSchema>;
+export type FolderUpdateRequest = z.infer<typeof folderUpdateRequestSchema>;
+export type TagListResponse = z.infer<typeof tagListResponseSchema>;
+export type TagCreateRequest = z.infer<typeof tagCreateRequestSchema>;
+export type TagUpdateRequest = z.infer<typeof tagUpdateRequestSchema>;
+export type BookmarkMetadataUpdateRequest = z.infer<typeof bookmarkMetadataUpdateRequestSchema>;
 
 const validStatusTransitions: Record<CaptureStatus, CaptureStatus[]> = {
   queued: ["capturing", "failed"],

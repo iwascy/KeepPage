@@ -3,10 +3,18 @@ import {
   createVersionId,
   type AuthUser,
   type Bookmark,
+  type BookmarkMetadataUpdateRequest,
   type BookmarkVersion,
   type CaptureCompleteRequest,
   type CaptureInitRequest,
+  type Folder,
+  type FolderCreateRequest,
+  type FolderUpdateRequest,
+  type Tag,
+  type TagCreateRequest,
+  type TagUpdateRequest,
 } from "@keeppage/domain";
+import { HttpError } from "../lib/http-error";
 import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
 import type { ObjectStorage } from "../storage/object-storage";
 import type {
@@ -29,6 +37,8 @@ type UserBookmarkState = {
   versionsByBookmark: Map<string, BookmarkVersion[]>;
   pendingByObjectKey: Map<string, PendingCapture>;
   versionsByObjectKey: Map<string, BookmarkVersion>;
+  folders: Map<string, Folder>;
+  tags: Map<string, Tag>;
 };
 
 type InMemoryBookmarkRepositoryOptions = {
@@ -62,7 +72,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       user,
       passwordHash: input.passwordHash,
     });
-    this.userIdsByEmail.set(input.email, user.id);
+    this.userIdsByEmail.set(user.email, user.id);
     this.ensureUserState(user.id);
     return user;
   }
@@ -207,6 +217,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   async searchBookmarks(userId: string, query: BookmarkSearchQuery) {
     const state = this.ensureUserState(userId);
     const keyword = query.q?.trim().toLowerCase();
+    const folderIds = query.folderId ? this.collectFolderSubtreeIds(state, query.folderId) : null;
     const filtered = [...state.bookmarks.values()].filter((bookmark) => {
       if (query.domain && bookmark.domain !== query.domain) {
         return false;
@@ -214,6 +225,16 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
       if (query.quality && bookmark.latestQuality?.grade !== query.quality) {
         return false;
+      }
+
+      if (query.tagId && !bookmark.tags.some((tag) => tag.id === query.tagId)) {
+        return false;
+      }
+
+      if (folderIds) {
+        if (!bookmark.folder || !folderIds.has(bookmark.folder.id)) {
+          return false;
+        }
       }
 
       if (!keyword) {
@@ -225,6 +246,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
         bookmark.sourceUrl,
         bookmark.domain,
         bookmark.note,
+        bookmark.folder?.path ?? "",
         ...bookmark.tags.map((tag) => tag.name),
       ]
         .join(" ")
@@ -257,6 +279,245 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     };
   }
 
+  async updateBookmarkMetadata(
+    userId: string,
+    bookmarkId: string,
+    input: BookmarkMetadataUpdateRequest,
+  ) {
+    const state = this.ensureUserState(userId);
+    const bookmark = state.bookmarks.get(bookmarkId);
+    if (!bookmark) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    if (input.note !== undefined) {
+      bookmark.note = input.note;
+    }
+
+    if (input.folderId !== undefined) {
+      if (input.folderId === null) {
+        bookmark.folder = undefined;
+      } else {
+        const folder = state.folders.get(input.folderId);
+        if (!folder) {
+          throw new HttpError(404, "FolderNotFound", "Folder not found.");
+        }
+        bookmark.folder = { ...folder };
+      }
+    }
+
+    if (input.tagIds !== undefined) {
+      const nextTags = this.resolveTags(state, input.tagIds);
+      bookmark.tags = nextTags;
+    }
+
+    bookmark.updatedAt = now;
+    state.bookmarks.set(bookmark.id, bookmark);
+    return bookmark;
+  }
+
+  async listFolders(userId: string) {
+    const state = this.ensureUserState(userId);
+    return [...state.folders.values()].sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  async createFolder(userId: string, input: FolderCreateRequest) {
+    const state = this.ensureUserState(userId);
+    const parent = input.parentId ? state.folders.get(input.parentId) : undefined;
+    if (input.parentId && !parent) {
+      throw new HttpError(404, "FolderNotFound", "Parent folder not found.");
+    }
+
+    const path = this.buildFolderPath(parent?.path, input.name);
+    this.assertUniqueFolderPath(state, path);
+    const folder: Folder = {
+      id: crypto.randomUUID(),
+      name: input.name,
+      path,
+      parentId: parent?.id ?? null,
+    };
+    state.folders.set(folder.id, folder);
+    return folder;
+  }
+
+  async updateFolder(userId: string, folderId: string, input: FolderUpdateRequest) {
+    const state = this.ensureUserState(userId);
+    const current = state.folders.get(folderId);
+    if (!current) {
+      return null;
+    }
+
+    const nextName = input.name ?? current.name;
+    const nextParentId = input.parentId !== undefined ? input.parentId : current.parentId ?? null;
+    if (nextParentId === folderId) {
+      throw new HttpError(400, "InvalidFolderMove", "Folder cannot be its own parent.");
+    }
+
+    const descendants = this.collectFolderSubtree(state, current.path);
+    const descendantIds = new Set(descendants.map((folder) => folder.id));
+    if (nextParentId && descendantIds.has(nextParentId)) {
+      throw new HttpError(400, "InvalidFolderMove", "Folder cannot be moved into its child.");
+    }
+
+    const parent = nextParentId ? state.folders.get(nextParentId) : undefined;
+    if (nextParentId && !parent) {
+      throw new HttpError(404, "FolderNotFound", "Parent folder not found.");
+    }
+
+    const nextPath = this.buildFolderPath(parent?.path, nextName);
+    const nextPaths = new Map<string, string>();
+    for (const folder of descendants) {
+      const candidatePath = folder.id === folderId
+        ? nextPath
+        : `${nextPath}${folder.path.slice(current.path.length)}`;
+      nextPaths.set(folder.id, candidatePath);
+    }
+    this.assertFolderPathSetAvailable(state, nextPaths, descendantIds);
+
+    for (const folder of descendants) {
+      const candidatePath = nextPaths.get(folder.id);
+      if (!candidatePath) {
+        continue;
+      }
+      if (folder.id === folderId) {
+        folder.name = nextName;
+        folder.parentId = nextParentId;
+      }
+      folder.path = candidatePath;
+      state.folders.set(folder.id, folder);
+    }
+
+    this.syncBookmarksForFolders(state, descendantIds, new Date().toISOString());
+    return state.folders.get(folderId) ?? null;
+  }
+
+  async deleteFolder(userId: string, folderId: string) {
+    const state = this.ensureUserState(userId);
+    const current = state.folders.get(folderId);
+    if (!current) {
+      return false;
+    }
+
+    const subtree = this.collectFolderSubtree(state, current.path);
+    const subtreeIds = new Set(subtree.map((folder) => folder.id));
+    const parentPath = current.parentId
+      ? state.folders.get(current.parentId)?.path
+      : undefined;
+    const nextPaths = new Map<string, string>();
+    for (const folder of subtree) {
+      if (folder.id === folderId) {
+        continue;
+      }
+      const relativePath = folder.path.slice(current.path.length + 1);
+      const candidatePath = parentPath ? `${parentPath}/${relativePath}` : relativePath;
+      nextPaths.set(folder.id, candidatePath);
+    }
+    this.assertFolderPathSetAvailable(state, nextPaths, subtreeIds);
+
+    for (const folder of subtree) {
+      if (folder.id === folderId) {
+        continue;
+      }
+      const nextPath = nextPaths.get(folder.id);
+      if (!nextPath) {
+        continue;
+      }
+      if (folder.parentId === folderId) {
+        folder.parentId = current.parentId ?? null;
+      }
+      folder.path = nextPath;
+      state.folders.set(folder.id, folder);
+    }
+
+    state.folders.delete(folderId);
+
+    const now = new Date().toISOString();
+    for (const bookmark of state.bookmarks.values()) {
+      if (!bookmark.folder) {
+        continue;
+      }
+      if (bookmark.folder.id === folderId) {
+        bookmark.folder = undefined;
+        bookmark.updatedAt = now;
+        continue;
+      }
+      if (subtreeIds.has(bookmark.folder.id)) {
+        const folder = state.folders.get(bookmark.folder.id);
+        if (folder) {
+          bookmark.folder = { ...folder };
+          bookmark.updatedAt = now;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  async listTags(userId: string) {
+    const state = this.ensureUserState(userId);
+    return [...state.tags.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async createTag(userId: string, input: TagCreateRequest) {
+    const state = this.ensureUserState(userId);
+    this.assertUniqueTagName(state, input.name);
+    const tag: Tag = {
+      id: crypto.randomUUID(),
+      name: input.name,
+      color: input.color,
+    };
+    state.tags.set(tag.id, tag);
+    return tag;
+  }
+
+  async updateTag(userId: string, tagId: string, input: TagUpdateRequest) {
+    const state = this.ensureUserState(userId);
+    const current = state.tags.get(tagId);
+    if (!current) {
+      return null;
+    }
+
+    const nextName = input.name ?? current.name;
+    const nextColor = input.color === undefined ? current.color : input.color ?? undefined;
+    this.assertUniqueTagName(state, nextName, tagId);
+    current.name = nextName;
+    current.color = nextColor;
+    state.tags.set(tagId, current);
+
+    const now = new Date().toISOString();
+    for (const bookmark of state.bookmarks.values()) {
+      const index = bookmark.tags.findIndex((tag) => tag.id === tagId);
+      if (index < 0) {
+        continue;
+      }
+      bookmark.tags[index] = { ...current };
+      bookmark.updatedAt = now;
+    }
+
+    return current;
+  }
+
+  async deleteTag(userId: string, tagId: string) {
+    const state = this.ensureUserState(userId);
+    const existed = state.tags.delete(tagId);
+    if (!existed) {
+      return false;
+    }
+
+    const now = new Date().toISOString();
+    for (const bookmark of state.bookmarks.values()) {
+      const nextTags = bookmark.tags.filter((tag) => tag.id !== tagId);
+      if (nextTags.length === bookmark.tags.length) {
+        continue;
+      }
+      bookmark.tags = nextTags;
+      bookmark.updatedAt = now;
+    }
+
+    return true;
+  }
+
   async userCanReadObject(userId: string, objectKey: string) {
     const state = this.ensureUserState(userId);
     return state.versionsByObjectKey.has(objectKey);
@@ -277,9 +538,104 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       versionsByBookmark: new Map(),
       pendingByObjectKey: new Map(),
       versionsByObjectKey: new Map(),
+      folders: new Map(),
+      tags: new Map(),
     };
     this.stateByUserId.set(userId, created);
     return created;
+  }
+
+  private buildFolderPath(parentPath: string | undefined, name: string) {
+    return parentPath ? `${parentPath}/${name}` : name;
+  }
+
+  private collectFolderSubtree(state: UserBookmarkState, rootPath: string) {
+    return [...state.folders.values()]
+      .filter((folder) => folder.path === rootPath || folder.path.startsWith(`${rootPath}/`))
+      .sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  private collectFolderSubtreeIds(state: UserBookmarkState, folderId: string) {
+    const folder = state.folders.get(folderId);
+    if (!folder) {
+      return new Set<string>();
+    }
+    return new Set(this.collectFolderSubtree(state, folder.path).map((item) => item.id));
+  }
+
+  private assertUniqueFolderPath(
+    state: UserBookmarkState,
+    path: string,
+    excludeFolderId?: string,
+  ) {
+    for (const folder of state.folders.values()) {
+      if (folder.id === excludeFolderId) {
+        continue;
+      }
+      if (folder.path === path) {
+        throw new HttpError(409, "FolderPathConflict", "Folder path already exists.");
+      }
+    }
+  }
+
+  private assertFolderPathSetAvailable(
+    state: UserBookmarkState,
+    nextPaths: Map<string, string>,
+    ignoredFolderIds: Set<string>,
+  ) {
+    const seen = new Set<string>();
+    for (const nextPath of nextPaths.values()) {
+      if (seen.has(nextPath)) {
+        throw new HttpError(409, "FolderPathConflict", "Folder path already exists.");
+      }
+      seen.add(nextPath);
+    }
+
+    for (const folder of state.folders.values()) {
+      if (ignoredFolderIds.has(folder.id)) {
+        continue;
+      }
+      if (seen.has(folder.path)) {
+        throw new HttpError(409, "FolderPathConflict", "Folder path already exists.");
+      }
+    }
+  }
+
+  private assertUniqueTagName(state: UserBookmarkState, name: string, excludeTagId?: string) {
+    for (const tag of state.tags.values()) {
+      if (tag.id === excludeTagId) {
+        continue;
+      }
+      if (tag.name === name) {
+        throw new HttpError(409, "TagNameConflict", "Tag name already exists.");
+      }
+    }
+  }
+
+  private resolveTags(state: UserBookmarkState, tagIds: string[]) {
+    const deduplicatedIds = [...new Set(tagIds)];
+    return deduplicatedIds.map((tagId) => {
+      const tag = state.tags.get(tagId);
+      if (!tag) {
+        throw new HttpError(404, "TagNotFound", "Tag not found.");
+      }
+      return { ...tag };
+    });
+  }
+
+  private syncBookmarksForFolders(state: UserBookmarkState, folderIds: Set<string>, now: string) {
+    for (const bookmark of state.bookmarks.values()) {
+      if (!bookmark.folder || !folderIds.has(bookmark.folder.id)) {
+        continue;
+      }
+      const folder = state.folders.get(bookmark.folder.id);
+      if (!folder) {
+        bookmark.folder = undefined;
+      } else {
+        bookmark.folder = { ...folder };
+      }
+      bookmark.updatedAt = now;
+    }
   }
 
   private findBookmarkByNormalizedHash(state: UserBookmarkState, normalizedHash: string) {

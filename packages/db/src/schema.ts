@@ -3,6 +3,7 @@ import {
   qualityGradeValues,
 } from "@keeppage/domain";
 import {
+  type AnyPgColumn,
   boolean,
   index,
   integer,
@@ -49,11 +50,13 @@ export const folders = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 120 }).notNull(),
     path: text("path").notNull(),
+    parentId: uuid("parent_id").references((): AnyPgColumn => folders.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     folderPathIdx: uniqueIndex("folders_user_path_idx").on(table.userId, table.path),
+    folderParentIdx: index("folders_user_parent_idx").on(table.userId, table.parentId),
   }),
 );
 

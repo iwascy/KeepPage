@@ -2,15 +2,28 @@ import {
   authSessionSchema,
   authUserSchema,
   bookmarkDetailResponseSchema,
+  bookmarkMetadataUpdateRequestSchema,
+  bookmarkSchema,
   bookmarkSearchResponseSchema,
   ensureArchiveBaseHref,
+  folderListResponseSchema,
+  folderSchema,
+  tagListResponseSchema,
+  tagSchema,
   type AuthLoginRequest,
   type AuthRegisterRequest,
   type AuthSession,
   type AuthUser,
   type Bookmark,
+  type BookmarkMetadataUpdateRequest,
   type BookmarkDetailVersion,
+  type Folder,
+  type FolderCreateRequest,
+  type FolderUpdateRequest,
   type QualityGrade,
+  type Tag,
+  type TagCreateRequest,
+  type TagUpdateRequest,
 } from "@keeppage/domain";
 import type { ZodType } from "zod";
 
@@ -31,6 +44,8 @@ export class ApiError extends Error {
 export type BookmarkQuery = {
   search: string;
   quality: "all" | QualityGrade;
+  folderId?: string;
+  tagId?: string;
 };
 
 export type BookmarkResult = {
@@ -93,6 +108,10 @@ async function requestJson<T>(
   return schema.parse(payload);
 }
 
+async function requestVoid(path: string, options: RequestOptions = {}) {
+  await request(path, options);
+}
+
 async function readErrorPayload(response: Response) {
   try {
     const payload = await response.json() as {
@@ -140,6 +159,12 @@ export async function fetchBookmarks(query: BookmarkQuery, token: string): Promi
   if (query.quality !== "all") {
     params.set("quality", query.quality);
   }
+  if (query.folderId) {
+    params.set("folderId", query.folderId);
+  }
+  if (query.tagId) {
+    params.set("tagId", query.tagId);
+  }
   const path = `/bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
   const payload = await requestJson(path, bookmarkSearchResponseSchema, {
     token,
@@ -173,6 +198,83 @@ export async function fetchBookmarkDetail(
     }
     throw error;
   }
+}
+
+export async function updateBookmarkMetadata(
+  bookmarkId: string,
+  input: BookmarkMetadataUpdateRequest,
+  token: string,
+) {
+  const payload = bookmarkMetadataUpdateRequestSchema.parse(input);
+  return requestJson(
+    `/bookmarks/${encodeURIComponent(bookmarkId)}/metadata`,
+    bookmarkSchema,
+    {
+      method: "PATCH",
+      token,
+      body: payload,
+    },
+  );
+}
+
+export async function fetchFolders(token: string): Promise<Folder[]> {
+  const payload = await requestJson("/folders", folderListResponseSchema, {
+    token,
+  });
+  return payload.items;
+}
+
+export async function createFolder(input: FolderCreateRequest, token: string) {
+  return requestJson("/folders", folderSchema, {
+    method: "POST",
+    token,
+    body: input,
+  });
+}
+
+export async function updateFolder(folderId: string, input: FolderUpdateRequest, token: string) {
+  return requestJson(`/folders/${encodeURIComponent(folderId)}`, folderSchema, {
+    method: "PATCH",
+    token,
+    body: input,
+  });
+}
+
+export async function deleteFolder(folderId: string, token: string) {
+  await requestVoid(`/folders/${encodeURIComponent(folderId)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function fetchTags(token: string): Promise<Tag[]> {
+  const payload = await requestJson("/tags", tagListResponseSchema, {
+    token,
+  });
+  return payload.items;
+}
+
+export async function createTag(input: TagCreateRequest, token: string) {
+  return requestJson("/tags", tagSchema, {
+    method: "POST",
+    token,
+    body: input,
+  });
+}
+
+export async function updateTag(tagId: string, input: TagUpdateRequest, token: string) {
+  return requestJson(`/tags/${encodeURIComponent(tagId)}`, tagSchema, {
+    method: "PATCH",
+    token,
+    body: input,
+  });
+}
+
+export async function deleteTag(tagId: string, token: string) {
+  await requestVoid(`/tags/${encodeURIComponent(tagId)}`, {
+    method: "DELETE",
+    token,
+  });
 }
 
 export async function createArchiveObjectUrl(token: string, objectKey: string, sourceUrl: string) {

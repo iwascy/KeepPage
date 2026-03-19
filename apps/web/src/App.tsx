@@ -8,17 +8,26 @@ import {
   useState,
   useTransition,
 } from "react";
-import type { AuthUser, Bookmark, QualityGrade, QualityReport } from "@keeppage/domain";
+import type { AuthUser, Bookmark, Folder, QualityGrade, QualityReport, Tag } from "@keeppage/domain";
 import {
   ApiError,
   type BookmarkDetailResult,
   type BookmarkViewerVersion,
+  createFolder,
+  createTag,
   createArchiveObjectUrl,
+  deleteFolder,
+  deleteTag,
   fetchBookmarkDetail,
   fetchBookmarks,
   fetchCurrentUser,
+  fetchFolders,
+  fetchTags,
   loginAccount,
   registerAccount,
+  updateBookmarkMetadata,
+  updateFolder,
+  updateTag,
 } from "./api";
 
 type QualityFilter = "all" | QualityGrade;
@@ -39,6 +48,11 @@ type ArchivePreviewState =
   | { status: "loading"; url?: undefined; error?: undefined }
   | { status: "ready"; url: string; error?: undefined }
   | { status: "error"; url?: undefined; error: string };
+
+type InlineFeedback = {
+  kind: "success" | "error";
+  message: string;
+};
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 
@@ -123,6 +137,10 @@ function formatFileSize(input?: number) {
     return `${(input / 1024).toFixed(1)} KB`;
   }
   return `${input} B`;
+}
+
+function folderDepth(path: string) {
+  return Math.max(0, path.split("/").length - 1);
 }
 
 function retentionLabel(numerator: number, denominator: number) {
@@ -384,6 +402,141 @@ function EmptyState({
   );
 }
 
+function LibraryManager({
+  folders,
+  tags,
+  selectedFolderId,
+  selectedTagId,
+  busy,
+  feedback,
+  onSelectFolderFilter,
+  onSelectTagFilter,
+  onCreateRootFolder,
+  onCreateChildFolder,
+  onEditFolderPath,
+  onDeleteFolder,
+  onCreateTag,
+  onEditTag,
+  onDeleteTag,
+}: {
+  folders: Folder[];
+  tags: Tag[];
+  selectedFolderId: string;
+  selectedTagId: string;
+  busy: boolean;
+  feedback: InlineFeedback | null;
+  onSelectFolderFilter: (folderId: string) => void;
+  onSelectTagFilter: (tagId: string) => void;
+  onCreateRootFolder: () => void;
+  onCreateChildFolder: (parent: Folder) => void;
+  onEditFolderPath: (folder: Folder) => void;
+  onDeleteFolder: (folder: Folder) => void;
+  onCreateTag: () => void;
+  onEditTag: (tag: Tag) => void;
+  onDeleteTag: (tag: Tag) => void;
+}) {
+  return (
+    <>
+      <section className="library-manager">
+        <article className="manager-card">
+          <div className="panel-header-inline">
+            <div>
+              <p className="eyebrow">Folders</p>
+              <h2 className="manager-title">多层收藏夹</h2>
+            </div>
+            <button className="secondary-button" type="button" onClick={onCreateRootFolder} disabled={busy}>
+              新建收藏夹
+            </button>
+          </div>
+          <p className="detail-note">删除当前收藏夹时会保留子收藏夹，并自动上移一层。</p>
+          <div className="folder-list">
+            {folders.length > 0 ? (
+              folders.map((folder) => (
+                <article className="folder-row" key={folder.id} style={{ paddingLeft: `${folderDepth(folder.path) * 18}px` }}>
+                  <div className="folder-row-main">
+                    <strong>{folder.name}</strong>
+                    <span>{folder.path}</span>
+                  </div>
+                  <div className="folder-row-actions">
+                    <button
+                      className={selectedFolderId === folder.id ? "primary-button compact-button" : "secondary-button compact-button"}
+                      type="button"
+                      onClick={() => onSelectFolderFilter(selectedFolderId === folder.id ? "" : folder.id)}
+                      disabled={busy}
+                    >
+                      {selectedFolderId === folder.id ? "取消筛选" : "筛选"}
+                    </button>
+                    <button className="ghost-button compact-button" type="button" onClick={() => onCreateChildFolder(folder)} disabled={busy}>
+                      子收藏夹
+                    </button>
+                    <button className="ghost-button compact-button" type="button" onClick={() => onEditFolderPath(folder)} disabled={busy}>
+                      改路径
+                    </button>
+                    <button className="ghost-button compact-button danger-button" type="button" onClick={() => onDeleteFolder(folder)} disabled={busy}>
+                      删除
+                    </button>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="detail-note">还没有收藏夹，先建一个根目录也可以。</p>
+            )}
+          </div>
+        </article>
+
+        <article className="manager-card">
+          <div className="panel-header-inline">
+            <div>
+              <p className="eyebrow">Tags</p>
+              <h2 className="manager-title">标签管理</h2>
+            </div>
+            <button className="secondary-button" type="button" onClick={onCreateTag} disabled={busy}>
+              新建标签
+            </button>
+          </div>
+          <div className="tag-manager-list">
+            {tags.length > 0 ? (
+              tags.map((tag) => (
+                <article className="tag-manager-row" key={tag.id}>
+                  <div className="tag-manager-main">
+                    <span className="tag">
+                      #{tag.name}
+                      {tag.color ? <small>{tag.color}</small> : null}
+                    </span>
+                  </div>
+                  <div className="folder-row-actions">
+                    <button
+                      className={selectedTagId === tag.id ? "primary-button compact-button" : "secondary-button compact-button"}
+                      type="button"
+                      onClick={() => onSelectTagFilter(selectedTagId === tag.id ? "" : tag.id)}
+                      disabled={busy}
+                    >
+                      {selectedTagId === tag.id ? "取消筛选" : "筛选"}
+                    </button>
+                    <button className="ghost-button compact-button" type="button" onClick={() => onEditTag(tag)} disabled={busy}>
+                      编辑
+                    </button>
+                    <button className="ghost-button compact-button danger-button" type="button" onClick={() => onDeleteTag(tag)} disabled={busy}>
+                      删除
+                    </button>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="detail-note">还没有标签，先建几个常用主题会更方便筛选。</p>
+            )}
+          </div>
+        </article>
+      </section>
+      {feedback ? (
+        <p className={feedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
+          {feedback.message}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function AuthPanel({
   mode,
   name,
@@ -485,10 +638,32 @@ function DetailPanel({
   detail,
   selectedVersion,
   previewState,
+  folders,
+  tags,
+  metadataNote,
+  metadataFolderId,
+  metadataTagIds,
+  metadataSaving,
+  metadataFeedback,
+  onMetadataNoteChange,
+  onMetadataFolderChange,
+  onMetadataTagToggle,
+  onMetadataSave,
 }: {
   detail: BookmarkDetailResult;
   selectedVersion: BookmarkViewerVersion;
   previewState: ArchivePreviewState;
+  folders: Folder[];
+  tags: Tag[];
+  metadataNote: string;
+  metadataFolderId: string;
+  metadataTagIds: string[];
+  metadataSaving: boolean;
+  metadataFeedback: InlineFeedback | null;
+  onMetadataNoteChange: (value: string) => void;
+  onMetadataFolderChange: (value: string) => void;
+  onMetadataTagToggle: (tagId: string) => void;
+  onMetadataSave: () => void;
 }) {
   const quality: QualityReport = selectedVersion.quality;
 
@@ -535,6 +710,62 @@ function DetailPanel({
               <span className="tag muted-tag">#未打标签</span>
             )}
           </div>
+        </div>
+
+        <div className="detail-block compact-gap">
+          <div className="panel-header-inline">
+            <p className="panel-title">元数据编辑</p>
+            <button className="primary-button compact-button" type="button" onClick={onMetadataSave} disabled={metadataSaving}>
+              {metadataSaving ? "保存中..." : "保存"}
+            </button>
+          </div>
+          <label className="field">
+            <span>备注</span>
+            <textarea
+              value={metadataNote}
+              onChange={(event) => onMetadataNoteChange(event.target.value)}
+              rows={4}
+              placeholder="补充这条网页归档的用途、上下文或摘要"
+            />
+          </label>
+          <label className="field">
+            <span>收藏夹</span>
+            <select value={metadataFolderId} onChange={(event) => onMetadataFolderChange(event.target.value)}>
+              <option value="">未归档文件夹</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.path}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="field">
+            <span>标签</span>
+            {tags.length > 0 ? (
+              <div className="tag-selector">
+                {tags.map((tag) => {
+                  const checked = metadataTagIds.includes(tag.id);
+                  return (
+                    <label className={checked ? "tag-check is-active" : "tag-check"} key={tag.id}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => onMetadataTagToggle(tag.id)}
+                      />
+                      <span>#{tag.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="detail-note">还没有标签，可以先回到列表页创建。</p>
+            )}
+          </div>
+          {metadataFeedback ? (
+            <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
+              {metadataFeedback.message}
+            </p>
+          ) : null}
         </div>
 
         <div className="detail-block">
@@ -710,7 +941,11 @@ export function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>("all");
+  const [selectedFolderId, setSelectedFolderId] = useState("");
+  const [selectedTagId, setSelectedTagId] = useState("");
   const [items, setItems] = useState<Bookmark[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [listError, setListError] = useState<string | null>(null);
   const [detail, setDetail] = useState<BookmarkDetailResult | null>(null);
@@ -719,6 +954,13 @@ export function App() {
   const [archivePreview, setArchivePreview] = useState<ArchivePreviewState>({
     status: "idle",
   });
+  const [managerBusy, setManagerBusy] = useState(false);
+  const [managerFeedback, setManagerFeedback] = useState<InlineFeedback | null>(null);
+  const [metadataNote, setMetadataNote] = useState("");
+  const [metadataFolderId, setMetadataFolderId] = useState("");
+  const [metadataTagIds, setMetadataTagIds] = useState<string[]>([]);
+  const [metadataSaving, setMetadataSaving] = useState(false);
+  const [metadataFeedback, setMetadataFeedback] = useState<InlineFeedback | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const deferredSearch = useDeferredValue(searchInput);
@@ -735,12 +977,18 @@ export function App() {
         error: message ?? null,
       });
       setItems([]);
+      setFolders([]);
+      setTags([]);
+      setSelectedFolderId("");
+      setSelectedTagId("");
       setDetail(null);
       setLoadState("idle");
       setListError(null);
       setDetailLoadState("idle");
       setDetailError(null);
       setArchivePreview({ status: "idle" });
+      setManagerFeedback(null);
+      setMetadataFeedback(null);
     });
   }
 
@@ -812,6 +1060,44 @@ export function App() {
 
   useEffect(() => {
     if (!authToken) {
+      setFolders([]);
+      setTags([]);
+      setManagerFeedback(null);
+      return;
+    }
+
+    let cancelled = false;
+    Promise.all([fetchFolders(authToken), fetchTags(authToken)])
+      .then(([nextFolders, nextTags]) => {
+        if (cancelled) {
+          return;
+        }
+        setFolders(nextFolders);
+        setTags(nextTags);
+        setSelectedFolderId((current) => (
+          current && !nextFolders.some((folder) => folder.id === current) ? "" : current
+        ));
+        setSelectedTagId((current) => (
+          current && !nextTags.some((tag) => tag.id === current) ? "" : current
+        ));
+      })
+      .catch((error) => {
+        if (cancelled || handleProtectedApiError(error)) {
+          return;
+        }
+        setManagerFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken) {
       setItems([]);
       setLoadState("idle");
       setListError(null);
@@ -826,6 +1112,8 @@ export function App() {
       {
         search: deferredSearch,
         quality: qualityFilter,
+        folderId: selectedFolderId || undefined,
+        tagId: selectedTagId || undefined,
       },
       authToken,
     )
@@ -852,7 +1140,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [authToken, deferredSearch, qualityFilter]);
+  }, [authToken, deferredSearch, qualityFilter, selectedFolderId, selectedTagId]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
@@ -891,6 +1179,20 @@ export function App() {
       cancelled = true;
     };
   }, [authToken, route]);
+
+  useEffect(() => {
+    if (!detail) {
+      setMetadataNote("");
+      setMetadataFolderId("");
+      setMetadataTagIds([]);
+      setMetadataFeedback(null);
+      return;
+    }
+    setMetadataNote(detail.bookmark.note);
+    setMetadataFolderId(detail.bookmark.folder?.id ?? "");
+    setMetadataTagIds(detail.bookmark.tags.map((tag) => tag.id));
+    setMetadataFeedback(null);
+  }, [detail]);
 
   const summary = useMemo(() => {
     const high = items.filter((item) => item.latestQuality?.grade === "high").length;
@@ -965,6 +1267,219 @@ export function App() {
     selectedVersion?.htmlObjectKey,
   ]);
 
+  async function refreshCatalogs(currentToken: string) {
+    const [nextFolders, nextTags] = await Promise.all([
+      fetchFolders(currentToken),
+      fetchTags(currentToken),
+    ]);
+    setFolders(nextFolders);
+    setTags(nextTags);
+    setSelectedFolderId((current) => (
+      current && !nextFolders.some((folder) => folder.id === current) ? "" : current
+    ));
+    setSelectedTagId((current) => (
+      current && !nextTags.some((tag) => tag.id === current) ? "" : current
+    ));
+  }
+
+  async function refreshBookmarksList(currentToken: string) {
+    const result = await fetchBookmarks(
+      {
+        search: deferredSearch,
+        quality: qualityFilter,
+        folderId: selectedFolderId || undefined,
+        tagId: selectedTagId || undefined,
+      },
+      currentToken,
+    );
+    setListError(null);
+    setItems(result.items);
+    setLoadState("ready");
+  }
+
+  async function refreshBookmarkDetail(currentToken: string, bookmarkId: string) {
+    const result = await fetchBookmarkDetail(bookmarkId, currentToken);
+    setDetailError(null);
+    setDetail(result);
+    setDetailLoadState(result ? "ready" : "not-found");
+  }
+
+  async function runManagerAction(action: () => Promise<string>) {
+    if (!authToken) {
+      return;
+    }
+    setManagerBusy(true);
+    setManagerFeedback(null);
+    try {
+      const message = await action();
+      await refreshCatalogs(authToken);
+      await refreshBookmarksList(authToken);
+      if (route.page === "detail") {
+        await refreshBookmarkDetail(authToken, route.bookmarkId);
+      }
+      setManagerFeedback({
+        kind: "success",
+        message,
+      });
+    } catch (error) {
+      if (handleProtectedApiError(error)) {
+        return;
+      }
+      setManagerFeedback({
+        kind: "error",
+        message: toErrorMessage(error),
+      });
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function handleCreateFolder(parent?: Folder) {
+    const name = window.prompt(parent ? `新建 “${parent.path}” 下的子收藏夹` : "新建根收藏夹");
+    if (!name?.trim()) {
+      return;
+    }
+
+    await runManagerAction(async () => {
+      const folder = await createFolder({
+        name: name.trim(),
+        parentId: parent?.id ?? null,
+      }, authToken!);
+      return `已创建收藏夹：${folder.path}`;
+    });
+  }
+
+  async function handleEditFolderPath(folder: Folder) {
+    const nextPathInput = window.prompt("输入新的完整路径，例如：工作/研究", folder.path);
+    if (!nextPathInput?.trim()) {
+      return;
+    }
+
+    const nextPath = nextPathInput
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (nextPath.length === 0) {
+      return;
+    }
+
+    const nextName = nextPath[nextPath.length - 1] ?? folder.name;
+    const parentPath = nextPath.slice(0, -1).join("/");
+    const parent = parentPath ? folders.find((item) => item.path === parentPath) : undefined;
+    if (parentPath && !parent) {
+      setManagerFeedback({
+        kind: "error",
+        message: `未找到父收藏夹路径：${parentPath}`,
+      });
+      return;
+    }
+
+    await runManagerAction(async () => {
+      const updated = await updateFolder(folder.id, {
+        name: nextName,
+        parentId: parent?.id ?? null,
+      }, authToken!);
+      return `已更新收藏夹路径：${updated.path}`;
+    });
+  }
+
+  async function handleDeleteFolder(folder: Folder) {
+    const confirmed = window.confirm(
+      `确认删除收藏夹“${folder.path}”？它自身会被删除，子收藏夹会自动上移一层，该文件夹下的网页会取消归档。`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await runManagerAction(async () => {
+      await deleteFolder(folder.id, authToken!);
+      return `已删除收藏夹：${folder.path}`;
+    });
+  }
+
+  async function handleCreateTag() {
+    const name = window.prompt("新建标签名称");
+    if (!name?.trim()) {
+      return;
+    }
+    const color = window.prompt("可选：标签颜色说明（例如 blue、#1d4ed8）", "")?.trim() || undefined;
+
+    await runManagerAction(async () => {
+      const tag = await createTag({
+        name: name.trim(),
+        color,
+      }, authToken!);
+      return `已创建标签：#${tag.name}`;
+    });
+  }
+
+  async function handleEditTag(tag: Tag) {
+    const nextName = window.prompt("编辑标签名称", tag.name);
+    if (!nextName?.trim()) {
+      return;
+    }
+    const nextColorRaw = window.prompt("编辑标签颜色说明，留空表示清空", tag.color ?? "");
+    if (nextColorRaw === null) {
+      return;
+    }
+
+    await runManagerAction(async () => {
+      const updated = await updateTag(tag.id, {
+        name: nextName.trim(),
+        color: nextColorRaw.trim() || null,
+      }, authToken!);
+      return `已更新标签：#${updated.name}`;
+    });
+  }
+
+  async function handleDeleteTag(tag: Tag) {
+    const confirmed = window.confirm(`确认删除标签“#${tag.name}”？已挂载到网页上的这个标签也会一起解除。`);
+    if (!confirmed) {
+      return;
+    }
+
+    await runManagerAction(async () => {
+      await deleteTag(tag.id, authToken!);
+      return `已删除标签：#${tag.name}`;
+    });
+  }
+
+  async function handleSaveMetadata() {
+    if (!authToken || route.page !== "detail") {
+      return;
+    }
+
+    setMetadataSaving(true);
+    setMetadataFeedback(null);
+    try {
+      const updated = await updateBookmarkMetadata(
+        route.bookmarkId,
+        {
+          note: metadataNote,
+          folderId: metadataFolderId || null,
+          tagIds: metadataTagIds,
+        },
+        authToken,
+      );
+      await refreshBookmarksList(authToken);
+      await refreshBookmarkDetail(authToken, updated.id);
+      setMetadataFeedback({
+        kind: "success",
+        message: "书签的收藏夹、标签和备注已经保存。",
+      });
+    } catch (error) {
+      if (handleProtectedApiError(error)) {
+        return;
+      }
+      setMetadataFeedback({
+        kind: "error",
+        message: toErrorMessage(error),
+      });
+    } finally {
+      setMetadataSaving(false);
+    }
+  }
+
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthSubmitting(true);
@@ -1035,8 +1550,8 @@ export function App() {
           <h1>{route.page === "detail" ? "归档查看页" : "网页归档工作台"}</h1>
           <p className="subtitle">
             {route.page === "detail"
-              ? "查看主档、切换版本，并直接核对质量诊断与 archive.html 是否真实可读。"
-              : "每个账号独立保存自己的网页归档、版本和详情预览。"}
+              ? "查看主档、切换版本，并直接维护收藏夹、标签与备注。"
+              : "每个账号独立保存自己的网页归档、版本、收藏夹与标签。"}
           </p>
         </div>
         <div className="topbar-actions">
@@ -1076,6 +1591,28 @@ export function App() {
                 <option value="low">低</option>
               </select>
             </label>
+            <label className="field">
+              <span>收藏夹</span>
+              <select value={selectedFolderId} onChange={(event) => setSelectedFolderId(event.target.value)}>
+                <option value="">全部收藏夹</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.path}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>标签</span>
+              <select value={selectedTagId} onChange={(event) => setSelectedTagId(event.target.value)}>
+                <option value="">全部标签</option>
+                {tags.map((tag) => (
+                  <option key={tag.id} value={tag.id}>
+                    #{tag.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </section>
 
           <section className="summary">
@@ -1097,6 +1634,24 @@ export function App() {
             </article>
           </section>
 
+          <LibraryManager
+            folders={folders}
+            tags={tags}
+            selectedFolderId={selectedFolderId}
+            selectedTagId={selectedTagId}
+            busy={managerBusy}
+            feedback={managerFeedback}
+            onSelectFolderFilter={setSelectedFolderId}
+            onSelectTagFilter={setSelectedTagId}
+            onCreateRootFolder={() => void handleCreateFolder()}
+            onCreateChildFolder={(folder) => void handleCreateFolder(folder)}
+            onEditFolderPath={(folder) => void handleEditFolderPath(folder)}
+            onDeleteFolder={(folder) => void handleDeleteFolder(folder)}
+            onCreateTag={() => void handleCreateTag()}
+            onEditTag={(tag) => void handleEditTag(tag)}
+            onDeleteTag={(tag) => void handleDeleteTag(tag)}
+          />
+
           {loadState === "loading" || isPending ? (
             <section className="loading">正在刷新归档列表...</section>
           ) : loadState === "error" ? (
@@ -1106,7 +1661,13 @@ export function App() {
               description={listError ?? "暂时无法读取当前账号的归档列表。"}
             />
           ) : items.length === 0 ? (
-            <EmptyState mode={searchInput.trim() || qualityFilter !== "all" ? "search-empty" : "empty"} />
+            <EmptyState
+              mode={
+                searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId
+                  ? "search-empty"
+                  : "empty"
+              }
+            />
           ) : (
             <section className="card-grid">
               {items.map((bookmark) => (
@@ -1138,7 +1699,28 @@ export function App() {
           }
         />
       ) : (
-        <DetailPanel detail={detail} selectedVersion={selectedVersion} previewState={archivePreview} />
+        <DetailPanel
+          detail={detail}
+          selectedVersion={selectedVersion}
+          previewState={archivePreview}
+          folders={folders}
+          tags={tags}
+          metadataNote={metadataNote}
+          metadataFolderId={metadataFolderId}
+          metadataTagIds={metadataTagIds}
+          metadataSaving={metadataSaving}
+          metadataFeedback={metadataFeedback}
+          onMetadataNoteChange={setMetadataNote}
+          onMetadataFolderChange={setMetadataFolderId}
+          onMetadataTagToggle={(tagId) => {
+            setMetadataTagIds((current) => (
+              current.includes(tagId)
+                ? current.filter((item) => item !== tagId)
+                : [...current, tagId]
+            ));
+          }}
+          onMetadataSave={() => void handleSaveMetadata()}
+        />
       )}
     </main>
   );

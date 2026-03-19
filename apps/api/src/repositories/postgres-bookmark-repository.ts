@@ -6,9 +6,16 @@ import {
   qualityReportSchema,
   type AuthUser,
   type Bookmark,
+  type BookmarkMetadataUpdateRequest,
   type BookmarkVersion,
   type CaptureCompleteRequest,
   type CaptureInitRequest,
+  type Folder,
+  type FolderCreateRequest,
+  type FolderUpdateRequest,
+  type Tag,
+  type TagCreateRequest,
+  type TagUpdateRequest,
 } from "@keeppage/domain";
 import {
   bookmarks,
@@ -32,6 +39,7 @@ import {
 } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { HttpError } from "../lib/http-error";
 import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
 import type { ObjectStorage } from "../storage/object-storage";
 import type {
@@ -415,6 +423,26 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     if (query.quality) {
       conditions.push(eq(bookmarkVersions.qualityGrade, query.quality));
     }
+    if (query.folderId) {
+      const folderIds = await this.loadFolderSubtreeIds(userId, query.folderId);
+      if (folderIds.length === 0) {
+        return bookmarkSearchResponseSchema.parse({
+          items: [],
+          total: 0,
+        });
+      }
+      conditions.push(inArray(bookmarks.folderId, folderIds));
+    }
+    if (query.tagId) {
+      conditions.push(
+        sql<boolean>`exists (
+          select 1
+          from ${bookmarkTags}
+          where ${bookmarkTags.bookmarkId} = ${bookmarks.id}
+            and ${bookmarkTags.tagId} = ${query.tagId}
+        )`,
+      );
+    }
     if (query.q?.trim()) {
       const needle = `%${query.q.trim()}%`;
       conditions.push(
@@ -450,6 +478,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         folderId: folders.id,
         folderName: folders.name,
         folderPath: folders.path,
+        folderParentId: folders.parentId,
         latestQualityReport: bookmarkVersions.qualityReportJson,
       })
       .from(bookmarks)
@@ -488,6 +517,323 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       bookmark,
       versions,
     };
+  }
+
+  async updateBookmarkMetadata(
+    userId: string,
+    bookmarkId: string,
+    input: BookmarkMetadataUpdateRequest,
+  ) {
+    const existing = await this.loadBookmarkOrNull(bookmarkId, userId);
+    if (!existing) {
+      return null;
+    }
+
+    let folderId = existing.folder?.id ?? null;
+    if (input.folderId !== undefined) {
+      if (input.folderId === null) {
+        folderId = null;
+      } else {
+        const folder = await this.loadFolderOrNull(userId, input.folderId);
+        if (!folder) {
+          throw new HttpError(404, "FolderNotFound", "Folder not found.");
+        }
+        folderId = folder.id;
+      }
+    }
+
+    const tagIds = input.tagIds !== undefined
+      ? await this.resolveTagIds(userId, input.tagIds)
+      : undefined;
+    const now = new Date();
+
+    await this.db.transaction(async (tx) => {
+      const patch: Partial<typeof bookmarks.$inferInsert> = {
+        updatedAt: now,
+      };
+      if (input.note !== undefined) {
+        patch.note = input.note;
+      }
+      if (input.folderId !== undefined) {
+        patch.folderId = folderId;
+      }
+      await tx.update(bookmarks).set(patch).where(eq(bookmarks.id, bookmarkId));
+
+      if (tagIds !== undefined) {
+        await tx.delete(bookmarkTags).where(eq(bookmarkTags.bookmarkId, bookmarkId));
+        if (tagIds.length > 0) {
+          await tx.insert(bookmarkTags).values(
+            tagIds.map((tagId) => ({
+              bookmarkId,
+              tagId,
+              createdAt: now,
+            })),
+          );
+        }
+      }
+    });
+
+    return this.loadBookmark(bookmarkId, userId);
+  }
+
+  async listFolders(userId: string) {
+    return this.loadAllFolders(userId);
+  }
+
+  async createFolder(userId: string, input: FolderCreateRequest) {
+    const allFolders = await this.loadAllFolders(userId);
+    const parent = input.parentId
+      ? allFolders.find((folder) => folder.id === input.parentId)
+      : undefined;
+    if (input.parentId && !parent) {
+      throw new HttpError(404, "FolderNotFound", "Parent folder not found.");
+    }
+
+    const nextPath = this.buildFolderPath(parent?.path, input.name);
+    this.assertUniqueFolderPath(allFolders, nextPath);
+    const now = new Date();
+    const rows = await this.db
+      .insert(folders)
+      .values({
+        userId,
+        name: input.name,
+        path: nextPath,
+        parentId: parent?.id ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning({
+        id: folders.id,
+        name: folders.name,
+        path: folders.path,
+        parentId: folders.parentId,
+      });
+
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Failed to create folder.");
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      path: row.path,
+      parentId: row.parentId,
+    };
+  }
+
+  async updateFolder(userId: string, folderId: string, input: FolderUpdateRequest) {
+    const allFolders = await this.loadAllFolders(userId);
+    const current = allFolders.find((folder) => folder.id === folderId);
+    if (!current) {
+      return null;
+    }
+
+    const nextName = input.name ?? current.name;
+    const nextParentId = input.parentId !== undefined ? input.parentId : current.parentId ?? null;
+    if (nextParentId === folderId) {
+      throw new HttpError(400, "InvalidFolderMove", "Folder cannot be its own parent.");
+    }
+
+    const descendants = this.collectFolderSubtree(allFolders, current.path);
+    const descendantIds = new Set(descendants.map((folder) => folder.id));
+    if (nextParentId && descendantIds.has(nextParentId)) {
+      throw new HttpError(400, "InvalidFolderMove", "Folder cannot be moved into its child.");
+    }
+
+    const parent = nextParentId
+      ? allFolders.find((folder) => folder.id === nextParentId)
+      : undefined;
+    if (nextParentId && !parent) {
+      throw new HttpError(404, "FolderNotFound", "Parent folder not found.");
+    }
+
+    const nextPath = this.buildFolderPath(parent?.path, nextName);
+    const nextPaths = new Map<string, string>();
+    for (const folder of descendants) {
+      const candidatePath = folder.id === folderId
+        ? nextPath
+        : `${nextPath}${folder.path.slice(current.path.length)}`;
+      nextPaths.set(folder.id, candidatePath);
+    }
+    this.assertFolderPathSetAvailable(allFolders, nextPaths, descendantIds);
+
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      for (const folder of descendants) {
+        const candidatePath = nextPaths.get(folder.id);
+        if (!candidatePath) {
+          continue;
+        }
+        if (folder.id === folderId) {
+          await tx
+            .update(folders)
+            .set({
+              name: nextName,
+              path: candidatePath,
+              parentId: nextParentId,
+              updatedAt: now,
+            })
+            .where(and(eq(folders.id, folder.id), eq(folders.userId, userId)));
+          continue;
+        }
+
+        await tx
+          .update(folders)
+          .set({
+            path: candidatePath,
+            updatedAt: now,
+          })
+          .where(and(eq(folders.id, folder.id), eq(folders.userId, userId)));
+      }
+    });
+
+    return this.loadFolderOrNull(userId, folderId);
+  }
+
+  async deleteFolder(userId: string, folderId: string) {
+    const allFolders = await this.loadAllFolders(userId);
+    const current = allFolders.find((folder) => folder.id === folderId);
+    if (!current) {
+      return false;
+    }
+
+    const subtree = this.collectFolderSubtree(allFolders, current.path);
+    const subtreeIds = new Set(subtree.map((folder) => folder.id));
+    const parent = current.parentId
+      ? allFolders.find((folder) => folder.id === current.parentId)
+      : undefined;
+    const parentPath = parent?.path;
+
+    const nextPaths = new Map<string, string>();
+    for (const folder of subtree) {
+      if (folder.id === folderId) {
+        continue;
+      }
+      const relativePath = folder.path.slice(current.path.length + 1);
+      const candidatePath = parentPath ? `${parentPath}/${relativePath}` : relativePath;
+      nextPaths.set(folder.id, candidatePath);
+    }
+    this.assertFolderPathSetAvailable(allFolders, nextPaths, subtreeIds);
+
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      for (const folder of subtree) {
+        if (folder.id === folderId) {
+          continue;
+        }
+        const candidatePath = nextPaths.get(folder.id);
+        if (!candidatePath) {
+          continue;
+        }
+        const patch: Partial<typeof folders.$inferInsert> = {
+          path: candidatePath,
+          updatedAt: now,
+        };
+        if (folder.parentId === folderId) {
+          patch.parentId = current.parentId ?? null;
+        }
+        await tx
+          .update(folders)
+          .set(patch)
+          .where(and(eq(folders.id, folder.id), eq(folders.userId, userId)));
+      }
+
+      await tx
+        .delete(folders)
+        .where(and(eq(folders.id, folderId), eq(folders.userId, userId)));
+    });
+
+    return true;
+  }
+
+  async listTags(userId: string) {
+    const rows = await this.db
+      .select({
+        id: tags.id,
+        name: tags.name,
+        color: tags.color,
+      })
+      .from(tags)
+      .where(eq(tags.userId, userId))
+      .orderBy(tags.name);
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      color: row.color ?? undefined,
+    }));
+  }
+
+  async createTag(userId: string, input: TagCreateRequest) {
+    const allTags = await this.listTags(userId);
+    this.assertUniqueTagName(allTags, input.name);
+    const rows = await this.db
+      .insert(tags)
+      .values({
+        userId,
+        name: input.name,
+        color: input.color ?? null,
+      })
+      .returning({
+        id: tags.id,
+        name: tags.name,
+        color: tags.color,
+      });
+
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Failed to create tag.");
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      color: row.color ?? undefined,
+    };
+  }
+
+  async updateTag(userId: string, tagId: string, input: TagUpdateRequest) {
+    const allTags = await this.listTags(userId);
+    const current = allTags.find((tag) => tag.id === tagId);
+    if (!current) {
+      return null;
+    }
+
+    const nextName = input.name ?? current.name;
+    const nextColor = input.color === undefined ? current.color : input.color ?? undefined;
+    this.assertUniqueTagName(allTags, nextName, tagId);
+
+    const rows = await this.db
+      .update(tags)
+      .set({
+        name: nextName,
+        color: nextColor ?? null,
+      })
+      .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+      .returning({
+        id: tags.id,
+        name: tags.name,
+        color: tags.color,
+      });
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      color: row.color ?? undefined,
+    };
+  }
+
+  async deleteTag(userId: string, tagId: string) {
+    const rows = await this.db
+      .delete(tags)
+      .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+      .returning({
+        id: tags.id,
+      });
+    return Boolean(rows[0]);
   }
 
   async userCanReadObject(userId: string, objectKey: string) {
@@ -565,6 +911,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         folderId: folders.id,
         folderName: folders.name,
         folderPath: folders.path,
+        folderParentId: folders.parentId,
         latestQualityReport: bookmarkVersions.qualityReportJson,
       })
       .from(bookmarks)
@@ -695,6 +1042,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       folderId: string | null;
       folderName: string | null;
       folderPath: string | null;
+      folderParentId: string | null;
       latestQualityReport: unknown;
     },
     options: {
@@ -716,6 +1064,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
             id: row.folderId,
             name: row.folderName,
             path: row.folderPath,
+            parentId: row.folderParentId ?? null,
           }
         : undefined,
       latestVersionId: row.latestVersionId ?? undefined,
@@ -732,6 +1081,126 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       return undefined;
     }
     return parsed.data;
+  }
+
+  private async loadAllFolders(userId: string): Promise<Folder[]> {
+    const rows = await this.db
+      .select({
+        id: folders.id,
+        name: folders.name,
+        path: folders.path,
+        parentId: folders.parentId,
+      })
+      .from(folders)
+      .where(eq(folders.userId, userId))
+      .orderBy(folders.path);
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      path: row.path,
+      parentId: row.parentId,
+    }));
+  }
+
+  private async loadFolderOrNull(userId: string, folderId: string): Promise<Folder | null> {
+    const rows = await this.db
+      .select({
+        id: folders.id,
+        name: folders.name,
+        path: folders.path,
+        parentId: folders.parentId,
+      })
+      .from(folders)
+      .where(and(eq(folders.userId, userId), eq(folders.id, folderId)))
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      path: row.path,
+      parentId: row.parentId,
+    };
+  }
+
+  private async loadFolderSubtreeIds(userId: string, folderId: string) {
+    const allFolders = await this.loadAllFolders(userId);
+    const current = allFolders.find((folder) => folder.id === folderId);
+    if (!current) {
+      return [];
+    }
+    return this.collectFolderSubtree(allFolders, current.path).map((folder) => folder.id);
+  }
+
+  private collectFolderSubtree(allFolders: Folder[], rootPath: string) {
+    return allFolders
+      .filter((folder) => folder.path === rootPath || folder.path.startsWith(`${rootPath}/`))
+      .sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  private buildFolderPath(parentPath: string | undefined, name: string) {
+    return parentPath ? `${parentPath}/${name}` : name;
+  }
+
+  private assertUniqueFolderPath(allFolders: Folder[], nextPath: string, excludeFolderId?: string) {
+    const conflict = allFolders.find((folder) => folder.path === nextPath && folder.id !== excludeFolderId);
+    if (conflict) {
+      throw new HttpError(409, "FolderPathConflict", "Folder path already exists.");
+    }
+  }
+
+  private assertFolderPathSetAvailable(
+    allFolders: Folder[],
+    nextPaths: Map<string, string>,
+    ignoredFolderIds: Set<string>,
+  ) {
+    const seen = new Set<string>();
+    for (const nextPath of nextPaths.values()) {
+      if (seen.has(nextPath)) {
+        throw new HttpError(409, "FolderPathConflict", "Folder path already exists.");
+      }
+      seen.add(nextPath);
+    }
+
+    for (const folder of allFolders) {
+      if (ignoredFolderIds.has(folder.id)) {
+        continue;
+      }
+      if (seen.has(folder.path)) {
+        throw new HttpError(409, "FolderPathConflict", "Folder path already exists.");
+      }
+    }
+  }
+
+  private assertUniqueTagName(allTags: Tag[], nextName: string, excludeTagId?: string) {
+    const conflict = allTags.find((tag) => tag.name === nextName && tag.id !== excludeTagId);
+    if (conflict) {
+      throw new HttpError(409, "TagNameConflict", "Tag name already exists.");
+    }
+  }
+
+  private async resolveTagIds(userId: string, tagIds: string[]) {
+    const deduplicatedIds = [...new Set(tagIds)];
+    if (deduplicatedIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .select({
+        id: tags.id,
+      })
+      .from(tags)
+      .where(and(eq(tags.userId, userId), inArray(tags.id, deduplicatedIds)));
+
+    if (rows.length !== deduplicatedIds.length) {
+      throw new HttpError(404, "TagNotFound", "Tag not found.");
+    }
+
+    return deduplicatedIds;
   }
 
   private createObjectKey(userId: string) {
