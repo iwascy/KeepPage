@@ -2,12 +2,17 @@ import { useEffect, useState } from "react";
 import {
   authSessionSchema,
   authUserSchema,
+  ensureArchiveBaseHref,
   type AuthUser,
   type CaptureProfile,
   type CaptureTask,
 } from "@keeppage/domain";
 import { MESSAGE_TYPE, type TaskUpdatedEvent } from "../../src/lib/messages";
 import { getStoredAuthToken, getStoredAuthUser } from "../../src/lib/auth-storage";
+import {
+  openExtensionAuthPage,
+  openSidePanelForCurrentWindow,
+} from "../../src/lib/auth-flow";
 
 type AsyncState = "idle" | "capturing" | "error";
 type SettingsState = "idle" | "saving" | "saved" | "error";
@@ -42,6 +47,8 @@ const PROFILE_OPTIONS: Array<{
     description: "更快更小，优先搜索和快速归档。",
   },
 ];
+
+const AUTH_PAGE_VIEW = new URLSearchParams(window.location.search).get("view") === "auth";
 
 export function App() {
   const [tasks, setTasks] = useState<CaptureTask[]>([]);
@@ -88,7 +95,42 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const listener: Parameters<typeof chrome.storage.onChanged.addListener>[0] = (changes, areaName) => {
+      if (areaName !== "local" || (!changes.authToken && !changes.authUser)) {
+        return;
+      }
+
+      void syncAuthStateFromStorage();
+    };
+
+    chrome.storage.onChanged.addListener(listener);
+    return () => {
+      chrome.storage.onChanged.removeListener(listener);
+    };
+  }, []);
+
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+
+  async function syncAuthStateFromStorage() {
+    const [token, user] = await Promise.all([
+      getStoredAuthToken(),
+      getStoredAuthUser(),
+    ]);
+
+    if (!token || !user) {
+      setAuthUser(null);
+      setTasks([]);
+      setSelectedTaskId(null);
+      setAuthState("idle");
+      setAuthMessage("登录已失效或已退出，请重新登录后再继续保存。");
+      return;
+    }
+
+    setAuthUser(user);
+    setAuthState("ok");
+    setAuthMessage(`已登录 ${user.email}，现在可以继续使用扩展。`);
+  }
 
   async function refreshTasks() {
     const response = await chrome.runtime.sendMessage({
@@ -123,6 +165,17 @@ export function App() {
     }
     setState("idle");
     await refreshTasks();
+  }
+
+  async function handlePrimaryAction() {
+    if (!authUser) {
+      setAuthState("idle");
+      setAuthMessage("请先完成登录，登录成功后就可以开始使用扩展。");
+      await openExtensionAuthPage("capture-button");
+      return;
+    }
+
+    await captureCurrentPage();
   }
 
   async function retryCurrentTask() {
@@ -179,6 +232,10 @@ export function App() {
     if (!storedToken) {
       setTasks([]);
       setSelectedTaskId(null);
+      if (AUTH_PAGE_VIEW) {
+        setAuthState("idle");
+        setAuthMessage("请先登录 KeepPage，完成后就可以直接使用扩展。");
+      }
       return;
     }
 
@@ -265,7 +322,14 @@ export function App() {
       setAuthUser(session.user);
       setAuthPassword("");
       setAuthState("ok");
-      setAuthMessage(`已登录 ${session.user.email}，新的保存会同步到这个账号。`);
+      const sidePanelOpened = AUTH_PAGE_VIEW
+        ? await openSidePanelForCurrentWindow()
+        : false;
+      setAuthMessage(
+        sidePanelOpened
+          ? `已登录 ${session.user.email}，侧边栏已打开，现在可以直接保存当前页面。`
+          : `已登录 ${session.user.email}，新的保存会同步到这个账号。`,
+      );
       setConnectionState("idle");
       setConnectionMessage(null);
       await refreshTasks();
@@ -324,7 +388,11 @@ export function App() {
     : "按当前 Profile 重抓";
   const authBannerTone = authState === "ok" ? "ok" : authState;
   const isRegister = authMode === "register";
-  const canCapture = Boolean(authUser) && state !== "capturing";
+  const primaryActionLabel = !authUser
+    ? "去登录"
+    : state === "capturing"
+    ? "保存中..."
+    : "保存当前页";
 
   return (
     <div className="layout">
@@ -350,11 +418,11 @@ export function App() {
           </label>
           <button
             className="capture-btn"
-            disabled={!canCapture}
-            onClick={captureCurrentPage}
+            disabled={state === "capturing"}
+            onClick={handlePrimaryAction}
             type="button"
           >
-            {!authUser ? "请先登录" : state === "capturing" ? "保存中..." : "保存当前页"}
+            {primaryActionLabel}
           </button>
         </div>
       </header>
@@ -548,7 +616,10 @@ export function App() {
                   <iframe
                     className="preview-frame"
                     sandbox="allow-same-origin"
-                    srcDoc={selectedTask.artifacts.archiveHtml}
+                    srcDoc={ensureArchiveBaseHref(
+                      selectedTask.artifacts.archiveHtml,
+                      selectedTask.source.canonicalUrl ?? selectedTask.source.url,
+                    )}
                     title="archive-preview"
                   />
                 ) : (

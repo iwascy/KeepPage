@@ -3,6 +3,7 @@ import {
   authUserSchema,
   bookmarkDetailResponseSchema,
   bookmarkSearchResponseSchema,
+  ensureArchiveBaseHref,
   type AuthLoginRequest,
   type AuthRegisterRequest,
   type AuthSession,
@@ -174,7 +175,7 @@ export async function fetchBookmarkDetail(
   }
 }
 
-export async function createArchiveObjectUrl(token: string, objectKey: string) {
+export async function createArchiveObjectUrl(token: string, objectKey: string, sourceUrl: string) {
   const response = await fetch(
     `${resolveApiBase()}/objects/${encodeURIComponent(objectKey)}`,
     {
@@ -187,6 +188,9 @@ export async function createArchiveObjectUrl(token: string, objectKey: string) {
     const errorPayload = await readErrorPayload(response);
     throw new ApiError(response.status, errorPayload.message, errorPayload.details);
   }
-  const blob = await response.blob();
+  const html = ensureArchiveBaseHref(await response.text(), sourceUrl);
+  const blob = new Blob([html], {
+    type: response.headers.get("content-type") ?? "text/html;charset=utf-8",
+  });
   return URL.createObjectURL(blob);
 }

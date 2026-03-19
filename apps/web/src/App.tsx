@@ -1,5 +1,6 @@
 import {
   type FormEvent,
+  type KeyboardEvent,
   type ReactNode,
   useDeferredValue,
   useEffect,
@@ -78,6 +79,39 @@ function formatWhen(input: string) {
   }).format(date);
 }
 
+function formatRelativeWhen(input: string) {
+  const target = new Date(input);
+  const diffMs = target.getTime() - Date.now();
+  if (Number.isNaN(diffMs)) {
+    return formatWhen(input);
+  }
+
+  const absMs = Math.abs(diffMs);
+  if (absMs < 60_000) {
+    return "刚刚";
+  }
+
+  const formatter = new Intl.RelativeTimeFormat("zh-CN", {
+    numeric: "auto",
+  });
+  const units = [
+    { unit: "year", ms: 365 * 24 * 60 * 60 * 1000 },
+    { unit: "month", ms: 30 * 24 * 60 * 60 * 1000 },
+    { unit: "week", ms: 7 * 24 * 60 * 60 * 1000 },
+    { unit: "day", ms: 24 * 60 * 60 * 1000 },
+    { unit: "hour", ms: 60 * 60 * 1000 },
+    { unit: "minute", ms: 60 * 1000 },
+  ] as const;
+
+  for (const { unit, ms } of units) {
+    if (absMs >= ms) {
+      return formatter.format(Math.round(diffMs / ms), unit);
+    }
+  }
+
+  return formatWhen(input);
+}
+
 function formatFileSize(input?: number) {
   if (!input || input <= 0) {
     return "未知";
@@ -139,6 +173,104 @@ function openBookmark(bookmarkId: string, versionId?: string) {
   window.location.hash = buildDetailHash(bookmarkId, versionId);
 }
 
+function summarizeBookmark(bookmark: Bookmark) {
+  const note = bookmark.note.trim();
+  if (note) {
+    return note;
+  }
+
+  const firstReason = bookmark.latestQuality?.reasons[0]?.message?.trim();
+  if (firstReason) {
+    return firstReason;
+  }
+
+  if (bookmark.folder?.path) {
+    return `已归档到 ${bookmark.folder.path}，当前共保留 ${bookmark.versionCount} 个版本，可随时打开查看。`;
+  }
+
+  if (bookmark.tags.length > 0) {
+    const tagNames = bookmark.tags.slice(0, 3).map((tag) => `#${tag.name}`).join("、");
+    return `标签：${tagNames}。当前共保留 ${bookmark.versionCount} 个版本。`;
+  }
+
+  return `已保存来自 ${bookmark.domain} 的网页归档，当前共保留 ${bookmark.versionCount} 个版本。`;
+}
+
+function getDomainMonogram(domain: string) {
+  const letters = domain
+    .replace(/^www\./i, "")
+    .split(".")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+  return letters || domain.slice(0, 2).toUpperCase();
+}
+
+function handleCardKeyDown(event: KeyboardEvent<HTMLElement>, onOpen: () => void) {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  onOpen();
+}
+
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M6.25 9.75 4.5 11.5a2.12 2.12 0 0 1-3-3l2.25-2.25a2.12 2.12 0 0 1 3 0"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+      <path
+        d="m9.75 6.25 1.75-1.75a2.12 2.12 0 1 1 3 3l-2.25 2.25a2.12 2.12 0 0 1-3 0"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+      <path
+        d="m5.75 10.25 4.5-4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle
+        cx="8"
+        cy="8"
+        r="5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+      <path
+        d="M8 4.8v3.45l2.2 1.35"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.3"
+      />
+    </svg>
+  );
+}
+
 function getStoredToken() {
   const stored = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
   return stored || null;
@@ -169,40 +301,47 @@ function BookmarkCard({
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
 }) {
+  const summary = summarizeBookmark(bookmark);
+  const hasPreview = bookmark.latestQuality?.archiveSignals.screenshotGenerated ?? false;
+  const openDetail = () => onOpen(bookmark.id);
+
   return (
     <article className="bookmark-card">
-      <header className="card-header">
-        <p className="domain">{bookmark.domain}</p>
-        <span className={qualityClass(bookmark.latestQuality?.grade)}>
-          {qualityLabel(bookmark.latestQuality?.grade)}
-        </span>
-      </header>
-      <h2 className="title">{bookmark.title}</h2>
-      <a className="url" href={bookmark.sourceUrl} target="_blank" rel="noreferrer">
-        {bookmark.sourceUrl}
-      </a>
-      <div className="meta-row">
-        <span>{bookmark.versionCount} 个版本</span>
-        <span>{bookmark.folder?.path ?? "未归档文件夹"}</span>
+      <div
+        className="bookmark-card-hitarea"
+        role="button"
+        tabIndex={0}
+        aria-label={`打开归档：${bookmark.title}`}
+        onClick={openDetail}
+        onKeyDown={(event) => handleCardKeyDown(event, openDetail)}
+      >
+        <span className="bookmark-card-accent" aria-hidden="true" />
+        <h2 className="bookmark-card-title">{bookmark.title}</h2>
+        <div className="bookmark-card-summary">
+          {hasPreview ? (
+            <div className="bookmark-card-media" aria-hidden="true">
+              <span>{getDomainMonogram(bookmark.domain)}</span>
+            </div>
+          ) : null}
+          <p className="bookmark-card-description">{summary}</p>
+        </div>
+        <footer className="bookmark-card-footer">
+          <a
+            className="bookmark-card-domain"
+            href={bookmark.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <LinkIcon />
+            <span>{bookmark.domain}</span>
+          </a>
+          <span className="bookmark-card-time">
+            <ClockIcon />
+            <span>{formatRelativeWhen(bookmark.updatedAt)}</span>
+          </span>
+        </footer>
       </div>
-      <div className="tags">
-        {bookmark.tags.length > 0 ? (
-          bookmark.tags.map((tag) => (
-            <span className="tag" key={tag.id}>
-              #{tag.name}
-            </span>
-          ))
-        ) : (
-          <span className="tag muted-tag">#未打标签</span>
-        )}
-      </div>
-      <footer className="footer">
-        <span>保存于：{formatWhen(bookmark.createdAt)}</span>
-        <span>更新于：{formatWhen(bookmark.updatedAt)}</span>
-      </footer>
-      <button className="secondary-button card-action" type="button" onClick={() => onOpen(bookmark.id)}>
-        查看归档
-      </button>
     </article>
   );
 }
@@ -773,17 +912,25 @@ export function App() {
     );
   }, [detail, route]);
 
+  const previewSourceUrl = detail
+    ? (detail.bookmark.canonicalUrl ?? detail.bookmark.sourceUrl)
+    : null;
+
   useEffect(() => {
     let revokedUrl: string | null = null;
     let cancelled = false;
 
-    if (!authToken || !selectedVersion?.archiveAvailable) {
+    if (!authToken || !selectedVersion?.archiveAvailable || !previewSourceUrl) {
       setArchivePreview({ status: "idle" });
       return;
     }
 
     setArchivePreview({ status: "loading" });
-    createArchiveObjectUrl(authToken, selectedVersion.htmlObjectKey)
+    createArchiveObjectUrl(
+      authToken,
+      selectedVersion.htmlObjectKey,
+      previewSourceUrl,
+    )
       .then((url) => {
         if (cancelled) {
           URL.revokeObjectURL(url);
@@ -811,7 +958,12 @@ export function App() {
         URL.revokeObjectURL(revokedUrl);
       }
     };
-  }, [authToken, selectedVersion?.archiveAvailable, selectedVersion?.htmlObjectKey]);
+  }, [
+    authToken,
+    previewSourceUrl,
+    selectedVersion?.archiveAvailable,
+    selectedVersion?.htmlObjectKey,
+  ]);
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -872,10 +1024,12 @@ export function App() {
     );
   }
 
+  const isDetailRoute = route.page === "detail";
+
   return (
-    <main className="page-shell">
+    <main className={`page-shell${isDetailRoute ? " is-detail-route" : ""}`}>
       <div className="texture" />
-      <section className="topbar">
+      <section className={`topbar${isDetailRoute ? " is-detail-route" : ""}`}>
         <div>
           <p className="eyebrow">KeepPage Workspace</p>
           <h1>{route.page === "detail" ? "归档查看页" : "网页归档工作台"}</h1>
