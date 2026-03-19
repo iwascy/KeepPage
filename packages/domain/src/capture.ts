@@ -3,7 +3,7 @@ import {
   privateModeSchema,
   privateSyncStateSchema,
   saveModeSchema,
-} from "./private-vault";
+} from "./private-mode";
 
 export const captureStatusValues = [
   "queued",
