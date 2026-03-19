@@ -8,7 +8,7 @@ export default defineConfig({
     name: "KeepPage",
     description:
       "Archive-first 书签扩展：先本地归档，再异步同步，带质量诊断与可预览队列。",
-    version: "0.1.0",
+    version: "0.1.1",
     permissions: [
       "activeTab",
       "storage",
