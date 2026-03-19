@@ -12,6 +12,7 @@ import {
   isContentRequest,
   type CaptureArchiveHtmlResponse,
   type CollectLiveSignalsResponse,
+  type ShowInPageToastResponse,
 } from "../src/lib/messages";
 import { createLogger, logToConsole } from "../src/lib/logger";
 
@@ -29,6 +30,18 @@ type SingleFileGlobal = {
     ) => Promise<SingleFilePageData>;
   };
 };
+
+type ToastElements = {
+  host: HTMLDivElement;
+  toast: HTMLDivElement;
+  title: HTMLParagraphElement;
+  message: HTMLParagraphElement;
+};
+
+const TOAST_HOST_ID = "keeppage-in-page-toast";
+let toastElements: ToastElements | null = null;
+let toastDismissTimer: number | null = null;
+let toastRemovalTimer: number | null = null;
 
 export default defineContentScript({
   matches: ["<all_urls>"],
@@ -89,6 +102,17 @@ export default defineContentScript({
               error: capture.error,
             });
           }
+          sendResponse(response);
+          return;
+        }
+        if (message.type === MESSAGE_TYPE.ShowInPageToast) {
+          showInPageToast({
+            title: message.title,
+            message: message.message,
+          });
+          const response: ShowInPageToastResponse = {
+            ok: true,
+          };
           sendResponse(response);
         }
       })().catch((error) => {
@@ -249,4 +273,159 @@ function profileToSingleFileOptions(profile: CaptureProfile) {
     loadDeferredImages: true,
     loadDeferredImagesMaxIdleTime: 1000,
   };
+}
+
+function showInPageToast(input: { title: string; message?: string }) {
+  const ui = ensureToastElements();
+
+  ui.title.textContent = input.title;
+  const normalizedMessage = input.message?.trim() ?? "";
+  ui.message.textContent = normalizedMessage;
+  ui.message.hidden = normalizedMessage.length === 0;
+  ui.host.hidden = false;
+  ui.toast.dataset.state = "hidden";
+
+  if (toastDismissTimer != null) {
+    window.clearTimeout(toastDismissTimer);
+  }
+  if (toastRemovalTimer != null) {
+    window.clearTimeout(toastRemovalTimer);
+  }
+
+  requestAnimationFrame(() => {
+    ui.toast.dataset.state = "visible";
+  });
+
+  toastDismissTimer = window.setTimeout(() => {
+    ui.toast.dataset.state = "leaving";
+    toastRemovalTimer = window.setTimeout(() => {
+      ui.host.hidden = true;
+    }, 220);
+  }, 2600);
+}
+
+function ensureToastElements() {
+  if (toastElements && document.contains(toastElements.host)) {
+    return toastElements;
+  }
+
+  const host = document.createElement("div");
+  host.id = TOAST_HOST_ID;
+  host.hidden = true;
+
+  const shadowRoot = host.attachShadow({ mode: "open" });
+  const style = document.createElement("style");
+  style.textContent = `
+    :host {
+      all: initial;
+    }
+
+    .viewport {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      pointer-events: none;
+      font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    .toast {
+      position: absolute;
+      top: 22px;
+      right: 22px;
+      width: min(360px, calc(100vw - 28px));
+      box-sizing: border-box;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(110, 231, 183, 0.28);
+      background:
+        linear-gradient(135deg, rgba(15, 118, 110, 0.98), rgba(15, 23, 42, 0.98));
+      box-shadow:
+        0 18px 60px rgba(15, 23, 42, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      color: #f8fafc;
+      opacity: 0;
+      transform: translateY(-14px) scale(0.96);
+      transition:
+        opacity 180ms ease,
+        transform 220ms ease;
+      backdrop-filter: blur(16px);
+    }
+
+    .toast[data-state="visible"] {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    .toast[data-state="leaving"] {
+      opacity: 0;
+      transform: translateY(-10px) scale(0.98);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+      color: rgba(236, 253, 245, 0.9);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #6ee7b7;
+      box-shadow: 0 0 0 6px rgba(110, 231, 183, 0.18);
+      flex: none;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .message {
+      margin: 6px 0 0;
+      color: rgba(241, 245, 249, 0.82);
+      font-size: 13px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+  `;
+
+  const viewport = document.createElement("div");
+  viewport.className = "viewport";
+
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.dataset.state = "hidden";
+
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  eyebrow.textContent = "KeepPage";
+
+  const title = document.createElement("p");
+  title.className = "title";
+
+  const message = document.createElement("p");
+  message.className = "message";
+
+  toast.append(eyebrow, title, message);
+  viewport.append(toast);
+  shadowRoot.append(style, viewport);
+  (document.body ?? document.documentElement).append(host);
+
+  toastElements = {
+    host,
+    toast,
+    title,
+    message,
+  };
+  return toastElements;
 }

@@ -20,6 +20,8 @@ import {
   type CaptureArchiveHtmlResponse,
   type CollectLiveSignalsRequest,
   type CollectLiveSignalsResponse,
+  type ShowInPageToastRequest,
+  type ShowInPageToastResponse,
   type TaskUpdatedEvent,
 } from "./messages";
 import {
@@ -288,6 +290,7 @@ async function syncTask(task: CaptureTask, debugTabId?: number) {
     await publishTask(workingTask);
     workingTask = await transitionCaptureTaskStatus(task.id, "synced");
     await publishTask(workingTask);
+    await showInPageSuccessToast(debugTabId, workingTask);
     await logCapture("info", debugTabId, "Task synced successfully.", {
       taskId: task.id,
       bookmarkId: syncResult.bookmarkId,
@@ -306,6 +309,32 @@ async function syncTask(task: CaptureTask, debugTabId?: number) {
     await publishTask(workingTask);
     return workingTask;
   }
+}
+
+async function showInPageSuccessToast(tabId: number | undefined, task: CaptureTask) {
+  if (typeof tabId !== "number") {
+    return;
+  }
+
+  try {
+    await sendMessageToTab<ShowInPageToastRequest, ShowInPageToastResponse>(tabId, {
+      type: MESSAGE_TYPE.ShowInPageToast,
+      title: "已保存到 KeepPage",
+      message: buildTaskSyncedMessage(task),
+      tone: "success",
+    });
+  } catch (error) {
+    logger.warn("Failed to show in-page success toast.", {
+      taskId: task.id,
+      tabId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function buildTaskSyncedMessage(task: CaptureTask) {
+  const pageTitle = task.source.title.trim() || task.source.url;
+  return pageTitle.length > 84 ? `${pageTitle.slice(0, 81)}...` : pageTitle;
 }
 
 async function getStoredTaskOwner(): Promise<CaptureTaskOwner | null> {

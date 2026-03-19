@@ -8,6 +8,7 @@ import type {
 export const MESSAGE_TYPE = {
   CollectLiveSignals: "keeppage/collect-live-signals",
   CaptureArchiveHtml: "keeppage/capture-archive-html",
+  ShowInPageToast: "keeppage/show-in-page-toast",
   ListTasks: "keeppage/list-tasks",
   TriggerCaptureActiveTab: "keeppage/trigger-capture-active-tab",
   RetryTask: "keeppage/retry-task",
@@ -37,6 +38,17 @@ export interface CaptureArchiveHtmlResponse {
   archiveHtml?: string;
   usedSingleFile?: boolean;
   error?: string;
+}
+
+export interface ShowInPageToastRequest {
+  type: typeof MESSAGE_TYPE.ShowInPageToast;
+  title: string;
+  message?: string;
+  tone?: "success";
+}
+
+export interface ShowInPageToastResponse {
+  ok: boolean;
 }
 
 export interface ListTasksRequest {
@@ -78,7 +90,10 @@ export interface DebugLogEvent {
   details?: unknown;
 }
 
-export type ContentRequest = CollectLiveSignalsRequest | CaptureArchiveHtmlRequest;
+export type ContentRequest =
+  | CollectLiveSignalsRequest
+  | CaptureArchiveHtmlRequest
+  | ShowInPageToastRequest;
 export type BackgroundRequest =
   | ListTasksRequest
   | TriggerCaptureActiveTabRequest
@@ -92,7 +107,8 @@ export function isContentRequest(message: unknown): message is ContentRequest {
   const maybe = message as { type?: string };
   return (
     maybe.type === MESSAGE_TYPE.CollectLiveSignals ||
-    maybe.type === MESSAGE_TYPE.CaptureArchiveHtml
+    maybe.type === MESSAGE_TYPE.CaptureArchiveHtml ||
+    maybe.type === MESSAGE_TYPE.ShowInPageToast
   );
 }
 
