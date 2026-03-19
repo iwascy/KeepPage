@@ -5,10 +5,10 @@ import {
   type CaptureTask,
 } from "@keeppage/domain";
 import { getStoredAuthUser } from "./auth-storage";
+import { getConfiguredApiBaseUrl, recoverUnauthorizedSession } from "./auth-flow";
 import { emitDebugLogToTab } from "./debug-log";
 import { createLogger } from "./logger";
 
-const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
 const CHUNK_SIZE_BYTES = 256 * 1024;
 const CHUNK_UPLOAD_THRESHOLD_BYTES = 512 * 1024;
 const logger = createLogger("sync-api");
@@ -40,6 +40,18 @@ class UploadHttpError extends Error {
   constructor(status: number, responseBody: string, message?: string) {
     super(message ?? `Upload ${status}: ${responseBody}`);
     this.name = "UploadHttpError";
+    this.status = status;
+    this.responseBody = responseBody;
+  }
+}
+
+class ApiRequestError extends Error {
+  readonly status: number;
+  readonly responseBody: string;
+
+  constructor(status: number, responseBody: string, message?: string) {
+    super(message ?? formatApiErrorMessage(status, responseBody));
+    this.name = "ApiRequestError";
     this.status = status;
     this.responseBody = responseBody;
   }
@@ -219,9 +231,7 @@ function toBinaryBody(content: Uint8Array) {
 }
 
 async function getApiBaseUrl() {
-  const result = await chrome.storage.local.get("apiBaseUrl");
-  const configured = typeof result.apiBaseUrl === "string" ? result.apiBaseUrl.trim() : "";
-  return (configured || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+  return getConfiguredApiBaseUrl();
 }
 
 async function getAuthToken() {
@@ -273,7 +283,7 @@ async function postJson(
       status: response.status,
       body: text,
     });
-    throw new Error(formatApiErrorMessage(response.status, text));
+    throw new ApiRequestError(response.status, text);
   }
 
   logger.info("POST request succeeded.", {
@@ -294,6 +304,8 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
   if (!task.localArchiveSha256) {
     throw new Error("Archive SHA-256 is missing.");
   }
+  const artifacts = task.artifacts;
+  const quality = task.quality;
 
   const authUser = await getStoredAuthUser();
   if (!authUser) {
@@ -309,7 +321,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
   const apiBaseUrl = await getApiBaseUrl();
   const deviceId = await getOrCreateDeviceId();
   const authHeaders = await getAuthHeaders();
-  const archiveFileSize = new TextEncoder().encode(task.artifacts.archiveHtml).length;
+  const archiveFileSize = new TextEncoder().encode(artifacts.archiveHtml).length;
   await logSync("info", debugTabId, "Starting sync task.", {
     taskId: task.id,
     url: task.source.url,
@@ -328,10 +340,14 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
   };
 
   const initResponse = captureInitResponseSchema.parse(
-    await postJson(`${apiBaseUrl}/captures/init`, initPayload, {
-      ...authHeaders,
-      "x-keeppage-public-base-url": apiBaseUrl,
-    }),
+    await withUnauthorizedAuthRecovery(
+      () => postJson(`${apiBaseUrl}/captures/init`, initPayload, {
+        ...authHeaders,
+        "x-keeppage-public-base-url": apiBaseUrl,
+      }),
+      debugTabId,
+      task.id,
+    ),
   );
   await logSync("info", debugTabId, "Capture init completed.", {
     taskId: task.id,
@@ -365,7 +381,11 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     });
   }
 
-  const uploadResult = await uploadArchiveHtml(uploadUrl, authHeaders, task.artifacts.archiveHtml);
+  const uploadResult = await withUnauthorizedAuthRecovery(
+    () => uploadArchiveHtml(uploadUrl, authHeaders, artifacts.archiveHtml),
+    debugTabId,
+    task.id,
+  );
   await logSync("info", debugTabId, "Archive upload completed.", {
     taskId: task.id,
     uploadUrl,
@@ -378,17 +398,21 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
   const completePayload: CaptureCompleteRequest = {
     objectKey: initResponse.objectKey,
     htmlSha256: task.localArchiveSha256,
-    textSha256: await computeSha256Hex(task.artifacts.extractedText),
-    extractedText: task.artifacts.extractedText,
-    quality: task.quality,
+    textSha256: await computeSha256Hex(artifacts.extractedText),
+    extractedText: artifacts.extractedText,
+    quality,
     source: task.source,
     deviceId,
   };
 
-  const completeResponse = await postJson(
-    `${apiBaseUrl}/captures/complete`,
-    completePayload,
-    authHeaders,
+  const completeResponse = await withUnauthorizedAuthRecovery(
+    () => postJson(
+      `${apiBaseUrl}/captures/complete`,
+      completePayload,
+      authHeaders,
+    ),
+    debugTabId,
+    task.id,
   ) as {
     bookmarkId: string;
     versionId: string;
@@ -415,6 +439,27 @@ async function logSync(
   await emitDebugLogToTab(tabId, "sync-api", level, message, details);
 }
 
+async function withUnauthorizedAuthRecovery<T>(
+  action: () => Promise<T>,
+  debugTabId: number | undefined,
+  taskId: string,
+) {
+  try {
+    return await action();
+  } catch (error) {
+    if (!isUnauthorizedApiError(error)) {
+      throw error;
+    }
+
+    await logSync("warn", debugTabId, "Auth session expired during sync, redirecting to login.", {
+      taskId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await recoverUnauthorizedSession("session-expired");
+    throw new Error("登录已失效，已为你打开登录页，请重新登录后再试。");
+  }
+}
+
 function normalizeUploadUrl(uploadUrl: string, objectKey: string, apiBaseUrl: string) {
   try {
     const parsedUploadUrl = new URL(uploadUrl);
@@ -429,6 +474,16 @@ function normalizeUploadUrl(uploadUrl: string, objectKey: string, apiBaseUrl: st
   } catch {
     return `${apiBaseUrl}/uploads/${encodeURIComponent(objectKey)}`;
   }
+}
+
+function isUnauthorizedApiError(error: unknown) {
+  if (error instanceof ApiRequestError) {
+    return error.status === 401 || error.status === 403;
+  }
+  if (error instanceof UploadHttpError) {
+    return error.status === 401 || error.status === 403;
+  }
+  return false;
 }
 
 function isLoopbackHost(hostname: string) {

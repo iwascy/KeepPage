@@ -13,6 +13,13 @@ import {
 } from "../src/lib/messages";
 import { createLogger } from "../src/lib/logger";
 import { getFetchChunkSize } from "../src/lib/singlefile-fetch";
+import {
+  recoverUnauthorizedSession,
+  openExtensionAuthPage,
+  openWorkspaceUi,
+  openSidePanelForWindow,
+  validateStoredAuthSession,
+} from "../src/lib/auth-flow";
 
 const singleFileTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 const logger = createLogger("background");
@@ -36,6 +43,9 @@ export default defineBackground(() => {
       url: tab.url,
     });
     if (tab.windowId != null) {
+      if (!await ensureAuthenticated("context-menu")) {
+        return;
+      }
       await attemptQuickCapture(tab.windowId, "standard");
     }
   });
@@ -44,12 +54,15 @@ export default defineBackground(() => {
     if (!tab.id) {
       return;
     }
-    logger.info("Toolbar capture requested.", {
+    logger.info("Toolbar action clicked.", {
       tabId: tab.id,
       url: tab.url,
     });
     if (tab.windowId != null) {
-      await attemptQuickCapture(tab.windowId, "standard");
+      if (!await ensureAuthenticated("toolbar-action")) {
+        return;
+      }
+      await openWorkspaceUi(tab.windowId);
     }
   });
 
@@ -57,13 +70,16 @@ export default defineBackground(() => {
     logger.info("Command received.", { command });
     if (command === "save-current-page") {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (!await ensureAuthenticated("keyboard-shortcut")) {
+        return;
+      }
       await attemptQuickCapture(tab?.windowId, "standard");
       return;
     }
     if (command === "open-side-panel") {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (tab?.windowId != null) {
-        await openSidePanel(tab.windowId);
+        await openSidePanelForWindow(tab.windowId);
       }
     }
   });
@@ -107,6 +123,10 @@ export default defineBackground(() => {
         return;
       }
       if (message.type === MESSAGE_TYPE.TriggerCaptureActiveTab) {
+        if (!await ensureAuthenticated("sidepanel-capture")) {
+          sendResponse({ ok: false, error: "请先登录 KeepPage。" });
+          return;
+        }
         const profile = captureProfileSchema.parse(message.profile ?? "standard");
         logger.info("Triggering active-tab capture.", { profile });
         const task = await captureActiveTab(profile);
@@ -114,6 +134,10 @@ export default defineBackground(() => {
         return;
       }
       if (message.type === MESSAGE_TYPE.RetryTask) {
+        if (!await ensureAuthenticated("retry-task")) {
+          sendResponse({ ok: false, error: "请先登录 KeepPage。" });
+          return;
+        }
         const profile = message.profile
           ? captureProfileSchema.parse(message.profile)
           : undefined;
@@ -154,12 +178,31 @@ export default defineBackground(() => {
   });
 });
 
-async function openSidePanel(windowId: number) {
-  try {
-    await chrome.sidePanel.open({ windowId });
-  } catch {
-    // Ignore: old browser versions may not support sidePanel.open.
+async function ensureAuthenticated(trigger: string) {
+  const session = await validateStoredAuthSession();
+  if (session.ok) {
+    return true;
   }
+
+  if (session.reason === "unreachable") {
+    logger.warn("Auth validation is temporarily unavailable, keeping stored session.", {
+      trigger,
+      error: session.message,
+    });
+    return true;
+  }
+
+  logger.info("Auth validation failed, redirecting to login.", {
+    trigger,
+    reason: session.reason,
+  });
+  if (session.reason === "unauthorized") {
+    await recoverUnauthorizedSession(trigger);
+    return false;
+  }
+
+  await openExtensionAuthPage(trigger);
+  return false;
 }
 
 async function attemptQuickCapture(windowId: number | undefined, profile: "standard") {
@@ -171,7 +214,7 @@ async function attemptQuickCapture(windowId: number | undefined, profile: "stand
     });
   } finally {
     if (windowId != null) {
-      await openSidePanel(windowId);
+      await openSidePanelForWindow(windowId);
     }
   }
 }
