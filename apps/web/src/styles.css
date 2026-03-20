@@ -1555,8 +1555,60 @@ button {
 .preview-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 0.6rem;
+}
+
+.preview-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.preview-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: fit-content;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: rgba(239, 242, 245, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.preview-mode-button {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.52rem 0.9rem;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.preview-mode-button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.preview-mode-button.is-active {
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text);
+  box-shadow: 0 12px 24px rgba(45, 51, 56, 0.08);
+}
+
+.preview-mode-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.preview-mode-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .preview-actions {
@@ -2043,6 +2095,7 @@ button {
   }
 
   .preview-actions,
+  .preview-controls,
   .signal-grid {
     width: 100%;
   }
@@ -2077,6 +2130,15 @@ button {
   .preview-header {
     flex-direction: column;
     align-items: start;
+  }
+
+  .preview-mode-switch {
+    width: 100%;
+  }
+
+  .preview-mode-button {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .preview-actions {

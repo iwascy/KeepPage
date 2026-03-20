@@ -52,11 +52,18 @@ export async function registerBookmarkRoutes(
 
     const versions = await Promise.all(
       detail.versions.map(async (version) => {
-        const objectStat = await objectStorage.statObject(version.htmlObjectKey);
+        const [objectStat, readerObjectStat] = await Promise.all([
+          objectStorage.statObject(version.htmlObjectKey),
+          version.readerHtmlObjectKey
+            ? objectStorage.statObject(version.readerHtmlObjectKey)
+            : Promise.resolve(null),
+        ]);
         return {
           ...version,
           archiveAvailable: objectStat !== null,
           archiveSizeBytes: objectStat?.size,
+          readerArchiveAvailable: readerObjectStat !== null,
+          readerArchiveSizeBytes: readerObjectStat?.size,
         };
       }),
     );

@@ -268,6 +268,12 @@ async function captureTab(
       rawArchiveHtml,
       mergedSource.canonicalUrl ?? mergedSource.url,
     );
+    const readerHtml = archiveResult.ok && archiveResult.readerHtml
+      ? ensureArchiveBaseHref(
+          archiveResult.readerHtml,
+          mergedSource.canonicalUrl ?? mergedSource.url,
+        )
+      : undefined;
     if (!archiveResult.ok) {
       await logCapture(saveMode, "warn", tabId, "Using fallback archive HTML.", {
         taskId: task.id,
@@ -277,7 +283,7 @@ async function captureTab(
     const screenshotDataUrl = options.captureScreenshot === false
       ? null
       : await captureTabScreenshot(tab.windowId);
-    const extractedText = extractTextFromHtml(archiveHtml);
+    const extractedText = extractTextFromHtml(readerHtml ?? archiveHtml);
     const archiveSignals = buildArchiveSignals(archiveHtml, screenshotDataUrl);
     const quality = evaluateQuality({
       liveSignals: liveResult.liveSignals,
@@ -293,6 +299,7 @@ async function captureTab(
     await logCapture(saveMode, "info", tabId, "Archive prepared locally.", {
       taskId: task.id,
       archiveSize: archiveHtml.length,
+      readerArchiveSize: readerHtml?.length,
       extractedTextLength: extractedText.length,
       quality,
       localArchiveSha256,
@@ -314,6 +321,7 @@ async function captureTab(
         quality,
         artifacts: {
           archiveHtml,
+          readerHtml,
           extractedText,
           screenshotDataUrl: screenshotDataUrl ?? undefined,
           meta: {
@@ -340,6 +348,7 @@ async function captureTab(
       quality,
       artifacts: {
         archiveHtml,
+        readerHtml,
         extractedText,
         screenshotDataUrl: screenshotDataUrl ?? undefined,
         meta: {

@@ -754,6 +754,7 @@ export function createDemoWorkspace(): DemoWorkspace {
         quality: qualityHigh,
         createdAt: "2026-03-18T11:20:00.000Z",
         archiveAvailable: true,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 1498100,
       },
       {
@@ -768,6 +769,7 @@ export function createDemoWorkspace(): DemoWorkspace {
         quality: createQuality(86, "high"),
         createdAt: "2026-03-17T13:20:00.000Z",
         archiveAvailable: true,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 1312044,
       },
       {
@@ -782,6 +784,7 @@ export function createDemoWorkspace(): DemoWorkspace {
         quality: createQuality(79, "medium"),
         createdAt: "2026-03-16T10:12:00.000Z",
         archiveAvailable: true,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 1012044,
       },
     ],
@@ -798,6 +801,7 @@ export function createDemoWorkspace(): DemoWorkspace {
         quality: qualityMedium,
         createdAt: "2026-03-18T02:14:00.000Z",
         archiveAvailable: true,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 498300,
       },
       {
@@ -812,6 +816,7 @@ export function createDemoWorkspace(): DemoWorkspace {
         quality: createQuality(83, "high"),
         createdAt: "2026-03-17T07:14:00.000Z",
         archiveAvailable: true,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 532110,
       },
     ],
@@ -828,6 +833,7 @@ export function createDemoWorkspace(): DemoWorkspace {
         quality: qualityLow,
         createdAt: "2026-03-18T05:20:00.000Z",
         archiveAvailable: false,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 0,
       },
       {
@@ -842,6 +848,7 @@ export function createDemoWorkspace(): DemoWorkspace {
         quality: createQuality(72, "medium"),
         createdAt: "2026-03-16T05:20:00.000Z",
         archiveAvailable: true,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 412204,
       },
     ],
@@ -858,6 +865,7 @@ export function createDemoWorkspace(): DemoWorkspace {
         quality: createQuality(88, "high"),
         createdAt: "2026-03-18T08:10:00.000Z",
         archiveAvailable: true,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 688440,
       },
     ],
@@ -1283,6 +1291,7 @@ function createGeneratedBookmark(
         quality: quality!,
         createdAt: new Date().toISOString(),
         archiveAvailable: true,
+        readerArchiveAvailable: false,
         archiveSizeBytes: 420000,
       },
     ];

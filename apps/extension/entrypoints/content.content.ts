@@ -17,6 +17,7 @@ import {
   captureProfileSchema,
 } from "../src/lib/domain-runtime";
 import { createLogger, logToConsole } from "../src/lib/logger";
+import { extractReaderArchiveHtml } from "../src/lib/site-archive";
 
 type SingleFilePageData = {
   content?: string | number[];
@@ -95,6 +96,7 @@ export default defineContentScript({
             ? {
                 ok: true,
                 archiveHtml: capture.archiveHtml,
+                readerHtml: capture.readerHtml,
                 usedSingleFile: capture.usedSingleFile,
               }
             : {
@@ -231,13 +233,43 @@ function readCanonicalUrl() {
 }
 
 async function captureArchiveHtml(profile: CaptureProfile) {
+  const logger = createLogger("content");
   const singlefile = (globalThis as SingleFileGlobal).singlefile;
   const options = profileToSingleFileOptions(profile);
-  const logger = createLogger("content");
   logger.debug("Resolved SingleFile capture options.", {
     profile,
     options,
   });
+
+  const buildSuccessResult = (archiveHtml: string, usedSingleFile: boolean) => {
+    let readerHtml: string | undefined;
+    try {
+      readerHtml = extractReaderArchiveHtml({
+        archiveHtml,
+        sourceUrl: location.href,
+        liveDocument: document,
+      }) ?? undefined;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn("Reader archive extraction failed.", {
+        error: message,
+      });
+    }
+
+    if (readerHtml) {
+      logger.info("Reader archive extracted.", {
+        archiveSize: archiveHtml.length,
+        readerSize: readerHtml.length,
+      });
+    }
+
+    return {
+      ok: true as const,
+      archiveHtml,
+      readerHtml,
+      usedSingleFile,
+    };
+  };
 
   // Official integration slot:
   // Once SingleFile MV3 core bundles are wired in document_start hooks,
@@ -249,22 +281,14 @@ async function captureArchiveHtml(profile: CaptureProfile) {
         logger.info("SingleFile returned string content.", {
           size: pageData.content.length,
         });
-        return {
-          ok: true as const,
-          archiveHtml: pageData.content,
-          usedSingleFile: true,
-        };
+        return buildSuccessResult(pageData.content, true);
       }
       if (Array.isArray(pageData?.content)) {
         const html = new TextDecoder().decode(Uint8Array.from(pageData.content));
         logger.info("SingleFile returned byte-array content.", {
           size: html.length,
         });
-        return {
-          ok: true as const,
-          archiveHtml: html,
-          usedSingleFile: true,
-        };
+        return buildSuccessResult(html, true);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -279,11 +303,7 @@ async function captureArchiveHtml(profile: CaptureProfile) {
   }
 
   logger.warn("SingleFile API unavailable, using DOM serialization fallback.");
-  return {
-    ok: true as const,
-    archiveHtml: serializeDocumentForFallback(),
-    usedSingleFile: false,
-  };
+  return buildSuccessResult(serializeDocumentForFallback(), false);
 }
 
 function serializeDocumentForFallback() {

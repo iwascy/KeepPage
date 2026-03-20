@@ -53,7 +53,11 @@ export type BookmarkResult = {
   source: DataSource;
 };
 
-export type BookmarkViewerVersion = BookmarkDetailVersion;
+export type BookmarkViewerVersion = BookmarkDetailVersion & {
+  readerHtmlObjectKey?: string;
+  readerArchiveAvailable?: boolean;
+  readerArchiveSizeBytes?: number;
+};
 
 export type BookmarkDetailResult = {
   bookmark: Bookmark;

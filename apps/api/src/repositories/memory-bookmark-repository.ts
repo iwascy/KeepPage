@@ -151,6 +151,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     const pendingCapture = state.pendingByObjectKey.get(input.objectKey);
     const existingByObjectKey = state.versionsByObjectKey.get(input.objectKey);
     if (!pendingCapture && existingByObjectKey) {
+      await this.persistReaderArchive(state, existingByObjectKey, input.readerHtml);
       const bookmark = this.findBookmarkByVersionId(state, existingByObjectKey.id);
       if (!bookmark) {
         throw new Error("Existing version not linked to bookmark.");
@@ -193,6 +194,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     const matchedVersion = versions.find((version) => version.htmlSha256 === input.htmlSha256);
 
     if (matchedVersion) {
+      await this.persistReaderArchive(state, matchedVersion, input.readerHtml);
       state.pendingByObjectKey.delete(input.objectKey);
       bookmark.sourceUrl = input.source.url;
       bookmark.canonicalUrl = input.source.canonicalUrl;
@@ -217,6 +219,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       bookmarkId: bookmark.id,
       versionNo: versions.length + 1,
       htmlObjectKey: input.objectKey,
+      readerHtmlObjectKey: undefined,
       htmlSha256: input.htmlSha256,
       textSha256: input.textSha256,
       textSimhash: input.textSimhash,
@@ -225,9 +228,13 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       createdAt: now,
     };
 
+    await this.persistReaderArchive(state, version, input.readerHtml);
     versions.push(version);
     state.versionsByBookmark.set(bookmark.id, versions);
     state.versionsByObjectKey.set(input.objectKey, version);
+    if (version.readerHtmlObjectKey) {
+      state.versionsByObjectKey.set(version.readerHtmlObjectKey, version);
+    }
     state.pendingByObjectKey.delete(input.objectKey);
 
     bookmark.latestVersionId = version.id;
@@ -1059,5 +1066,33 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   private createObjectKey(userId: string) {
     const day = new Date().toISOString().slice(0, 10);
     return `captures/${userId}/${day}/${crypto.randomUUID()}.html`;
+  }
+
+  private createReaderObjectKey(objectKey: string) {
+    return objectKey.endsWith(".html")
+      ? objectKey.replace(/\.html$/i, ".reader.html")
+      : `${objectKey}.reader.html`;
+  }
+
+  private async persistReaderArchive(
+    state: UserBookmarkState,
+    version: BookmarkVersion,
+    readerHtml?: string,
+  ) {
+    const normalizedReaderHtml = readerHtml?.trim();
+    if (!normalizedReaderHtml || version.readerHtmlObjectKey) {
+      return;
+    }
+
+    const readerObjectKey = this.createReaderObjectKey(version.htmlObjectKey);
+    await this.objectStorage.putObject(
+      readerObjectKey,
+      Buffer.from(normalizedReaderHtml),
+      {
+        contentType: "text/html;charset=utf-8",
+      },
+    );
+    version.readerHtmlObjectKey = readerObjectKey;
+    state.versionsByObjectKey.set(readerObjectKey, version);
   }
 }

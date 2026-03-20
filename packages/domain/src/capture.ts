@@ -80,6 +80,7 @@ export const qualityReportSchema = z.object({
 
 export const captureArtifactsSchema = z.object({
   archiveHtml: z.string().min(1),
+  readerHtml: z.string().min(1).optional(),
   extractedText: z.string().default(""),
   thumbnailDataUrl: z.string().optional(),
   screenshotDataUrl: z.string().optional(),
@@ -166,6 +167,7 @@ export const bookmarkVersionSchema = z.object({
   bookmarkId: z.string().min(1),
   versionNo: z.number().int().positive(),
   htmlObjectKey: z.string().min(1),
+  readerHtmlObjectKey: z.string().min(1).optional(),
   htmlSha256: z.string().min(1),
   textSha256: z.string().optional(),
   textSimhash: z.string().optional(),
@@ -211,6 +213,7 @@ export const captureInitResponseSchema = z.object({
 export const captureCompleteRequestSchema = z.object({
   objectKey: z.string().min(1),
   htmlSha256: z.string().min(1),
+  readerHtml: z.string().min(1).optional(),
   textSha256: z.string().optional(),
   textSimhash: z.string().optional(),
   extractedText: z.string().optional(),
@@ -279,6 +282,8 @@ export const bookmarkMetadataUpdateRequestSchema = z.object({
 export const bookmarkDetailVersionSchema = bookmarkVersionSchema.extend({
   archiveAvailable: z.boolean(),
   archiveSizeBytes: z.number().int().positive().optional(),
+  readerArchiveAvailable: z.boolean().default(false),
+  readerArchiveSizeBytes: z.number().int().positive().optional(),
 });
 
 export const bookmarkDetailResponseSchema = z.object({

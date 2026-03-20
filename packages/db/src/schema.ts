@@ -129,6 +129,7 @@ export const bookmarkVersions = pgTable(
       .references(() => bookmarks.id, { onDelete: "cascade" }),
     versionNo: integer("version_no").notNull(),
     htmlObjectKey: text("html_object_key").notNull(),
+    readerHtmlObjectKey: text("reader_html_object_key"),
     htmlSha256: varchar("html_sha256", { length: 128 }).notNull(),
     textSha256: varchar("text_sha256", { length: 128 }),
     textSimhash: varchar("text_simhash", { length: 128 }),

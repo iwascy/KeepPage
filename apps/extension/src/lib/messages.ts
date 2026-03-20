@@ -43,6 +43,7 @@ export interface CaptureArchiveHtmlRequest {
 export interface CaptureArchiveHtmlResponse {
   ok: boolean;
   archiveHtml?: string;
+  readerHtml?: string;
   usedSingleFile?: boolean;
   error?: string;
 }

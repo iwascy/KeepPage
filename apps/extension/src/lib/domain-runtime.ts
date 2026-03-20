@@ -391,6 +391,7 @@ function parseCaptureArtifacts(input: unknown): CaptureArtifacts {
   const record = expectRecord(input, "capture artifacts");
   return {
     archiveHtml: expectString(record.archiveHtml, "capture artifacts archiveHtml"),
+    readerHtml: expectOptionalString(record.readerHtml, "capture artifacts readerHtml"),
     extractedText: expectOptionalString(record.extractedText, "capture artifacts extractedText") ?? "",
     thumbnailDataUrl: expectOptionalString(record.thumbnailDataUrl, "capture artifacts thumbnailDataUrl"),
     screenshotDataUrl: expectOptionalString(record.screenshotDataUrl, "capture artifacts screenshotDataUrl"),

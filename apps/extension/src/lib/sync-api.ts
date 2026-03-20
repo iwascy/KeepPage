@@ -415,6 +415,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
   const completePayload: CaptureCompleteRequest = {
     objectKey: initResponse.objectKey,
     htmlSha256: task.localArchiveSha256,
+    readerHtml: artifacts.readerHtml,
     textSha256: await computeSha256Hex(artifacts.extractedText),
     extractedText: artifacts.extractedText,
     quality,
@@ -424,6 +425,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
   await logSync("debug", debugTabId, "Submitting capture complete payload.", {
     taskId: task.id,
     objectKey: completePayload.objectKey,
+    readerHtmlBytes: completePayload.readerHtml?.length,
     sourceUrl: completePayload.source.url,
     textSha256: completePayload.textSha256,
     qualityGrade: completePayload.quality.grade,

@@ -249,6 +249,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .select({
         bookmarkId: bookmarks.id,
         versionId: bookmarkVersions.id,
+        readerHtmlObjectKey: bookmarkVersions.readerHtmlObjectKey,
       })
       .from(bookmarkVersions)
       .innerJoin(bookmarks, eq(bookmarks.id, bookmarkVersions.bookmarkId))
@@ -261,11 +262,14 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .limit(1);
 
     if (existingByObjectKey[0]) {
+      const readerHtmlObjectKey = existingByObjectKey[0].readerHtmlObjectKey
+        ?? await this.persistReaderArchive(input.objectKey, input.readerHtml);
       const now = new Date();
       await this.db.transaction(async (tx) => {
         await tx
           .update(bookmarkVersions)
           .set({
+            readerHtmlObjectKey,
             qualityScore: input.quality.score,
             qualityGrade: input.quality.grade,
             qualityReasonsJson: input.quality.reasons,
@@ -359,6 +363,8 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       const duplicateVersionRows = await tx
         .select({
           id: bookmarkVersions.id,
+          htmlObjectKey: bookmarkVersions.htmlObjectKey,
+          readerHtmlObjectKey: bookmarkVersions.readerHtmlObjectKey,
         })
         .from(bookmarkVersions)
         .where(
@@ -371,9 +377,15 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
       if (duplicateVersionRows[0]) {
         const duplicatedVersionId = duplicateVersionRows[0].id;
+        const readerHtmlObjectKey = duplicateVersionRows[0].readerHtmlObjectKey
+          ?? await this.persistReaderArchive(
+            duplicateVersionRows[0].htmlObjectKey,
+            input.readerHtml,
+          );
         await tx
           .update(bookmarkVersions)
           .set({
+            readerHtmlObjectKey,
             qualityScore: input.quality.score,
             qualityGrade: input.quality.grade,
             qualityReasonsJson: input.quality.reasons,
@@ -412,12 +424,14 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       const versionNo = nextVersionNoRows[0]?.nextVersionNo ?? 1;
       const versionId = crypto.randomUUID();
       const objectStat = await this.objectStorage.statObject(input.objectKey);
+      const readerHtmlObjectKey = await this.persistReaderArchive(input.objectKey, input.readerHtml);
 
       await tx.insert(bookmarkVersions).values({
         id: versionId,
         bookmarkId,
         versionNo,
         htmlObjectKey: input.objectKey,
+        readerHtmlObjectKey,
         htmlSha256: input.htmlSha256,
         textSha256: input.textSha256,
         textSimhash: input.textSimhash,
@@ -1189,7 +1203,10 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .where(
         and(
           eq(bookmarks.userId, userId),
-          eq(bookmarkVersions.htmlObjectKey, objectKey),
+          or(
+            eq(bookmarkVersions.htmlObjectKey, objectKey),
+            eq(bookmarkVersions.readerHtmlObjectKey, objectKey),
+          ),
         ),
       )
       .limit(1);
@@ -1289,6 +1306,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         bookmarkId: bookmarkVersions.bookmarkId,
         versionNo: bookmarkVersions.versionNo,
         htmlObjectKey: bookmarkVersions.htmlObjectKey,
+        readerHtmlObjectKey: bookmarkVersions.readerHtmlObjectKey,
         htmlSha256: bookmarkVersions.htmlSha256,
         textSha256: bookmarkVersions.textSha256,
         textSimhash: bookmarkVersions.textSimhash,
@@ -1312,6 +1330,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         bookmarkId: row.bookmarkId,
         versionNo: row.versionNo,
         htmlObjectKey: row.htmlObjectKey,
+        readerHtmlObjectKey: row.readerHtmlObjectKey ?? undefined,
         htmlSha256: row.htmlSha256,
         textSha256: row.textSha256 ?? undefined,
         textSimhash: row.textSimhash ?? undefined,
@@ -1873,5 +1892,30 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
   private createObjectKey(userId: string) {
     const day = new Date().toISOString().slice(0, 10);
     return `captures/${userId}/${day}/${crypto.randomUUID()}.html`;
+  }
+
+  private createReaderObjectKey(objectKey: string) {
+    return objectKey.endsWith(".html")
+      ? objectKey.replace(/\.html$/i, ".reader.html")
+      : `${objectKey}.reader.html`;
+  }
+
+  private async persistReaderArchive(objectKey: string, readerHtml?: string) {
+    const normalizedReaderHtml = readerHtml?.trim();
+    if (!normalizedReaderHtml) {
+      return null;
+    }
+
+    const readerObjectKey = this.createReaderObjectKey(objectKey);
+    if (!(await this.objectStorage.hasObject(readerObjectKey))) {
+      await this.objectStorage.putObject(
+        readerObjectKey,
+        Buffer.from(normalizedReaderHtml),
+        {
+          contentType: "text/html;charset=utf-8",
+        },
+      );
+    }
+    return readerObjectKey;
   }
 }

@@ -58,6 +58,7 @@ type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
 type DetailLoadState = "idle" | "loading" | "ready" | "not-found" | "error";
 type AuthMode = "login" | "register";
+type ArchiveViewMode = "reader" | "original";
 type ViewRoute =
   | { page: "list" }
   | { page: "detail"; bookmarkId: string; versionId?: string }
@@ -116,6 +117,46 @@ function qualityClass(grade?: QualityGrade) {
     return "quality quality-low";
   }
   return "quality quality-unknown";
+}
+
+function previewModeLabel(mode: ArchiveViewMode) {
+  return mode === "reader" ? "阅读视图" : "原始归档";
+}
+
+function resolvePreviewSelection(
+  version: BookmarkViewerVersion | null,
+  preferredMode: ArchiveViewMode,
+): {
+  mode: ArchiveViewMode;
+  objectKey: string;
+  sizeBytes?: number;
+} | null {
+  if (!version) {
+    return null;
+  }
+
+  const candidates: ArchiveViewMode[] = preferredMode === "reader"
+    ? ["reader", "original"]
+    : ["original", "reader"];
+
+  for (const mode of candidates) {
+    if (mode === "reader" && version.readerHtmlObjectKey && version.readerArchiveAvailable) {
+      return {
+        mode,
+        objectKey: version.readerHtmlObjectKey,
+        sizeBytes: version.readerArchiveSizeBytes,
+      };
+    }
+    if (mode === "original" && version.archiveAvailable) {
+      return {
+        mode,
+        objectKey: version.htmlObjectKey,
+        sizeBytes: version.archiveSizeBytes,
+      };
+    }
+  }
+
+  return null;
 }
 
 function formatWhen(input: string) {
@@ -1415,6 +1456,8 @@ function DetailPanel({
   detail,
   selectedVersion,
   previewState,
+  preferredPreviewMode,
+  activePreviewMode,
   folders,
   tags,
   metadataNote,
@@ -1425,11 +1468,14 @@ function DetailPanel({
   onMetadataNoteChange,
   onMetadataFolderChange,
   onMetadataTagToggle,
+  onPreviewModeChange,
   onMetadataSave,
 }: {
   detail: BookmarkDetailResult;
   selectedVersion: BookmarkViewerVersion;
   previewState: ArchivePreviewState;
+  preferredPreviewMode: ArchiveViewMode;
+  activePreviewMode: ArchiveViewMode | null;
   folders: Folder[];
   tags: Tag[];
   metadataNote: string;
@@ -1440,9 +1486,28 @@ function DetailPanel({
   onMetadataNoteChange: (value: string) => void;
   onMetadataFolderChange: (value: string) => void;
   onMetadataTagToggle: (tagId: string) => void;
+  onPreviewModeChange: (mode: ArchiveViewMode) => void;
   onMetadataSave: () => void;
 }) {
   const quality: QualityReport = selectedVersion.quality;
+  const displayedArchiveSize = activePreviewMode === "reader"
+    ? (
+        selectedVersion.readerArchiveSizeBytes ??
+        selectedVersion.archiveSizeBytes ??
+        quality.archiveSignals.fileSize
+      )
+    : (selectedVersion.archiveSizeBytes ?? quality.archiveSignals.fileSize);
+  const readerPreviewAvailable = Boolean(
+    selectedVersion.readerHtmlObjectKey && selectedVersion.readerArchiveAvailable,
+  );
+  const originalPreviewAvailable = selectedVersion.archiveAvailable;
+  const previewFallbackMessage = activePreviewMode && preferredPreviewMode !== activePreviewMode
+    ? (
+        preferredPreviewMode === "reader"
+          ? "当前版本暂无阅读视图，已自动回退到原始归档。"
+          : "原始归档不可用，已自动回退到阅读视图。"
+      )
+    : null;
 
   return (
     <section className="detail-shell">
@@ -1518,7 +1583,7 @@ function DetailPanel({
           </div>
           <div className="detail-meta-row">
             <span>体积</span>
-            <strong>{formatFileSize(selectedVersion.archiveSizeBytes ?? quality.archiveSignals.fileSize)}</strong>
+            <strong>{formatFileSize(displayedArchiveSize)}</strong>
           </div>
         </div>
 
@@ -1586,26 +1651,51 @@ function DetailPanel({
 
       <section className="detail-preview-panel">
         <header className="preview-header">
+          <div className="preview-controls">
+            <div className="preview-mode-switch" role="tablist" aria-label="归档预览模式">
+              <button
+                className={activePreviewMode === "reader" ? "preview-mode-button is-active" : "preview-mode-button"}
+                type="button"
+                onClick={() => onPreviewModeChange("reader")}
+                disabled={!readerPreviewAvailable}
+                aria-pressed={activePreviewMode === "reader"}
+              >
+                阅读视图
+              </button>
+              <button
+                className={activePreviewMode === "original" ? "preview-mode-button is-active" : "preview-mode-button"}
+                type="button"
+                onClick={() => onPreviewModeChange("original")}
+                disabled={!originalPreviewAvailable}
+                aria-pressed={activePreviewMode === "original"}
+              >
+                原始归档
+              </button>
+            </div>
+            {previewFallbackMessage ? (
+              <p className="preview-mode-note">{previewFallbackMessage}</p>
+            ) : null}
+          </div>
           <div className="preview-actions">
             <a className="secondary-button" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
               原网页
             </a>
-            {previewState.status === "ready" ? (
+            {previewState.status === "ready" && activePreviewMode ? (
               <a
                 className="primary-button"
                 href={previewState.url}
-                download={`keeppage-${detail.bookmark.id}-v${selectedVersion.versionNo}.html`}
+                download={`keeppage-${detail.bookmark.id}-v${selectedVersion.versionNo}-${activePreviewMode === "reader" ? "reader" : "original"}.html`}
               >
-                下载 HTML
+                下载{previewModeLabel(activePreviewMode)}
               </a>
             ) : null}
           </div>
         </header>
 
-        {!selectedVersion.archiveAvailable ? (
+        {!activePreviewMode ? (
           <section className="empty-state preview-empty">
             <h2>归档对象不可用</h2>
-            <p>版本元数据存在，但归档文件目前不可读。</p>
+            <p>当前版本没有可读取的归档对象。</p>
           </section>
         ) : previewState.status === "loading" ? (
           <section className="loading preview-empty">正在加载...</section>
@@ -1661,6 +1751,7 @@ export function App({
   const [archivePreview, setArchivePreview] = useState<ArchivePreviewState>({
     status: "idle",
   });
+  const [preferredPreviewMode, setPreferredPreviewMode] = useState<ArchiveViewMode>("reader");
   const [managerBusy, setManagerBusy] = useState(false);
   const [managerFeedback, setManagerFeedback] = useState<InlineFeedback | null>(null);
   const [managerDialog, setManagerDialog] = useState<ManagerDialogState>({ kind: "closed" });
@@ -2083,12 +2174,16 @@ export function App({
   const previewSourceUrl = detail
     ? (detail.bookmark.canonicalUrl ?? detail.bookmark.sourceUrl)
     : null;
+  const previewSelection = useMemo(
+    () => resolvePreviewSelection(selectedVersion, preferredPreviewMode),
+    [preferredPreviewMode, selectedVersion],
+  );
 
   useEffect(() => {
     let revokedUrl: string | null = null;
     let cancelled = false;
 
-    if (!authToken || !selectedVersion?.archiveAvailable || !previewSourceUrl) {
+    if (!authToken || !previewSelection?.objectKey || !previewSourceUrl) {
       setArchivePreview({ status: "idle" });
       return;
     }
@@ -2096,6 +2191,10 @@ export function App({
     setArchivePreview({ status: "loading" });
 
     if (isDemoMode) {
+      if (!selectedVersion) {
+        setArchivePreview({ status: "idle" });
+        return;
+      }
       const html = getDemoArchiveHtml(demoState, selectedVersion.id);
       if (!html) {
         setArchivePreview({
@@ -2120,7 +2219,7 @@ export function App({
 
     createArchiveObjectUrl(
       authToken,
-      selectedVersion.htmlObjectKey,
+      previewSelection.objectKey,
       previewSourceUrl,
     )
       .then((url) => {
@@ -2154,9 +2253,9 @@ export function App({
     authToken,
     demoState,
     isDemoMode,
+    previewSelection?.objectKey,
+    previewSelection?.mode,
     previewSourceUrl,
-    selectedVersion?.archiveAvailable,
-    selectedVersion?.htmlObjectKey,
     selectedVersion?.id,
   ]);
 
@@ -2692,6 +2791,8 @@ export function App({
           detail={detail!}
           selectedVersion={selectedVersion!}
           previewState={archivePreview}
+          preferredPreviewMode={preferredPreviewMode}
+          activePreviewMode={previewSelection?.mode ?? null}
           folders={folders}
           tags={tags}
           metadataNote={metadataNote}
@@ -2708,6 +2809,7 @@ export function App({
                 : [...current, tagId]
             ));
           }}
+          onPreviewModeChange={setPreferredPreviewMode}
           onMetadataSave={() => void handleSaveMetadata()}
         />
       ) : route.page === "imports-new" ? (
