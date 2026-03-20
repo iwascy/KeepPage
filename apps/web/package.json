@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:mock": "VITE_APP_MODE=mock vite",
+    "dev:demo": "vite --open /demo.html",
+    "dev:demo:mock": "VITE_APP_MODE=mock vite --open /demo.html",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit"

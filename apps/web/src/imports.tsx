@@ -1,10 +1,10 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 import {
   ApiError,
-  createImportTask,
-  fetchImportTaskDetail,
-  fetchImportTasks,
-  previewImport,
+  createImportTask as createImportTaskRequest,
+  fetchImportTaskDetail as fetchImportTaskDetailRequest,
+  fetchImportTasks as fetchImportTasksRequest,
+  previewImport as previewImportRequest,
   type ImportMode,
   type ImportPreviewRequest,
   type ImportPreviewResult,
@@ -14,9 +14,17 @@ import {
   type ImportTaskSummary,
 } from "./api";
 
+export type ImportPanelAdapter = {
+  previewImport?: (input: ImportPreviewRequest, token: string) => Promise<ImportPreviewResult>;
+  createImportTask?: (input: ImportPreviewRequest & { name: string }, token: string) => Promise<{ taskId: string }>;
+  fetchImportTasks?: (token: string) => Promise<ImportTaskSummary[]>;
+  fetchImportTaskDetail?: (taskId: string, token: string) => Promise<ImportTaskDetailResult | null>;
+};
+
 type ImportSharedProps = {
   token: string;
   onApiError: (error: unknown) => boolean;
+  adapter?: ImportPanelAdapter;
 };
 
 const SOURCE_OPTIONS: Array<{
@@ -97,6 +105,7 @@ function importTaskStatusLabel(status: ImportTaskStatus) {
 export function ImportNewPanel({
   token,
   onApiError,
+  adapter,
   onOpenHistory,
   onOpenTask,
 }: ImportSharedProps & {
@@ -133,6 +142,8 @@ export function ImportNewPanel({
     targetFolderPath: targetFolderPath.trim() || undefined,
     addBatchTag,
   };
+  const runPreviewImport = adapter?.previewImport ?? previewImportRequest;
+  const runCreateImportTask = adapter?.createImportTask ?? createImportTaskRequest;
 
   async function handlePreview(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -144,7 +155,7 @@ export function ImportNewPanel({
     setSubmitError(null);
 
     try {
-      const result = await previewImport(requestBody, token);
+      const result = await runPreviewImport(requestBody, token);
       setPreview(result);
     } catch (error) {
       if (onApiError(error)) {
@@ -164,7 +175,7 @@ export function ImportNewPanel({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await createImportTask(
+      const result = await runCreateImportTask(
         {
           ...requestBody,
           name: taskName.trim() || `批量导入 ${new Date().toLocaleString("zh-CN")}`,
@@ -365,6 +376,7 @@ export function ImportNewPanel({
 export function ImportHistoryPanel({
   token,
   onApiError,
+  adapter,
   onOpenTask,
   onOpenNew,
 }: ImportSharedProps & {
@@ -374,12 +386,13 @@ export function ImportHistoryPanel({
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<ImportTaskSummary[]>([]);
+  const runFetchImportTasks = adapter?.fetchImportTasks ?? fetchImportTasksRequest;
 
   useEffect(() => {
     let cancelled = false;
     setLoadState("loading");
     setError(null);
-    fetchImportTasks(token)
+    runFetchImportTasks(token)
       .then((rows) => {
         if (cancelled) {
           return;
@@ -398,7 +411,7 @@ export function ImportHistoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, runFetchImportTasks, onApiError]);
 
   return (
     <section className="import-shell">
@@ -461,6 +474,7 @@ export function ImportDetailPanel({
   token,
   taskId,
   onApiError,
+  adapter,
   onOpenHistory,
   onOpenBookmark,
 }: ImportSharedProps & {
@@ -471,12 +485,13 @@ export function ImportDetailPanel({
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error" | "not-found">("loading");
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<ImportTaskDetailResult | null>(null);
+  const runFetchImportTaskDetail = adapter?.fetchImportTaskDetail ?? fetchImportTaskDetailRequest;
 
   useEffect(() => {
     let cancelled = false;
     setLoadState("loading");
     setError(null);
-    fetchImportTaskDetail(taskId, token)
+    runFetchImportTaskDetail(taskId, token)
       .then((result) => {
         if (cancelled) {
           return;
@@ -495,7 +510,7 @@ export function ImportDetailPanel({
     return () => {
       cancelled = true;
     };
-  }, [taskId, token]);
+  }, [taskId, token, runFetchImportTaskDetail, onApiError]);
 
   if (loadState === "loading") {
     return <section className="loading">正在加载导入详情...</section>;
