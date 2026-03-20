@@ -417,8 +417,15 @@ function HomeBookmarkCard({
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
 }) {
+  const [coverImageFailed, setCoverImageFailed] = useState(false);
+
+  useEffect(() => {
+    setCoverImageFailed(false);
+  }, [bookmark.id, bookmark.coverImageUrl]);
+
   const summary = summarizeBookmark(bookmark);
-  const hasPreview = bookmark.latestQuality?.archiveSignals.screenshotGenerated ?? false;
+  const hasCoverImage = Boolean(bookmark.coverImageUrl) && !coverImageFailed;
+  const hasPreview = hasCoverImage || (bookmark.latestQuality?.archiveSignals.screenshotGenerated ?? false);
   const folderLabel = bookmark.folder?.name ?? "未归类";
   const coverTone = homeCoverTone(bookmark.domain);
 
@@ -431,15 +438,30 @@ function HomeBookmarkCard({
         aria-label={`打开归档：${bookmark.title}`}
       >
         {hasPreview ? (
-          <div className={`home-bookmark-cover is-${coverTone}`}>
+          <div className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : ""}`}>
+            {hasCoverImage ? (
+              <>
+                <img
+                  className="home-bookmark-cover-media"
+                  src={bookmark.coverImageUrl}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  onError={() => setCoverImageFailed(true)}
+                />
+                <div className="home-bookmark-cover-shade" aria-hidden="true" />
+              </>
+            ) : null}
             <span className="home-bookmark-chip home-bookmark-chip-cover">{folderLabel}</span>
-            <div className="home-bookmark-paper">
-              <div className="home-bookmark-paper-lines">
-                <span />
-                <span />
-                <span />
+            {!hasCoverImage ? (
+              <div className="home-bookmark-paper">
+                <div className="home-bookmark-paper-lines">
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         ) : null}
         <div className="home-bookmark-body">

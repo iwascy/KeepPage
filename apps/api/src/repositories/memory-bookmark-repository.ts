@@ -155,6 +155,18 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       if (!bookmark) {
         throw new Error("Existing version not linked to bookmark.");
       }
+      const versions = state.versionsByBookmark.get(bookmark.id) ?? [];
+      const now = new Date().toISOString();
+      bookmark.sourceUrl = input.source.url;
+      bookmark.canonicalUrl = input.source.canonicalUrl;
+      bookmark.title = input.source.title;
+      bookmark.domain = input.source.domain;
+      bookmark.coverImageUrl = input.source.coverImageUrl;
+      bookmark.latestVersionId = existingByObjectKey.id;
+      bookmark.latestQuality = input.quality;
+      bookmark.updatedAt = now;
+      bookmark.versionCount = versions.length;
+      state.bookmarks.set(bookmark.id, bookmark);
       return {
         bookmark,
         versionId: existingByObjectKey.id,
@@ -182,6 +194,11 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
     if (matchedVersion) {
       state.pendingByObjectKey.delete(input.objectKey);
+      bookmark.sourceUrl = input.source.url;
+      bookmark.canonicalUrl = input.source.canonicalUrl;
+      bookmark.title = input.source.title;
+      bookmark.domain = input.source.domain;
+      bookmark.coverImageUrl = input.source.coverImageUrl;
       bookmark.latestVersionId = matchedVersion.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -215,6 +232,11 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
     bookmark.latestVersionId = version.id;
     bookmark.latestQuality = input.quality;
+    bookmark.sourceUrl = input.source.url;
+    bookmark.canonicalUrl = input.source.canonicalUrl;
+    bookmark.title = input.source.title;
+    bookmark.domain = input.source.domain;
+    bookmark.coverImageUrl = input.source.coverImageUrl;
     bookmark.versionCount = versions.length;
     bookmark.updatedAt = now;
     state.bookmarks.set(bookmark.id, bookmark);
@@ -859,6 +881,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       canonicalUrl: input.source.canonicalUrl,
       title: input.source.title,
       domain: input.source.domain,
+      coverImageUrl: input.source.coverImageUrl,
       note: "",
       tags: [],
       versionCount: 1,

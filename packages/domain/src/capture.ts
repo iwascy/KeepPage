@@ -41,6 +41,7 @@ export const captureSourceSchema = z.object({
   canonicalUrl: z.url().optional(),
   domain: z.string().min(1),
   faviconUrl: z.url().optional(),
+  coverImageUrl: z.url().optional(),
   referrer: z.string().optional(),
   selectionText: z.string().optional(),
   viewport: z.object({
@@ -179,6 +180,7 @@ export const bookmarkSchema = z.object({
   canonicalUrl: z.url().optional(),
   title: z.string().min(1),
   domain: z.string().min(1),
+  coverImageUrl: z.url().optional(),
   note: z.string().default(""),
   tags: z.array(tagSchema).default([]),
   folder: folderSchema.optional(),

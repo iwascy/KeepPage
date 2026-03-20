@@ -356,6 +356,7 @@ function parseCaptureSource(input: unknown): CaptureSource {
     canonicalUrl: expectOptionalUrlString(record.canonicalUrl, "capture source canonicalUrl"),
     domain: expectString(record.domain, "capture source domain"),
     faviconUrl: expectOptionalUrlString(record.faviconUrl, "capture source faviconUrl"),
+    coverImageUrl: expectOptionalUrlString(record.coverImageUrl, "capture source coverImageUrl"),
     referrer: expectOptionalString(record.referrer, "capture source referrer"),
     selectionText: expectOptionalString(record.selectionText, "capture source selectionText"),
     viewport: {

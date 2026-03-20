@@ -376,44 +376,41 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     uploadUrl: initResponse.uploadUrl,
   });
 
-  if (initResponse.alreadyExists && initResponse.bookmarkId && initResponse.versionId) {
+  if (initResponse.alreadyExists) {
     await logSync("info", debugTabId, "Remote capture already exists.", {
       taskId: task.id,
       bookmarkId: initResponse.bookmarkId,
       versionId: initResponse.versionId,
+      skippedUpload: true,
     });
-    return {
-      bookmarkId: initResponse.bookmarkId,
-      versionId: initResponse.versionId,
-    };
-  }
+  } else {
+    const uploadUrl = normalizeUploadUrl(
+      initResponse.uploadUrl,
+      initResponse.objectKey,
+      apiBaseUrl,
+    );
+    if (uploadUrl !== initResponse.uploadUrl) {
+      await logSync("warn", debugTabId, "Rewriting upload URL to configured API base.", {
+        taskId: task.id,
+        originalUploadUrl: initResponse.uploadUrl,
+        rewrittenUploadUrl: uploadUrl,
+      });
+    }
 
-  const uploadUrl = normalizeUploadUrl(
-    initResponse.uploadUrl,
-    initResponse.objectKey,
-    apiBaseUrl,
-  );
-  if (uploadUrl !== initResponse.uploadUrl) {
-    await logSync("warn", debugTabId, "Rewriting upload URL to configured API base.", {
+    const uploadResult = await withUnauthorizedAuthRecovery(
+      () => uploadArchiveHtml(uploadUrl, authHeaders, artifacts.archiveHtml),
+      debugTabId,
+      task.id,
+    );
+    await logSync("info", debugTabId, "Archive upload completed.", {
       taskId: task.id,
-      originalUploadUrl: initResponse.uploadUrl,
-      rewrittenUploadUrl: uploadUrl,
+      uploadUrl,
+      uploadMode: uploadResult.mode,
+      uploadPayloadBytes: uploadResult.payloadBytes,
+      uploadChunkCount: uploadResult.chunkCount,
+      contentEncoding: uploadResult.contentEncoding ?? "identity",
     });
   }
-
-  const uploadResult = await withUnauthorizedAuthRecovery(
-    () => uploadArchiveHtml(uploadUrl, authHeaders, artifacts.archiveHtml),
-    debugTabId,
-    task.id,
-  );
-  await logSync("info", debugTabId, "Archive upload completed.", {
-    taskId: task.id,
-    uploadUrl,
-    uploadMode: uploadResult.mode,
-    uploadPayloadBytes: uploadResult.payloadBytes,
-    uploadChunkCount: uploadResult.chunkCount,
-    contentEncoding: uploadResult.contentEncoding ?? "identity",
-  });
 
   const completePayload: CaptureCompleteRequest = {
     objectKey: initResponse.objectKey,

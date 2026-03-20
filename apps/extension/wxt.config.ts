@@ -4,7 +4,7 @@ import { defineConfig } from "wxt";
 const extensionPackage = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
 ) as { version: string };
-const extensionManifestVersion = "0.1.5";
+const extensionManifestVersion = "0.1.7";
 
 if (extensionPackage.version !== extensionManifestVersion) {
   throw new Error("Extension package version and manifest version must stay in sync.");

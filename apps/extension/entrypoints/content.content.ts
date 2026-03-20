@@ -141,6 +141,7 @@ export default defineContentScript({
 function collectSourcePatch(): Partial<CaptureSource> {
   return {
     canonicalUrl: readCanonicalUrl(),
+    coverImageUrl: readCoverImageUrl(),
     referrer: document.referrer || undefined,
     selectionText: window.getSelection()?.toString() || undefined,
     viewport: {
@@ -169,6 +170,57 @@ function collectLiveSignals(): CapturePageSignals {
 
 function normalizeText(text: string) {
   return text.replaceAll(/\s+/g, " ").trim();
+}
+
+function readCoverImageUrl() {
+  const firstMeaningfulImage = Array.from(document.images).find((image) => {
+    const url = resolveCoverCandidateUrl(image);
+    if (!url) {
+      return false;
+    }
+    const width = image.naturalWidth || image.width || image.clientWidth;
+    const height = image.naturalHeight || image.height || image.clientHeight;
+    return width >= 96 && height >= 96;
+  });
+
+  return resolveCoverCandidateUrl(firstMeaningfulImage);
+}
+
+function resolveCoverCandidateUrl(image: HTMLImageElement | undefined) {
+  if (!image) {
+    return undefined;
+  }
+
+  const candidates = [
+    image.currentSrc,
+    image.src,
+    image.getAttribute("src"),
+    image.getAttribute("data-src"),
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeCoverImageUrl(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
+function normalizeCoverImageUrl(rawUrl: string | null | undefined) {
+  const value = rawUrl?.trim();
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const normalized = new URL(value, location.href);
+    if (normalized.protocol !== "http:" && normalized.protocol !== "https:") {
+      return undefined;
+    }
+    return normalized.href;
+  } catch {
+    return undefined;
+  }
 }
 
 function readCanonicalUrl() {

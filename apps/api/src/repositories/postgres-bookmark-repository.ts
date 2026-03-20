@@ -3,6 +3,7 @@ import {
   bookmarkSchema,
   bookmarkSearchResponseSchema,
   bookmarkVersionSchema,
+  captureSourceSchema,
   createImportTaskId,
   createImportTaskItemId,
   qualityReportSchema,
@@ -260,6 +261,38 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .limit(1);
 
     if (existingByObjectKey[0]) {
+      const now = new Date();
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(bookmarkVersions)
+          .set({
+            qualityScore: input.quality.score,
+            qualityGrade: input.quality.grade,
+            qualityReasonsJson: input.quality.reasons,
+            qualityReportJson: input.quality,
+            sourceMetaJson: {
+              source: input.source,
+            },
+          })
+          .where(eq(bookmarkVersions.id, existingByObjectKey[0].versionId));
+
+        await tx
+          .update(bookmarks)
+          .set({
+            sourceUrl: input.source.url,
+            canonicalUrl: input.source.canonicalUrl,
+            title: input.source.title,
+            domain: input.source.domain,
+            latestVersionId: existingByObjectKey[0].versionId,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(bookmarks.userId, userId),
+              eq(bookmarks.id, existingByObjectKey[0].bookmarkId),
+            ),
+          );
+      });
       const bookmark = await this.loadBookmark(existingByObjectKey[0].bookmarkId, userId);
       return {
         bookmark,
@@ -338,6 +371,18 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
       if (duplicateVersionRows[0]) {
         const duplicatedVersionId = duplicateVersionRows[0].id;
+        await tx
+          .update(bookmarkVersions)
+          .set({
+            qualityScore: input.quality.score,
+            qualityGrade: input.quality.grade,
+            qualityReasonsJson: input.quality.reasons,
+            qualityReportJson: input.quality,
+            sourceMetaJson: {
+              source: input.source,
+            },
+          })
+          .where(eq(bookmarkVersions.id, duplicatedVersionId));
         await tx
           .update(bookmarks)
           .set({
@@ -490,6 +535,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         folderPath: folders.path,
         folderParentId: folders.parentId,
         latestQualityReport: bookmarkVersions.qualityReportJson,
+        latestSourceMeta: bookmarkVersions.sourceMetaJson,
       })
       .from(bookmarks)
       .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
@@ -1210,6 +1256,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         folderPath: folders.path,
         folderParentId: folders.parentId,
         latestQualityReport: bookmarkVersions.qualityReportJson,
+        latestSourceMeta: bookmarkVersions.sourceMetaJson,
       })
       .from(bookmarks)
       .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
@@ -1649,6 +1696,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       folderPath: string | null;
       folderParentId: string | null;
       latestQualityReport: unknown;
+      latestSourceMeta: unknown;
     },
     options: {
       tags: Array<{ id: string; name: string; color?: string }>;
@@ -1662,6 +1710,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       canonicalUrl: row.canonicalUrl ?? undefined,
       title: row.title,
       domain: row.domain,
+      coverImageUrl: this.readCoverImageUrl(row.latestSourceMeta),
       note: row.note,
       tags: options.tags,
       folder: row.folderId && row.folderName && row.folderPath
@@ -1678,6 +1727,19 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     });
+  }
+
+  private readCoverImageUrl(sourceMeta: unknown) {
+    if (!sourceMeta || typeof sourceMeta !== "object") {
+      return undefined;
+    }
+
+    const maybeSource = (sourceMeta as Record<string, unknown>).source;
+    const parsed = captureSourceSchema.safeParse(maybeSource);
+    if (!parsed.success) {
+      return undefined;
+    }
+    return parsed.data.coverImageUrl;
   }
 
   private readQuality(sourceMeta: unknown) {
