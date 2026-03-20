@@ -15,7 +15,7 @@ const migrationsDirUrl = new URL(
   import.meta.url,
 );
 
-const DUPLICATE_ERROR_CODES = new Set(["42710", "42P07"]);
+const DUPLICATE_ERROR_CODES = new Set(["42701", "42710", "42P07"]);
 
 async function main() {
   const parsedUrl = new URL(databaseUrl);
