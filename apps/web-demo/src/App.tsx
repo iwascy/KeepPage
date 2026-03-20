@@ -1429,7 +1429,7 @@ function AuthPanel({
               onChange={(event) => onEmailChange(event.target.value)}
               placeholder="邮箱"
               autoComplete="email"
-              required={isRegister}
+              required
             />
           </label>
           <label className="field">
@@ -1439,7 +1439,7 @@ function AuthPanel({
               onChange={(event) => onPasswordChange(event.target.value)}
               placeholder={isRegister ? "密码（至少 8 位）" : "密码"}
               autoComplete={isRegister ? "new-password" : "current-password"}
-              required={isRegister}
+              required
             />
           </label>
           {error ? <p className="auth-error">{error}</p> : null}
@@ -1724,11 +1724,12 @@ export function App({
   const isDemoMode = mode === "mock";
   const [route, setRoute] = useState<ViewRoute>(() => parseRoute(window.location.hash));
   const [demoState, setDemoState] = useState<DemoWorkspace>(() => createDemoWorkspace());
-  const [session, setSession] = useState<SessionState>(() => { if (isDemoMode) { return { status: "authenticated", token: "demo-token", user: demoState.user, error: null }; } return {
+  const [session, setSession] = useState<SessionState>({
     status: "booting",
     token: null,
     user: null,
-      error: null }; });
+    error: null,
+  });
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
@@ -1767,13 +1768,11 @@ export function App({
 
   const deferredSearch = useDeferredValue(searchInput);
   const authToken = session.status === "authenticated" ? session.token : null;
-  const isBypassDemoSession = !isDemoMode && authToken === "demo-token";
-  const usesDemoData = isDemoMode || isBypassDemoSession;
   const logoutLabel = isDemoMode ? "重置 Mock 数据" : "退出登录";
   const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
 
   const importAdapter = useMemo<ImportPanelAdapter | undefined>(() => {
-    if (!usesDemoData) {
+    if (!isDemoMode) {
       return undefined;
     }
     return {
@@ -1786,7 +1785,7 @@ export function App({
       fetchImportTasks: async () => listDemoImportTasks(demoState),
       fetchImportTaskDetail: async (taskId) => getDemoImportTaskDetail(demoState, taskId),
     };
-  }, [demoState, usesDemoData]);
+  }, [demoState, isDemoMode]);
 
   function logout(message?: string) {
     if (isDemoMode) {
@@ -1819,11 +1818,6 @@ export function App({
         setMetadataFeedback(null);
       });
       return;
-    }
-
-    if (isBypassDemoSession) {
-      clearStoredToken();
-      setDemoState(createDemoWorkspace());
     }
 
     clearStoredToken();
@@ -1947,7 +1941,7 @@ export function App({
       return;
     }
 
-    if (usesDemoData) {
+    if (isDemoMode) {
       setFolders(demoState.folders);
       setTags(demoState.tags);
       setSelectedFolderId((current) => (
@@ -1987,7 +1981,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [authToken, demoState.folders, demoState.tags, usesDemoData]);
+  }, [authToken, demoState.folders, demoState.tags, isDemoMode]);
 
   useEffect(() => {
     if (!authToken) {
@@ -1997,7 +1991,7 @@ export function App({
       return;
     }
 
-    if (usesDemoData) {
+    if (isDemoMode) {
       setLoadState("loading");
       setListError(null);
       startTransition(() => {
@@ -2048,7 +2042,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [authToken, deferredSearch, demoState, qualityFilter, selectedFolderId, selectedTagId, usesDemoData]);
+  }, [authToken, deferredSearch, demoState, isDemoMode, qualityFilter, selectedFolderId, selectedTagId]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
@@ -2058,7 +2052,7 @@ export function App({
       return;
     }
 
-    if (usesDemoData) {
+    if (isDemoMode) {
       setDetailLoadState("loading");
       setDetailError(null);
       startTransition(() => {
@@ -2097,7 +2091,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [authToken, demoState, route, usesDemoData]);
+  }, [authToken, demoState, isDemoMode, route]);
 
   useEffect(() => {
     if (!detail) {
@@ -2196,7 +2190,7 @@ export function App({
 
     setArchivePreview({ status: "loading" });
 
-    if (usesDemoData) {
+    if (isDemoMode) {
       if (!selectedVersion) {
         setArchivePreview({ status: "idle" });
         return;
@@ -2267,11 +2261,11 @@ export function App({
   }, [
     authToken,
     demoState,
+    isDemoMode,
     previewSelection?.objectKey,
     previewSelection?.mode,
     previewSourceUrl,
     selectedVersion?.id,
-    usesDemoData,
   ]);
 
   async function refreshCatalogs(currentToken: string) {
@@ -2345,7 +2339,7 @@ export function App({
 
   async function handleCreateFolder(name: string, parent?: Folder) {
     const trimmedName = name.trim();
-    if (usesDemoData) {
+    if (isDemoMode) {
       try {
         const result = createDemoFolder(demoState, {
           name: trimmedName,
@@ -2388,7 +2382,7 @@ export function App({
       throw new Error(`未找到父收藏夹路径：${parentPath}`);
     }
 
-    if (usesDemoData) {
+    if (isDemoMode) {
       try {
         const result = updateDemoFolder(demoState, folder.id, {
           name: nextName,
@@ -2419,7 +2413,7 @@ export function App({
   }
 
   async function handleDeleteFolder(folder: Folder) {
-    if (usesDemoData) {
+    if (isDemoMode) {
       try {
         setDemoState(deleteDemoFolder(demoState, folder.id));
         setManagerFeedback({
@@ -2444,7 +2438,7 @@ export function App({
 
   async function handleCreateTag(name: string, color?: string) {
     const trimmedName = name.trim();
-    if (usesDemoData) {
+    if (isDemoMode) {
       try {
         const result = createDemoTag(demoState, {
           name: trimmedName,
@@ -2475,7 +2469,7 @@ export function App({
   }
 
   async function handleEditTag(tag: Tag, nextName: string, nextColorRaw: string) {
-    if (usesDemoData) {
+    if (isDemoMode) {
       try {
         const result = updateDemoTag(demoState, tag.id, {
           name: nextName.trim(),
@@ -2506,7 +2500,7 @@ export function App({
   }
 
   async function handleDeleteTag(tag: Tag) {
-    if (usesDemoData) {
+    if (isDemoMode) {
       try {
         setDemoState(deleteDemoTag(demoState, tag.id));
         setManagerFeedback({
@@ -2613,7 +2607,7 @@ export function App({
 
     setMetadataSaving(true);
     setMetadataFeedback(null);
-    if (usesDemoData) {
+    if (isDemoMode) {
       try {
         const result = updateDemoBookmarkMetadata(demoState, route.bookmarkId, {
           note: metadataNote,
@@ -2667,14 +2661,6 @@ export function App({
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isDemoMode || authMode === "login") {
-      clearStoredToken();
-      setAuthError(null);
-      setAuthPassword("");
-      setSession({ status: "authenticated", token: "demo-token", user: demoState.user, error: null });
-      goToList();
-      return;
-    }
     setAuthSubmitting(true);
     setAuthError(null);
 
