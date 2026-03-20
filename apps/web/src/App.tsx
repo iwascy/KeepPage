@@ -5,6 +5,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
 } from "react";
@@ -92,6 +93,7 @@ type ManagerDialogState =
   | { kind: "delete-tag"; tag: Tag };
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
+const TAG_COLOR_PRESETS = ["#e2e2e9", "#d8d3f4", "#d4ebe1", "#f4d3d3", "#f4ebd3", "#d3ebf4"];
 
 function qualityLabel(grade?: QualityGrade) {
   if (!grade) {
@@ -347,62 +349,6 @@ function buildFolderPreviewPath(name: string, parentPath?: string | null) {
   return parentPath ? `${parentPath}/${normalizedName}` : normalizedName;
 }
 
-function LinkIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M6.25 9.75 4.5 11.5a2.12 2.12 0 0 1-3-3l2.25-2.25a2.12 2.12 0 0 1 3 0"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-      <path
-        d="m9.75 6.25 1.75-1.75a2.12 2.12 0 1 1 3 3l-2.25 2.25a2.12 2.12 0 0 1-3 0"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-      <path
-        d="m5.75 10.25 4.5-4.5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <circle
-        cx="8"
-        cy="8"
-        r="5.5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-      <path
-        d="M8 4.8v3.45l2.2 1.35"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-    </svg>
-  );
-}
-
 function getStoredToken() {
   const stored = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
   return stored || null;
@@ -466,79 +412,73 @@ function HomeBookmarkCard({
 
   const summary = summarizeBookmark(bookmark);
   const hasCoverImage = Boolean(bookmark.coverImageUrl) && !coverImageFailed;
-  const hasPreview = hasCoverImage || (bookmark.latestQuality?.archiveSignals.screenshotGenerated ?? false);
   const folderLabel = bookmark.folder?.name ?? "未归类";
   const coverTone = homeCoverTone(bookmark.domain);
 
   return (
-    <article className={`home-bookmark-card${hasPreview ? " has-preview" : ""}`}>
+    <article className="home-bookmark-card">
       <button
         className="home-bookmark-hitarea"
         type="button"
         onClick={() => onOpen(bookmark.id)}
         aria-label={`打开归档：${bookmark.title}`}
       >
-        {hasPreview ? (
-          <div className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : ""}`}>
-            {hasCoverImage ? (
-              <>
-                <img
-                  className="home-bookmark-cover-media"
-                  src={bookmark.coverImageUrl}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  onError={() => setCoverImageFailed(true)}
-                />
-                <div className="home-bookmark-cover-shade" aria-hidden="true" />
-              </>
-            ) : null}
+        <div className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : ""}`}>
+          {hasCoverImage ? (
+            <>
+              <img
+                className="home-bookmark-cover-media"
+                src={bookmark.coverImageUrl}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                onError={() => setCoverImageFailed(true)}
+              />
+              <div className="home-bookmark-cover-shade" aria-hidden="true" />
+            </>
+          ) : (
+            <div className="home-bookmark-fallback">
+              <span className="home-bookmark-fallback-domain">{bookmark.domain}</span>
+              <strong>{getDomainMonogram(bookmark.domain)}</strong>
+              <p>{folderLabel}</p>
+            </div>
+          )}
+          <div className="home-bookmark-overlay">
             <span className="home-bookmark-chip home-bookmark-chip-cover">{folderLabel}</span>
-            {!hasCoverImage ? (
-              <div className="home-bookmark-paper">
-                <div className="home-bookmark-paper-lines">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            ) : null}
+            <div className="home-bookmark-overlay-copy">
+              <h2>{bookmark.title}</h2>
+              <p>{summary}</p>
+              <footer className="home-bookmark-meta">
+                <span className="home-bookmark-domain">{bookmark.domain}</span>
+                <span className="home-bookmark-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+              </footer>
+            </div>
           </div>
-        ) : null}
-        <div className="home-bookmark-body">
-          {!hasPreview ? (
-            <span className="home-bookmark-chip home-bookmark-chip-inline">{folderLabel}</span>
-          ) : null}
-          <h2>{bookmark.title}</h2>
-          <p>{summary}</p>
-          <footer className="home-bookmark-meta">
-            <span className="home-bookmark-domain">{bookmark.domain}</span>
-            <span className="home-bookmark-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
-          </footer>
         </div>
       </button>
     </article>
   );
 }
 
-function HomeBookmarkSkeleton({
-  withPreview,
-}: {
+function HomeBookmarkSkeleton(_props: {
   withPreview: boolean;
 }) {
   return (
-    <article className={`home-bookmark-card home-bookmark-card-skeleton${withPreview ? " has-preview" : ""}`}>
+    <article className="home-bookmark-card home-bookmark-card-skeleton">
       <div className="home-bookmark-hitarea is-skeleton">
-        {withPreview ? <div className="home-skeleton-cover" /> : null}
-        <div className="home-bookmark-body">
-          {!withPreview ? <span className="home-skeleton-chip" /> : null}
-          <span className="home-skeleton-line is-title" />
-          <span className="home-skeleton-line" />
-          <span className="home-skeleton-line is-short" />
-          <footer className="home-bookmark-meta">
-            <span className="home-skeleton-line is-meta" />
-            <span className="home-skeleton-line is-meta-short" />
-          </footer>
+        <div className="home-skeleton-cover">
+          <div className="home-skeleton-overlay">
+            <span className="home-skeleton-chip" />
+            <div className="home-skeleton-copy">
+              <span className="home-skeleton-line is-title" />
+              <span className="home-skeleton-line" />
+              <span className="home-skeleton-line is-short" />
+              <footer className="home-bookmark-meta">
+                <span className="home-skeleton-line is-meta" />
+                <span className="home-skeleton-line is-meta-short" />
+              </footer>
+            </div>
+          </div>
         </div>
       </div>
     </article>
@@ -546,6 +486,8 @@ function HomeBookmarkSkeleton({
 }
 
 function AppShell({
+  route,
+  showAdvancedManager,
   user,
   items,
   folders,
@@ -560,11 +502,15 @@ function AppShell({
   onCreateRootFolder,
   onCreateTag,
   onOpenImportNew,
+  onOpenAdvancedManager,
   onOpenImportHistory,
+  onGoHome,
   onLogout,
   children,
   logoutLabel = "退出登录",
 }: {
+  route: ViewRoute;
+  showAdvancedManager: boolean;
   user: AuthUser;
   items: Bookmark[];
   folders: Folder[];
@@ -579,12 +525,16 @@ function AppShell({
   onCreateRootFolder: () => void;
   onCreateTag: () => void;
   onOpenImportNew: () => void;
+  onOpenAdvancedManager: () => void;
   onOpenImportHistory: () => void;
+  onGoHome: () => void;
   onLogout: () => void;
   children: ReactNode;
   logoutLabel?: string;
 }) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
   const sortedFolders = useMemo(
     () => [...folders].sort((left, right) => left.path.localeCompare(right.path, "zh-CN")),
@@ -681,7 +631,29 @@ function AppShell({
     });
   }, [sortedFolders]);
 
-  const displayName = displayUserName(user);
+  useEffect(() => {
+    if (!isProfileMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!profileMenuRef.current?.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isProfileMenuOpen]);
 
   function handleToggleFolder(folder: Folder) {
     setCollapsedFolderIds((current) => {
@@ -700,19 +672,123 @@ function AppShell({
     });
   }
 
+  const displayName = displayUserName(user);
+  const isImportsView = route.page === "imports-new" || route.page === "imports-list" || route.page === "imports-detail";
+  const isLibraryView = route.page === "list" || route.page === "detail";
+  const hasSidebarFilters = Boolean(searchInput.trim() || selectedFolderId || selectedTagId);
+
   return (
     <main className="home-page">
-      <aside className="home-sidebar">
-        <div className="home-brand">
-          <div className="home-brand-mark">{userInitials(user).slice(0, 1)}</div>
-          <div>
-            <h1>KeepPage</h1>
-            <p>Your Archive Space</p>
+      <header className="home-topbar">
+        <div className="home-topbar-leading">
+          <button className="home-brand home-brand-button" type="button" onClick={onGoHome}>
+            <div>
+              <h1>KeepPage</h1>
+              <p>Luminous Bookmarks</p>
+            </div>
+          </button>
+          <nav className="home-topnav" aria-label="主导航">
+            <button
+              className={isLibraryView && !showAdvancedManager ? "home-topnav-link is-active" : "home-topnav-link"}
+              type="button"
+              onClick={onGoHome}
+            >
+              All Bookmarks
+            </button>
+            <button
+              className={isImportsView ? "home-topnav-link is-active" : "home-topnav-link"}
+              type="button"
+              onClick={onOpenImportHistory}
+            >
+              Recent Imports
+            </button>
+            <button
+              className={showAdvancedManager ? "home-topnav-link is-active" : "home-topnav-link"}
+              type="button"
+              onClick={onOpenAdvancedManager}
+            >
+              Collections
+            </button>
+          </nav>
+        </div>
+
+        <div className="home-topbar-actions">
+          <button className="home-topbar-button" type="button" onClick={onOpenImportNew}>
+            New Import
+          </button>
+          <button className="home-topbar-button is-primary" type="button" onClick={onCreateRootFolder} disabled={managerBusy}>
+            New Collection
+          </button>
+
+          <div className="home-profile-menu" ref={profileMenuRef}>
+            <button
+              className={isProfileMenuOpen ? "home-profile-trigger is-open" : "home-profile-trigger"}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={isProfileMenuOpen}
+              onClick={() => setIsProfileMenuOpen((current) => !current)}
+            >
+              <div className="home-profile">
+                <div className="home-profile-copy">
+                  <strong>{displayName}</strong>
+                  <span>{user.email}</span>
+                </div>
+                <div className="home-avatar">{userInitials(user)}</div>
+              </div>
+            </button>
+            {isProfileMenuOpen ? (
+              <div className="home-profile-panel" role="menu" aria-label="用户菜单">
+                <div className="home-profile-panel-head">
+                  <strong>{displayName}</strong>
+                  <span>{user.email}</span>
+                </div>
+                <button
+                  className="home-profile-menu-item"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    onOpenAdvancedManager();
+                  }}
+                >
+                  高级管理
+                </button>
+                <button
+                  className="home-profile-menu-item"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    onOpenImportHistory();
+                  }}
+                >
+                  导入历史
+                </button>
+                <button
+                  className="home-profile-menu-item is-danger"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    onLogout();
+                  }}
+                >
+                  {logoutLabel}
+                </button>
+              </div>
+            ) : null}
           </div>
+        </div>
+      </header>
+
+      <aside className="home-sidebar">
+        <div className="home-sidebar-intro">
+          <h2>Collections</h2>
+          <p>Manage your links</p>
         </div>
 
         <label className="home-search">
-          <span className="home-search-icon" aria-hidden="true" />
+          <span className="home-search-label">Quick Filter</span>
           <input
             className="home-search-input"
             type="search"
@@ -758,16 +834,12 @@ function AppShell({
                 </button>
                 {hasChildren ? (
                   <button
-                    className={
-                      collapsedFolderIds.has(folder.id)
-                        ? "home-folder-toggle is-collapsed"
-                        : "home-folder-toggle"
-                    }
+                    className={collapsedFolderIds.has(folder.id) ? "home-folder-toggle is-collapsed" : "home-folder-toggle"}
                     type="button"
                     onClick={() => handleToggleFolder(folder)}
                     aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "收起"} ${folder.name}`}
                   >
-                    ▾
+                    {collapsedFolderIds.has(folder.id) ? "展开" : "收起"}
                   </button>
                 ) : (
                   <span className="home-folder-toggle-spacer" aria-hidden="true" />
@@ -802,30 +874,34 @@ function AppShell({
         </section>
 
         <div className="home-sidebar-footer">
-          <button className="home-cta-button" type="button" onClick={onOpenImportNew}>
-            + 新建导入
+          <button className="home-cta-button" type="button" onClick={onCreateRootFolder} disabled={managerBusy}>
+            New Collection
           </button>
           <div className="home-sidebar-links">
             <button className="home-sidebar-link" type="button" onClick={onOpenImportHistory}>
-              导入历史
+              Import History
             </button>
-            <button className="home-sidebar-link" type="button" onClick={onLogout}>
-              {logoutLabel}
+            <button className="home-sidebar-link" type="button" onClick={onOpenAdvancedManager}>
+              Advanced
             </button>
           </div>
+          {hasSidebarFilters ? (
+            <button
+              className="home-sidebar-clear"
+              type="button"
+              onClick={() => {
+                onSearchChange("");
+                onSelectFolder("");
+                onSelectTag("");
+              }}
+            >
+              Clear Filters
+            </button>
+          ) : null}
         </div>
       </aside>
 
       <div className="home-shell">
-        <header className="home-topbar">
-          <div className="home-profile">
-            <div className="home-profile-copy">
-              <strong>{displayName}</strong>
-            </div>
-            <div className="home-avatar">{userInitials(user)}</div>
-          </div>
-        </header>
-
         <section className="home-content">
           {children}
         </section>
@@ -839,6 +915,7 @@ function HomePage({
   loadState,
   listError,
   hasActiveFilters,
+  searchInput,
   managerBusy,
   managerFeedback,
   folders,
@@ -855,11 +932,14 @@ function HomePage({
   onCreateTag,
   onEditTag,
   onDeleteTag,
+  showAdvancedManager,
+  onCloseAdvancedManager,
 }: {
   items: Bookmark[];
   loadState: LoadState;
   listError: string | null;
   hasActiveFilters: boolean;
+  searchInput: string;
   managerBusy: boolean;
   managerFeedback: InlineFeedback | null;
   folders: Folder[];
@@ -876,13 +956,49 @@ function HomePage({
   onCreateTag: () => void;
   onEditTag: (tag: Tag) => void;
   onDeleteTag: (tag: Tag) => void;
+  showAdvancedManager: boolean;
+  onCloseAdvancedManager: () => void;
 }) {
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
   const showEmpty = !showLoading && !showError && items.length === 0;
+  const selectedFolder = selectedFolderId ? folders.find((folder) => folder.id === selectedFolderId) ?? null : null;
+  const selectedTag = selectedTagId ? tags.find((tag) => tag.id === selectedTagId) ?? null : null;
+  const activeFilterChips = [
+    selectedFolder ? `Collection · ${selectedFolder.path}` : null,
+    selectedTag ? `Tag · #${selectedTag.name}` : null,
+    searchInput.trim() ? `Search · ${searchInput.trim()}` : null,
+  ].filter(Boolean) as string[];
 
   return (
     <>
+      <header className="home-library-header">
+        <div className="home-library-copy">
+          <h1>My Library</h1>
+          <p>
+            {selectedFolder
+              ? `Curated resources saved in ${selectedFolder.path}.`
+              : selectedTag
+                ? `Browsing the latest pages tagged #${selectedTag.name}.`
+                : "Curated inspiration and saved resources."}
+          </p>
+        </div>
+        <div className="home-library-status">
+          <strong>{showLoading ? "Syncing" : `${items.length}`}</strong>
+          <span>{showLoading ? "Updating your archive" : "Saved pages"}</span>
+        </div>
+      </header>
+
+      {activeFilterChips.length > 0 ? (
+        <section className="home-filter-strip" aria-label="当前筛选">
+          {activeFilterChips.map((chip) => (
+            <span className="home-filter-pill" key={chip}>
+              {chip}
+            </span>
+          ))}
+        </section>
+      ) : null}
+
       {managerFeedback ? (
         <p className={managerFeedback.kind === "error" ? "home-feedback is-error" : "home-feedback"}>
           {managerFeedback.message}
@@ -917,29 +1033,39 @@ function HomePage({
         </section>
       )}
 
-      <details className="home-manager">
-        <summary>高级管理</summary>
-        <div className="home-manager-body">
-          <p className="home-manager-note">需要新建子收藏夹、改路径、删除标签时，在这里处理。</p>
-          <LibraryManager
-            folders={folders}
-            tags={tags}
-            selectedFolderId={selectedFolderId}
-            selectedTagId={selectedTagId}
-            busy={managerBusy}
-            feedback={null}
-            onSelectFolderFilter={onSelectFolder}
-            onSelectTagFilter={onSelectTag}
-            onCreateRootFolder={onCreateRootFolder}
-            onCreateChildFolder={onCreateChildFolder}
-            onEditFolderPath={onEditFolderPath}
-            onDeleteFolder={onDeleteFolder}
-            onCreateTag={onCreateTag}
-            onEditTag={onEditTag}
-            onDeleteTag={onDeleteTag}
-          />
-        </div>
-      </details>
+      {showAdvancedManager ? (
+        <section className="home-manager">
+          <div className="home-manager-head">
+            <div>
+              <p className="eyebrow">Advanced</p>
+              <h2 className="manager-title">高级管理</h2>
+            </div>
+            <button className="secondary-button compact-button" type="button" onClick={onCloseAdvancedManager}>
+              收起
+            </button>
+          </div>
+          <div className="home-manager-body">
+            <p className="home-manager-note">需要新建子收藏夹、改路径、删除标签时，在这里处理。</p>
+            <LibraryManager
+              folders={folders}
+              tags={tags}
+              selectedFolderId={selectedFolderId}
+              selectedTagId={selectedTagId}
+              busy={managerBusy}
+              feedback={null}
+              onSelectFolderFilter={onSelectFolder}
+              onSelectTagFilter={onSelectTag}
+              onCreateRootFolder={onCreateRootFolder}
+              onCreateChildFolder={onCreateChildFolder}
+              onEditFolderPath={onEditFolderPath}
+              onDeleteFolder={onDeleteFolder}
+              onCreateTag={onCreateTag}
+              onEditTag={onEditTag}
+              onDeleteTag={onDeleteTag}
+            />
+          </div>
+        </section>
+      ) : null}
 
       <footer className="home-footer">
         <span>Privacy</span>
@@ -1022,7 +1148,6 @@ function ManagerDialog({
 
   const isDeleteDialog = state.kind === "delete-folder" || state.kind === "delete-tag";
   const isFolderDialog = state.kind === "create-folder" || state.kind === "edit-folder" || state.kind === "delete-folder";
-  const isTagDialog = state.kind === "create-tag" || state.kind === "edit-tag" || state.kind === "delete-tag";
   const tagColor = colorValue.trim();
 
   let title = "";
@@ -1081,34 +1206,29 @@ function ManagerDialog({
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="manager-dialog-accent" />
         <div className="manager-dialog-header">
           <div className="manager-dialog-heading">
-            <p className="eyebrow">{eyebrow}</p>
+            <p className="manager-dialog-kicker">{eyebrow}</p>
             <h2 id="manager-dialog-title">{title}</h2>
             <p>{description}</p>
           </div>
-          <button className="ghost-button manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
+          <button className="manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
             关闭
           </button>
         </div>
 
         {isDeleteDialog ? (
           <>
-            <section className="manager-dialog-hero">
-              <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
-                {isFolderDialog ? "DIR" : "TAG"}
-              </div>
-              <div className="manager-dialog-hero-copy">
-                <strong>
-                  {state.kind === "delete-folder" ? state.folder.path : `#${state.tag.name}`}
-                </strong>
-                <span>
-                  {state.kind === "delete-folder"
-                    ? "删除后会立即从收藏夹列表中消失。"
-                    : "删除后，这个标签会从所有相关网页上解绑。"}
-                </span>
-              </div>
+            <section className="manager-dialog-preview-card is-danger">
+              <span className="manager-dialog-preview-label">
+                {isFolderDialog ? "Delete Collection" : "Delete Tag"}
+              </span>
+              <strong>{state.kind === "delete-folder" ? state.folder.path : `#${state.tag.name}`}</strong>
+              <p>
+                {state.kind === "delete-folder"
+                  ? "删除后会立即从收藏夹列表中消失。"
+                  : "删除后，这个标签会从所有相关网页上解绑。"}
+              </p>
             </section>
             <div className="manager-dialog-warning">
               <strong>这个操作会立刻生效。</strong>
@@ -1126,31 +1246,29 @@ function ManagerDialog({
           </>
         ) : (
           <form className="manager-dialog-form" onSubmit={onSubmit}>
-            <section className="manager-dialog-hero">
-              <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
-                {isFolderDialog ? "DIR" : "TAG"}
-              </div>
-              <div className="manager-dialog-hero-copy">
-                <strong>
-                  {state.kind === "create-folder"
-                    ? buildFolderPreviewPath(nameValue, state.parent?.path)
-                    : state.kind === "edit-folder"
-                      ? (pathValue.trim() || state.folder.path)
-                      : `#${nameValue.trim() || "新标签"}`}
-                </strong>
-                <span>
-                  {state.kind === "create-folder"
-                    ? (state.parent ? "会自动挂到当前父级下面。" : "会作为新的根目录出现。")
-                    : state.kind === "edit-folder"
-                      ? "完整路径支持多层结构，例如：工作/研究/案例。"
-                      : "先预览一下最终效果，不满意可以继续改。"}
-                </span>
-              </div>
+            <section className="manager-dialog-preview-card">
+              <span className="manager-dialog-preview-label">
+                {isFolderDialog ? "Collection Preview" : "Tag Preview"}
+              </span>
+              <strong>
+                {state.kind === "create-folder"
+                  ? buildFolderPreviewPath(nameValue, state.parent?.path)
+                  : state.kind === "edit-folder"
+                    ? (pathValue.trim() || state.folder.path)
+                    : `#${nameValue.trim() || "新标签"}`}
+              </strong>
+              <p>
+                {state.kind === "create-folder"
+                  ? (state.parent ? `会创建在 ${state.parent.path} 下方。` : "会作为新的根目录出现在侧栏。")
+                  : state.kind === "edit-folder"
+                    ? "完整路径支持多层结构，例如：工作/研究/案例。"
+                    : "标签颜色会直接应用到详情页编辑区域与筛选状态。"}
+              </p>
             </section>
 
             {state.kind === "create-folder" ? (
               <label className="field">
-                <span>收藏夹名称</span>
+                <span>Collection Name</span>
                 <input
                   autoFocus
                   maxLength={120}
@@ -1163,7 +1281,7 @@ function ManagerDialog({
 
             {state.kind === "edit-folder" ? (
               <label className="field">
-                <span>完整路径</span>
+                <span>Collection Path</span>
                 <input
                   autoFocus
                   maxLength={240}
@@ -1177,7 +1295,7 @@ function ManagerDialog({
             {state.kind === "create-tag" || state.kind === "edit-tag" ? (
               <>
                 <label className="field">
-                  <span>标签名称</span>
+                  <span>Tag Name</span>
                   <input
                     autoFocus
                     maxLength={80}
@@ -1187,7 +1305,7 @@ function ManagerDialog({
                   />
                 </label>
                 <label className="field">
-                  <span>颜色说明</span>
+                  <span>Theme Color</span>
                   <input
                     maxLength={32}
                     placeholder="可选，例如 blue 或 #1d4ed8"
@@ -1195,18 +1313,24 @@ function ManagerDialog({
                     onChange={(event) => onColorChange(event.target.value)}
                   />
                 </label>
-                <div className="manager-dialog-tag-preview">
-                  {tagColor ? (
-                    <span
-                      className="manager-dialog-tag-swatch"
-                      style={{ backgroundColor: tagColor }}
+                <div className="manager-dialog-color-grid">
+                  {TAG_COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      className={tagColor === preset ? "manager-dialog-color-option is-active" : "manager-dialog-color-option"}
+                      type="button"
+                      style={{ backgroundColor: preset }}
+                      onClick={() => onColorChange(preset)}
+                      aria-label={`选择颜色 ${preset}`}
                     />
-                  ) : (
-                    <span className="manager-dialog-tag-swatch is-empty" />
-                  )}
-                  <span className="manager-dialog-tag-chip">
-                    #{nameValue.trim() || "新标签"}
-                  </span>
+                  ))}
+                </div>
+                <div className="manager-dialog-tag-preview">
+                  <span
+                    className="manager-dialog-tag-swatch"
+                    style={{ backgroundColor: tagColor || TAG_COLOR_PRESETS[1] }}
+                  />
+                  <span className="manager-dialog-tag-chip">#{nameValue.trim() || "新标签"}</span>
                   <small>{tagColor || "未设置颜色时会沿用默认样式。"}</small>
                 </div>
               </>
@@ -1752,6 +1876,7 @@ export function App({
     status: "idle",
   });
   const [preferredPreviewMode, setPreferredPreviewMode] = useState<ArchiveViewMode>("reader");
+  const [showAdvancedManager, setShowAdvancedManager] = useState(false);
   const [managerBusy, setManagerBusy] = useState(false);
   const [managerFeedback, setManagerFeedback] = useState<InlineFeedback | null>(null);
   const [managerDialog, setManagerDialog] = useState<ManagerDialogState>({ kind: "closed" });
@@ -1803,6 +1928,7 @@ export function App({
         setQualityFilter("all");
         setSelectedFolderId("");
         setSelectedTagId("");
+        setShowAdvancedManager(false);
         setDetail(null);
         setLoadState("idle");
         setListError(null);
@@ -1834,6 +1960,7 @@ export function App({
       setTags([]);
       setSelectedFolderId("");
       setSelectedTagId("");
+      setShowAdvancedManager(false);
       setDetail(null);
       setLoadState("idle");
       setListError(null);
@@ -1845,6 +1972,16 @@ export function App({
       setManagerDialogError(null);
       setMetadataFeedback(null);
     });
+  }
+
+  function handleGoHome() {
+    setShowAdvancedManager(false);
+    goToList();
+  }
+
+  function openAdvancedManager() {
+    setShowAdvancedManager(true);
+    goToList();
   }
 
   function closeManagerDialog() {
@@ -2721,6 +2858,8 @@ export function App({
   return (
     <>
       <AppShell
+        route={route}
+        showAdvancedManager={showAdvancedManager}
         user={session.user}
         items={items}
         folders={folders}
@@ -2735,7 +2874,9 @@ export function App({
         onCreateRootFolder={() => openManagerDialog({ kind: "create-folder" })}
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
         onOpenImportNew={goToImportNew}
+        onOpenAdvancedManager={openAdvancedManager}
         onOpenImportHistory={goToImportList}
+        onGoHome={handleGoHome}
         onLogout={() => logout()}
         logoutLabel={logoutLabel}
       >
@@ -2745,6 +2886,7 @@ export function App({
             loadState={loadState}
             listError={listError}
             hasActiveFilters={Boolean(searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId)}
+            searchInput={searchInput}
             managerBusy={managerBusy}
             managerFeedback={managerFeedback}
             folders={folders}
@@ -2761,6 +2903,8 @@ export function App({
             onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
             onEditTag={(tag) => openManagerDialog({ kind: "edit-tag", tag })}
             onDeleteTag={(tag) => openManagerDialog({ kind: "delete-tag", tag })}
+            showAdvancedManager={showAdvancedManager}
+            onCloseAdvancedManager={() => setShowAdvancedManager(false)}
           />
         ) : route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
         <section className="loading">正在加载归档详情...</section>
