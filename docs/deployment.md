@@ -102,7 +102,7 @@ npm install
 
 ```bash
 export NODE_ENV=production
-export API_HOST=127.0.0.1
+export API_HOST=0.0.0.0
 export API_PORT=8787
 export API_PUBLIC_BASE_URL='https://keeppage.example.com/api'
 export STORAGE_DRIVER=postgres
@@ -119,7 +119,7 @@ export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 | 变量名 | 是否建议配置 | 说明 |
 | --- | --- | --- |
 | `NODE_ENV` | 建议 | 建议设为 `production` |
-| `API_HOST` | 建议 | 建议监听本机地址，由反向代理对外暴露 |
+| `API_HOST` | 建议 | 建议保持 `0.0.0.0`，确保容器端口映射和外部探活可达 |
 | `API_PORT` | 建议 | API 端口 |
 | `API_PUBLIC_BASE_URL` | **必填** | 扩展上传和远程访问必须依赖它生成正确的上传地址 |
 | `STORAGE_DRIVER` | **必填** | 推荐 `postgres` |

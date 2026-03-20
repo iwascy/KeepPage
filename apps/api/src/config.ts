@@ -21,7 +21,7 @@ const booleanFlagSchema = z.preprocess((value) => {
 
 const configSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  API_HOST: z.string().default("127.0.0.1"),
+  API_HOST: z.string().default("0.0.0.0"),
   API_PORT: z.coerce.number().int().positive().default(8787),
   API_PUBLIC_BASE_URL: z.string().optional(),
   STORAGE_DRIVER: z.enum(["memory", "postgres"]).default("memory"),

@@ -151,7 +151,7 @@ npm run dev -w @keeppage/api
 npm run start -w @keeppage/api
 ```
 
-默认监听：`127.0.0.1:8787`
+默认监听：`0.0.0.0:8787`
 
 ### 存储模式
 
@@ -186,7 +186,7 @@ npm run start -w @keeppage/api
 
 | 变量名 | 默认值 | 说明 |
 | --- | --- | --- |
-| `API_HOST` | `127.0.0.1` | API 监听地址 |
+| `API_HOST` | `0.0.0.0` | API 监听地址 |
 | `API_PORT` | `8787` | API 监听端口 |
 | `API_PUBLIC_BASE_URL` | 空 | 对外可访问的 API 基础地址，用于生成上传地址 |
 | `STORAGE_DRIVER` | `memory` | 仓储驱动，可选 `memory`、`postgres` |
