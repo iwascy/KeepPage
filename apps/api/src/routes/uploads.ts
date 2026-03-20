@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ApiConfig } from "../config";
 import type { AuthService } from "../lib/auth-service";
 import { z } from "zod";
@@ -14,6 +14,10 @@ const gunzipAsync = promisify(gunzip);
 
 const uploadParamsSchema = z.object({
   encodedObjectKey: z.string().min(1),
+});
+
+const objectQuerySchema = z.object({
+  key: z.string().min(1),
 });
 
 const uploadChunkParamsSchema = z.object({
@@ -28,23 +32,22 @@ export async function registerUploadRoutes(
   repository: BookmarkRepository,
   objectStorage: ObjectStorage,
 ) {
+  app.get<{ Querystring: { key: string } }>(
+    "/objects",
+    async (request, reply) => {
+      const user = await authService.requireUser(request);
+      const query = objectQuerySchema.parse(request.query);
+      return replyWithObject(user.id, query.key, reply, repository, objectStorage);
+    },
+  );
+
   app.get<{ Params: { encodedObjectKey: string } }>(
     "/objects/:encodedObjectKey",
     async (request, reply) => {
       const user = await authService.requireUser(request);
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = decodeObjectKey(params.encodedObjectKey);
-      const canRead = await repository.userCanReadObject(user.id, objectKey);
-      if (!canRead || !(await objectStorage.hasObject(objectKey))) {
-        return reply.status(404).send({
-          error: "ObjectNotFound",
-          message: "Object not found.",
-        });
-      }
-
-      const body = await objectStorage.readObject(objectKey);
-      reply.header("content-type", guessContentType(objectKey));
-      return reply.send(body);
+      return replyWithObject(user.id, objectKey, reply, repository, objectStorage);
     },
   );
 
@@ -183,6 +186,26 @@ function decodeObjectKey(encodedObjectKey: string) {
   } catch {
     throw new Error("Invalid upload object key.");
   }
+}
+
+async function replyWithObject(
+  userId: string,
+  objectKey: string,
+  reply: FastifyReply,
+  repository: BookmarkRepository,
+  objectStorage: ObjectStorage,
+) {
+  const canRead = await repository.userCanReadObject(userId, objectKey);
+  if (!canRead || !(await objectStorage.hasObject(objectKey))) {
+    return reply.status(404).send({
+      error: "ObjectNotFound",
+      message: "Object not found.",
+    });
+  }
+
+  const body = await objectStorage.readObject(objectKey);
+  reply.header("content-type", guessContentType(objectKey));
+  return reply.send(body);
 }
 
 async function getFileSize(filePath: string) {

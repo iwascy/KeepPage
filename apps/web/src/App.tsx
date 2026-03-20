@@ -2237,6 +2237,15 @@ export function App({
         if (cancelled || handleProtectedApiError(error)) {
           return;
         }
+        if (
+          error instanceof ApiError &&
+          error.status === 404 &&
+          previewSelection?.mode === "reader" &&
+          selectedVersion?.archiveAvailable
+        ) {
+          setPreferredPreviewMode("original");
+          return;
+        }
         setArchivePreview({
           status: "error",
           error: toErrorMessage(error),

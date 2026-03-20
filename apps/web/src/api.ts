@@ -494,7 +494,7 @@ export async function deleteTag(tagId: string, token: string) {
 
 export async function createArchiveObjectUrl(token: string, objectKey: string, sourceUrl: string) {
   const response = await fetch(
-    `${resolveApiBase()}/objects/${encodeURIComponent(objectKey)}`,
+    `${resolveApiBase()}/objects?key=${encodeURIComponent(objectKey)}`,
     {
       headers: {
         authorization: `Bearer ${token}`,
