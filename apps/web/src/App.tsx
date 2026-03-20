@@ -441,62 +441,42 @@ function HomeBookmarkSkeleton({
   );
 }
 
-function HomePage({
+function AppShell({
   user,
   items,
-  loadState,
-  listError,
-  searchInput,
-  onSearchChange,
   folders,
   tags,
   selectedFolderId,
   selectedTagId,
-  hasActiveFilters,
-  isPending,
+  searchInput,
+  onSearchChange,
   managerBusy,
-  managerFeedback,
   onSelectFolder,
   onSelectTag,
-  onOpenBookmark,
   onCreateRootFolder,
-  onCreateChildFolder,
-  onEditFolderPath,
-  onDeleteFolder,
   onCreateTag,
-  onEditTag,
-  onDeleteTag,
   onOpenImportNew,
   onOpenImportHistory,
   onLogout,
+  children,
 }: {
   user: AuthUser;
   items: Bookmark[];
-  loadState: LoadState;
-  listError: string | null;
-  searchInput: string;
-  onSearchChange: (value: string) => void;
   folders: Folder[];
   tags: Tag[];
   selectedFolderId: string;
   selectedTagId: string;
-  hasActiveFilters: boolean;
-  isPending: boolean;
+  searchInput: string;
+  onSearchChange: (value: string) => void;
   managerBusy: boolean;
-  managerFeedback: InlineFeedback | null;
   onSelectFolder: (folderId: string) => void;
   onSelectTag: (tagId: string) => void;
-  onOpenBookmark: (bookmarkId: string) => void;
   onCreateRootFolder: () => void;
-  onCreateChildFolder: (folder: Folder) => void;
-  onEditFolderPath: (folder: Folder) => void;
-  onDeleteFolder: (folder: Folder) => void;
   onCreateTag: () => void;
-  onEditTag: (tag: Tag) => void;
-  onDeleteTag: (tag: Tag) => void;
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
   onLogout: () => void;
+  children: ReactNode;
 }) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
 
@@ -537,16 +517,16 @@ function HomePage({
     const rows: Array<{ folder: Folder; depth: number; hasChildren: boolean }> = [];
 
     function append(folder: Folder, depth: number) {
-      const children = childrenByParent.get(folder.id) ?? [];
+      const folderChildren = childrenByParent.get(folder.id) ?? [];
       rows.push({
         folder,
         depth,
-        hasChildren: children.length > 0,
+        hasChildren: folderChildren.length > 0,
       });
       if (collapsedFolderIds.has(folder.id)) {
         return;
       }
-      for (const child of children) {
+      for (const child of folderChildren) {
         append(child, depth + 1);
       }
     }
@@ -595,9 +575,6 @@ function HomePage({
     });
   }, [sortedFolders]);
 
-  const showLoading = loadState === "loading";
-  const showError = loadState === "error";
-  const showEmpty = !showLoading && !showError && items.length === 0;
   const displayName = displayUserName(user);
 
   function handleToggleFolder(folder: Folder) {
@@ -744,125 +721,127 @@ function HomePage({
         </header>
 
         <section className="home-content">
-          {managerFeedback ? (
-            <p className={managerFeedback.kind === "error" ? "home-feedback is-error" : "home-feedback"}>
-              {managerFeedback.message}
-            </p>
-          ) : null}
-
-          {showLoading && items.length > 0 ? (
-            <p className="home-loading-note">正在刷新归档列表...</p>
-          ) : null}
-
-          {showLoading && items.length === 0 ? (
-            <section className="home-grid">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <HomeBookmarkSkeleton key={index} withPreview={index % 3 !== 1} />
-              ))}
-            </section>
-          ) : showError ? (
-            <section className="home-empty-panel">
-              <h2>归档列表加载失败</h2>
-              <p>{listError ?? "暂时无法读取当前账号的归档列表。"}</p>
-            </section>
-          ) : showEmpty ? (
-            <section className="home-empty-panel">
-              <h2>{hasActiveFilters ? "当前筛选下没有匹配的归档" : "还没有归档记录"}</h2>
-              <p>{hasActiveFilters ? "换个关键词，或者切换收藏夹和标签试试。" : "扩展同步的网页归档会优先显示在这里。"}</p>
-            </section>
-          ) : (
-            <section className="home-grid">
-              {items.map((bookmark) => (
-                <HomeBookmarkCard key={bookmark.id} bookmark={bookmark} onOpen={onOpenBookmark} />
-              ))}
-            </section>
-          )}
-
-          <details className="home-manager">
-            <summary>高级管理</summary>
-            <div className="home-manager-body">
-              <p className="home-manager-note">需要新建子收藏夹、改路径、删除标签时，在这里处理。</p>
-              <LibraryManager
-                folders={folders}
-                tags={tags}
-                selectedFolderId={selectedFolderId}
-                selectedTagId={selectedTagId}
-                busy={managerBusy}
-                feedback={null}
-                onSelectFolderFilter={onSelectFolder}
-                onSelectTagFilter={onSelectTag}
-                onCreateRootFolder={onCreateRootFolder}
-                onCreateChildFolder={onCreateChildFolder}
-                onEditFolderPath={onEditFolderPath}
-                onDeleteFolder={onDeleteFolder}
-                onCreateTag={onCreateTag}
-                onEditTag={onEditTag}
-                onDeleteTag={onDeleteTag}
-              />
-            </div>
-          </details>
-
-          <footer className="home-footer">
-            <span>Privacy</span>
-            <span>Terms</span>
-            <span>Support</span>
-            <span>KeepPage</span>
-          </footer>
+          {children}
         </section>
       </div>
     </main>
   );
 }
 
-function BookmarkCard({
-  bookmark,
-  onOpen,
+function HomePage({
+  items,
+  loadState,
+  listError,
+  hasActiveFilters,
+  managerBusy,
+  managerFeedback,
+  folders,
+  tags,
+  selectedFolderId,
+  selectedTagId,
+  onSelectFolder,
+  onSelectTag,
+  onOpenBookmark,
+  onCreateRootFolder,
+  onCreateChildFolder,
+  onEditFolderPath,
+  onDeleteFolder,
+  onCreateTag,
+  onEditTag,
+  onDeleteTag,
 }: {
-  bookmark: Bookmark;
-  onOpen: (bookmarkId: string) => void;
+  items: Bookmark[];
+  loadState: LoadState;
+  listError: string | null;
+  hasActiveFilters: boolean;
+  managerBusy: boolean;
+  managerFeedback: InlineFeedback | null;
+  folders: Folder[];
+  tags: Tag[];
+  selectedFolderId: string;
+  selectedTagId: string;
+  onSelectFolder: (folderId: string) => void;
+  onSelectTag: (tagId: string) => void;
+  onOpenBookmark: (bookmarkId: string) => void;
+  onCreateRootFolder: () => void;
+  onCreateChildFolder: (folder: Folder) => void;
+  onEditFolderPath: (folder: Folder) => void;
+  onDeleteFolder: (folder: Folder) => void;
+  onCreateTag: () => void;
+  onEditTag: (tag: Tag) => void;
+  onDeleteTag: (tag: Tag) => void;
 }) {
-  const summary = summarizeBookmark(bookmark);
-  const hasPreview = bookmark.latestQuality?.archiveSignals.screenshotGenerated ?? false;
-  const openDetail = () => onOpen(bookmark.id);
+  const showLoading = loadState === "loading";
+  const showError = loadState === "error";
+  const showEmpty = !showLoading && !showError && items.length === 0;
 
   return (
-    <article className="bookmark-card">
-      <div
-        className="bookmark-card-hitarea"
-        role="button"
-        tabIndex={0}
-        aria-label={`打开归档：${bookmark.title}`}
-        onClick={openDetail}
-        onKeyDown={(event) => handleCardKeyDown(event, openDetail)}
-      >
-        <span className="bookmark-card-accent" aria-hidden="true" />
-        <h2 className="bookmark-card-title">{bookmark.title}</h2>
-        <div className="bookmark-card-summary">
-          {hasPreview ? (
-            <div className="bookmark-card-media" aria-hidden="true">
-              <span>{getDomainMonogram(bookmark.domain)}</span>
-            </div>
-          ) : null}
-          <p className="bookmark-card-description">{summary}</p>
+    <>
+      {managerFeedback ? (
+        <p className={managerFeedback.kind === "error" ? "home-feedback is-error" : "home-feedback"}>
+          {managerFeedback.message}
+        </p>
+      ) : null}
+
+      {showLoading && items.length > 0 ? (
+        <p className="home-loading-note">正在刷新归档列表...</p>
+      ) : null}
+
+      {showLoading && items.length === 0 ? (
+        <section className="home-grid">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <HomeBookmarkSkeleton key={index} withPreview={index % 3 !== 1} />
+          ))}
+        </section>
+      ) : showError ? (
+        <section className="home-empty-panel">
+          <h2>归档列表加载失败</h2>
+          <p>{listError ?? "暂时无法读取当前账号的归档列表。"}</p>
+        </section>
+      ) : showEmpty ? (
+        <section className="home-empty-panel">
+          <h2>{hasActiveFilters ? "当前筛选下没有匹配的归档" : "还没有归档记录"}</h2>
+          <p>{hasActiveFilters ? "换个关键词，或者切换收藏夹和标签试试。" : "扩展同步的网页归档会优先显示在这里。"}</p>
+        </section>
+      ) : (
+        <section className="home-grid">
+          {items.map((bookmark) => (
+            <HomeBookmarkCard key={bookmark.id} bookmark={bookmark} onOpen={onOpenBookmark} />
+          ))}
+        </section>
+      )}
+
+      <details className="home-manager">
+        <summary>高级管理</summary>
+        <div className="home-manager-body">
+          <p className="home-manager-note">需要新建子收藏夹、改路径、删除标签时，在这里处理。</p>
+          <LibraryManager
+            folders={folders}
+            tags={tags}
+            selectedFolderId={selectedFolderId}
+            selectedTagId={selectedTagId}
+            busy={managerBusy}
+            feedback={null}
+            onSelectFolderFilter={onSelectFolder}
+            onSelectTagFilter={onSelectTag}
+            onCreateRootFolder={onCreateRootFolder}
+            onCreateChildFolder={onCreateChildFolder}
+            onEditFolderPath={onEditFolderPath}
+            onDeleteFolder={onDeleteFolder}
+            onCreateTag={onCreateTag}
+            onEditTag={onEditTag}
+            onDeleteTag={onDeleteTag}
+          />
         </div>
-        <footer className="bookmark-card-footer">
-          <a
-            className="bookmark-card-domain"
-            href={bookmark.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <LinkIcon />
-            <span>{bookmark.domain}</span>
-          </a>
-          <span className="bookmark-card-time">
-            <ClockIcon />
-            <span>{formatRelativeWhen(bookmark.updatedAt)}</span>
-          </span>
-        </footer>
-      </div>
-    </article>
+      </details>
+
+      <footer className="home-footer">
+        <span>Privacy</span>
+        <span>Terms</span>
+        <span>Support</span>
+        <span>KeepPage</span>
+      </footer>
+    </>
   );
 }
 
@@ -1068,13 +1047,7 @@ function AuthPanel({
   return (
     <main className="auth-shell">
       <section className="auth-card">
-        <p className="eyebrow">KeepPage Account</p>
-        <h1>{isRegister ? "注册你的归档空间" : "登录 KeepPage"}</h1>
-        <p className="subtitle">
-          {isRegister
-            ? "注册后，每个账号会拥有独立的网页归档列表、详情和版本记录。"
-            : "登录后才能查看自己的归档，并继续让扩展把页面同步到当前账号。"}
-        </p>
+        <h1>{isRegister ? "创建账号" : "登录"}</h1>
 
         <div className="auth-switch">
           <button
@@ -1096,39 +1069,36 @@ function AuthPanel({
         <form className="auth-form" onSubmit={onSubmit}>
           {isRegister ? (
             <label className="field">
-              <span>昵称</span>
               <input
                 value={name}
                 onChange={(event) => onNameChange(event.target.value)}
-                placeholder="给自己起个名字，可选"
+                placeholder="昵称（可选）"
               />
             </label>
           ) : null}
           <label className="field">
-            <span>邮箱</span>
             <input
               type="email"
               value={email}
               onChange={(event) => onEmailChange(event.target.value)}
-              placeholder="you@example.com"
+              placeholder="邮箱"
               autoComplete="email"
               required
             />
           </label>
           <label className="field">
-            <span>密码</span>
             <input
               type="password"
               value={password}
               onChange={(event) => onPasswordChange(event.target.value)}
-              placeholder={isRegister ? "至少 8 位" : "输入密码"}
+              placeholder={isRegister ? "密码（至少 8 位）" : "密码"}
               autoComplete={isRegister ? "new-password" : "current-password"}
               required
             />
           </label>
           {error ? <p className="auth-error">{error}</p> : null}
           <button className="primary-button auth-submit" type="submit" disabled={submitting}>
-            {submitting ? "提交中..." : isRegister ? "注册并进入工作台" : "登录进入工作台"}
+            {submitting ? "提交中..." : isRegister ? "注册" : "登录"}
           </button>
         </form>
       </section>
@@ -1175,65 +1145,32 @@ function DetailPanel({
         <button className="ghost-button" type="button" onClick={goToList}>
           ← 返回列表
         </button>
+
         <div className="detail-block">
-          <p className="eyebrow">Archive Detail</p>
           <h2 className="detail-title">{detail.bookmark.title}</h2>
           <a className="url" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
             {detail.bookmark.sourceUrl}
           </a>
-          <p className="detail-note">{detail.bookmark.note || "暂无备注。"}</p>
-        </div>
-
-        <div className="detail-block">
-          <div className="detail-meta-row">
-            <span>文件夹</span>
-            <strong>{detail.bookmark.folder?.path ?? "未归档文件夹"}</strong>
-          </div>
-          <div className="detail-meta-row">
-            <span>创建时间</span>
-            <strong>{formatWhen(detail.bookmark.createdAt)}</strong>
-          </div>
-          <div className="detail-meta-row">
-            <span>更新时间</span>
-            <strong>{formatWhen(detail.bookmark.updatedAt)}</strong>
-          </div>
-        </div>
-
-        <div className="detail-block">
-          <p className="panel-title">标签</p>
-          <div className="tags">
-            {detail.bookmark.tags.length > 0 ? (
-              detail.bookmark.tags.map((tag) => (
-                <span className="tag" key={tag.id}>
-                  #{tag.name}
-                </span>
-              ))
-            ) : (
-              <span className="tag muted-tag">#未打标签</span>
-            )}
-          </div>
         </div>
 
         <div className="detail-block compact-gap">
           <div className="panel-header-inline">
-            <p className="panel-title">元数据编辑</p>
+            <p className="panel-title">编辑</p>
             <button className="primary-button compact-button" type="button" onClick={onMetadataSave} disabled={metadataSaving}>
               {metadataSaving ? "保存中..." : "保存"}
             </button>
           </div>
           <label className="field">
-            <span>备注</span>
             <textarea
               value={metadataNote}
               onChange={(event) => onMetadataNoteChange(event.target.value)}
-              rows={4}
-              placeholder="补充这条网页归档的用途、上下文或摘要"
+              rows={3}
+              placeholder="备注"
             />
           </label>
           <label className="field">
-            <span>收藏夹</span>
             <select value={metadataFolderId} onChange={(event) => onMetadataFolderChange(event.target.value)}>
-              <option value="">未归档文件夹</option>
+              <option value="">未归档</option>
               {folders.map((folder) => (
                 <option key={folder.id} value={folder.id}>
                   {folder.path}
@@ -1241,28 +1178,23 @@ function DetailPanel({
               ))}
             </select>
           </label>
-          <div className="field">
-            <span>标签</span>
-            {tags.length > 0 ? (
-              <div className="tag-selector">
-                {tags.map((tag) => {
-                  const checked = metadataTagIds.includes(tag.id);
-                  return (
-                    <label className={checked ? "tag-check is-active" : "tag-check"} key={tag.id}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => onMetadataTagToggle(tag.id)}
-                      />
-                      <span>#{tag.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="detail-note">还没有标签，可以先回到列表页创建。</p>
-            )}
-          </div>
+          {tags.length > 0 ? (
+            <div className="tag-selector">
+              {tags.map((tag) => {
+                const checked = metadataTagIds.includes(tag.id);
+                return (
+                  <label className={checked ? "tag-check is-active" : "tag-check"} key={tag.id}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onMetadataTagToggle(tag.id)}
+                    />
+                    <span>#{tag.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
           {metadataFeedback ? (
             <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
               {metadataFeedback.message}
@@ -1271,9 +1203,24 @@ function DetailPanel({
         </div>
 
         <div className="detail-block">
+          <div className="detail-meta-row">
+            <span>创建</span>
+            <strong>{formatWhen(detail.bookmark.createdAt)}</strong>
+          </div>
+          <div className="detail-meta-row">
+            <span>更新</span>
+            <strong>{formatWhen(detail.bookmark.updatedAt)}</strong>
+          </div>
+          <div className="detail-meta-row">
+            <span>体积</span>
+            <strong>{formatFileSize(selectedVersion.archiveSizeBytes ?? quality.archiveSignals.fileSize)}</strong>
+          </div>
+        </div>
+
+        <div className="detail-block">
           <div className="panel-header-inline">
-            <p className="panel-title">版本列表</p>
-            <span className="panel-subtle">共 {detail.versions.length} 个版本</span>
+            <p className="panel-title">版本</p>
+            <span className="panel-subtle">{detail.versions.length}</span>
           </div>
           <div className="version-list">
             {detail.versions.map((version) => {
@@ -1285,31 +1232,58 @@ function DetailPanel({
                   type="button"
                   onClick={() => openBookmark(detail.bookmark.id, version.id)}
                 >
-                  <div>
-                    <strong>v{version.versionNo}</strong>
-                    <span>{formatWhen(version.createdAt)}</span>
-                  </div>
-                  <div>
-                    <span className={qualityClass(version.quality.grade)}>
-                      {qualityLabel(version.quality.grade)}
-                    </span>
-                  </div>
+                  <strong>v{version.versionNo}</strong>
+                  <span>{formatWhen(version.createdAt)}</span>
                 </button>
               );
             })}
           </div>
         </div>
+
+        <details className="detail-quality-toggle">
+          <summary>质量报告 · {quality.score}分</summary>
+          <div className="detail-block compact-gap">
+            <div className="signal-grid">
+              <article className="signal-card">
+                <span>文本保留</span>
+                <strong>
+                  {retentionLabel(
+                    quality.archiveSignals.textLength,
+                    quality.liveSignals.textLength,
+                  )}
+                </strong>
+              </article>
+              <article className="signal-card">
+                <span>图片保留</span>
+                <strong>
+                  {retentionLabel(
+                    quality.archiveSignals.imageCount,
+                    quality.liveSignals.imageCount,
+                  )}
+                </strong>
+              </article>
+            </div>
+            {quality.reasons.length > 0 ? (
+              <div className="reason-list">
+                {quality.reasons.map((reason) => (
+                  <article className="reason-card" key={`${selectedVersion.id}-${reason.code}`}>
+                    <strong>{reason.code}</strong>
+                    <p>{reason.message}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="detail-note">无质量告警。</p>
+            )}
+          </div>
+        </details>
       </aside>
 
       <section className="detail-preview-panel">
         <header className="preview-header">
-          <div>
-            <p className="eyebrow">Preview</p>
-            <h3>归档预览 · v{selectedVersion.versionNo}</h3>
-          </div>
           <div className="preview-actions">
             <a className="secondary-button" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
-              打开原网页
+              原网页
             </a>
             {previewState.status === "ready" ? (
               <a
@@ -1317,7 +1291,7 @@ function DetailPanel({
                 href={previewState.url}
                 download={`keeppage-${detail.bookmark.id}-v${selectedVersion.versionNo}.html`}
               >
-                下载归档 HTML
+                下载 HTML
               </a>
             ) : null}
           </div>
@@ -1325,14 +1299,14 @@ function DetailPanel({
 
         {!selectedVersion.archiveAvailable ? (
           <section className="empty-state preview-empty">
-            <h2>当前版本缺少真实归档对象</h2>
-            <p>版本元数据已经存在，但 `archive.html` 目前不可读，因此不展示预览。</p>
+            <h2>归档对象不可用</h2>
+            <p>版本元数据存在，但归档文件目前不可读。</p>
           </section>
         ) : previewState.status === "loading" ? (
-          <section className="loading preview-empty">正在拉取归档 HTML...</section>
+          <section className="loading preview-empty">正在加载...</section>
         ) : previewState.status === "error" ? (
           <section className="empty-state preview-empty">
-            <h2>归档对象加载失败</h2>
+            <h2>加载失败</h2>
             <p>{previewState.error}</p>
           </section>
         ) : previewState.status === "ready" ? (
@@ -1343,86 +1317,6 @@ function DetailPanel({
           />
         ) : null}
       </section>
-
-      <aside className="detail-panel">
-        <div className="detail-block compact-gap">
-          <div className="panel-header-inline">
-            <p className="panel-title">质量概览</p>
-            <span className={qualityClass(quality.grade)}>{qualityLabel(quality.grade)}</span>
-          </div>
-          <div className="score-card">
-            <strong>{quality.score}</strong>
-            <span>质量分 / 100</span>
-          </div>
-          <div className="detail-meta-row">
-            <span>Capture Profile</span>
-            <strong>{selectedVersion.captureProfile}</strong>
-          </div>
-          <div className="detail-meta-row">
-            <span>对象状态</span>
-            <strong>{selectedVersion.archiveAvailable ? "可读取" : "缺失"}</strong>
-          </div>
-          <div className="detail-meta-row">
-            <span>归档体积</span>
-            <strong>{formatFileSize(selectedVersion.archiveSizeBytes ?? quality.archiveSignals.fileSize)}</strong>
-          </div>
-          <div className="detail-meta-row">
-            <span>对象键</span>
-            <code className="inline-code">{selectedVersion.htmlObjectKey}</code>
-          </div>
-        </div>
-
-        <div className="detail-block compact-gap">
-          <p className="panel-title">质量诊断</p>
-          {quality.reasons.length > 0 ? (
-            <div className="reason-list">
-              {quality.reasons.map((reason) => (
-                <article className="reason-card" key={`${selectedVersion.id}-${reason.code}`}>
-                  <strong>{reason.code}</strong>
-                  <p>{reason.message}</p>
-                  <span>影响分：-{reason.impact}</span>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="detail-note">当前版本没有明显质量告警。</p>
-          )}
-        </div>
-
-        <div className="detail-block compact-gap">
-          <p className="panel-title">信号摘要</p>
-          <div className="signal-grid">
-            <article className="signal-card">
-              <span>文本保留</span>
-              <strong>
-                {retentionLabel(
-                  quality.archiveSignals.textLength,
-                  quality.liveSignals.textLength,
-                )}
-              </strong>
-            </article>
-            <article className="signal-card">
-              <span>图片保留</span>
-              <strong>
-                {retentionLabel(
-                  quality.archiveSignals.imageCount,
-                  quality.liveSignals.imageCount,
-                )}
-              </strong>
-            </article>
-            <article className="signal-card">
-              <span>iframe</span>
-              <strong>
-                {quality.archiveSignals.iframeCount} / {quality.liveSignals.iframeCount}
-              </strong>
-            </article>
-            <article className="signal-card">
-              <span>正文长度</span>
-              <strong>{quality.archiveSignals.textLength.toLocaleString()}</strong>
-            </article>
-          </div>
-        </div>
-      </aside>
     </section>
   );
 }
@@ -2034,81 +1928,49 @@ export function App() {
     );
   }
 
-  if (route.page === "list") {
-    return (
-      <HomePage
-        user={session.user}
-        items={items}
-        loadState={loadState}
-        listError={listError}
-        searchInput={searchInput}
-        onSearchChange={setSearchInput}
-        folders={folders}
-        tags={tags}
-        selectedFolderId={selectedFolderId}
-        selectedTagId={selectedTagId}
-        hasActiveFilters={Boolean(searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId)}
-        isPending={isPending}
-        managerBusy={managerBusy}
-        managerFeedback={managerFeedback}
-        onSelectFolder={setSelectedFolderId}
-        onSelectTag={setSelectedTagId}
-        onOpenBookmark={openBookmark}
-        onCreateRootFolder={() => void handleCreateFolder()}
-        onCreateChildFolder={(folder) => void handleCreateFolder(folder)}
-        onEditFolderPath={(folder) => void handleEditFolderPath(folder)}
-        onDeleteFolder={(folder) => void handleDeleteFolder(folder)}
-        onCreateTag={() => void handleCreateTag()}
-        onEditTag={(tag) => void handleEditTag(tag)}
-        onDeleteTag={(tag) => void handleDeleteTag(tag)}
-        onOpenImportNew={goToImportNew}
-        onOpenImportHistory={goToImportList}
-        onLogout={() => logout()}
-      />
-    );
-  }
-
-  const isDetailRoute = route.page === "detail";
-  const pageTitle = route.page === "detail"
-    ? "归档查看页"
-    : "批量导入工作台";
-  const pageSubtitle = route.page === "detail"
-    ? "查看主档、切换版本，并直接维护收藏夹、标签与备注。"
-    : "先轻导入再按需归档，导入结果、失败原因和去重命中都可追踪。";
-
   return (
-    <main className={`page-shell${isDetailRoute ? " is-detail-route" : ""}`}>
-      <div className="texture" />
-      <section className={`topbar${isDetailRoute ? " is-detail-route" : ""}`}>
-        <div>
-          <p className="eyebrow">KeepPage Workspace</p>
-          <h1>{pageTitle}</h1>
-          <p className="subtitle">{pageSubtitle}</p>
-        </div>
-        <div className="topbar-actions">
-          <button className="secondary-button" type="button" onClick={goToList}>
-            归档列表
-          </button>
-          <button className="secondary-button" type="button" onClick={goToImportNew}>
-            新建导入
-          </button>
-          <button className="secondary-button" type="button" onClick={goToImportList}>
-            导入历史
-          </button>
-          <div className="user-chip">
-            <strong>{session.user.name || session.user.email}</strong>
-            <span>{session.user.email}</span>
-          </div>
-          <div className="sync-badge">
-            数据源：<b>实时 API</b>
-          </div>
-          <button className="ghost-button" type="button" onClick={() => logout()}>
-            退出登录
-          </button>
-        </div>
-      </section>
-
-      {route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
+    <AppShell
+      user={session.user}
+      items={items}
+      folders={folders}
+      tags={tags}
+      selectedFolderId={selectedFolderId}
+      selectedTagId={selectedTagId}
+      searchInput={searchInput}
+      onSearchChange={setSearchInput}
+      managerBusy={managerBusy}
+      onSelectFolder={setSelectedFolderId}
+      onSelectTag={setSelectedTagId}
+      onCreateRootFolder={() => void handleCreateFolder()}
+      onCreateTag={() => void handleCreateTag()}
+      onOpenImportNew={goToImportNew}
+      onOpenImportHistory={goToImportList}
+      onLogout={() => logout()}
+    >
+      {route.page === "list" ? (
+        <HomePage
+          items={items}
+          loadState={loadState}
+          listError={listError}
+          hasActiveFilters={Boolean(searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId)}
+          managerBusy={managerBusy}
+          managerFeedback={managerFeedback}
+          folders={folders}
+          tags={tags}
+          selectedFolderId={selectedFolderId}
+          selectedTagId={selectedTagId}
+          onSelectFolder={setSelectedFolderId}
+          onSelectTag={setSelectedTagId}
+          onOpenBookmark={openBookmark}
+          onCreateRootFolder={() => void handleCreateFolder()}
+          onCreateChildFolder={(folder) => void handleCreateFolder(folder)}
+          onEditFolderPath={(folder) => void handleEditFolderPath(folder)}
+          onDeleteFolder={(folder) => void handleDeleteFolder(folder)}
+          onCreateTag={() => void handleCreateTag()}
+          onEditTag={(tag) => void handleEditTag(tag)}
+          onDeleteTag={(tag) => void handleDeleteTag(tag)}
+        />
+      ) : route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
         <section className="loading">正在加载归档详情...</section>
       ) : route.page === "detail" && detailLoadState === "error" ? (
         <EmptyState
@@ -2187,6 +2049,6 @@ export function App() {
           onOpenBookmark={(bookmarkId) => openBookmark(bookmarkId)}
         />
       ) : null}
-    </main>
+    </AppShell>
   );
 }
