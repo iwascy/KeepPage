@@ -995,26 +995,22 @@ function ManagerDialog({
   error,
   nameValue,
   pathValue,
-  colorValue,
   onClose,
   onSubmit,
   onConfirmDelete,
   onNameChange,
   onPathChange,
-  onColorChange,
 }: {
   state: ManagerDialogState;
   busy: boolean;
   error: string | null;
   nameValue: string;
   pathValue: string;
-  colorValue: string;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onConfirmDelete: () => void;
   onNameChange: (value: string) => void;
   onPathChange: (value: string) => void;
-  onColorChange: (value: string) => void;
 }) {
   if (state.kind === "closed") {
     return null;
@@ -1023,7 +1019,7 @@ function ManagerDialog({
   const isDeleteDialog = state.kind === "delete-folder" || state.kind === "delete-tag";
   const isFolderDialog = state.kind === "create-folder" || state.kind === "edit-folder" || state.kind === "delete-folder";
   const isTagDialog = state.kind === "create-tag" || state.kind === "edit-tag" || state.kind === "delete-tag";
-  const tagColor = colorValue.trim();
+  const isTagEditorDialog = isTagDialog && !isDeleteDialog;
 
   let title = "";
   let description = "";
@@ -1050,12 +1046,12 @@ function ManagerDialog({
   } else if (state.kind === "create-tag") {
     eyebrow = "New Tag";
     title = "新建一个标签";
-    description = "做一个好记的主题标签，后续筛选、批量整理都会更顺手。";
+    description = "给常用主题起个清晰名字，后续筛选、批量整理都会更顺手。";
     submitLabel = "创建标签";
   } else if (state.kind === "edit-tag") {
     eyebrow = "Edit Tag";
-    title = "调整标签名称和颜色";
-    description = "标签名保持简短就好，颜色可以写成 `blue`、`#1d4ed8` 这类值。";
+    title = "调整标签名称";
+    description = "保留一个简短好记的主题名，保存后会同步到所有已挂载网页。";
     submitLabel = "保存标签";
   } else {
     eyebrow = "Delete Tag";
@@ -1063,6 +1059,12 @@ function ManagerDialog({
     description = "已经挂载到网页上的这个标签也会一起解除，但不会删除网页本身。";
     submitLabel = "删除标签";
   }
+
+  const dialogClassName = [
+    "manager-dialog",
+    isDeleteDialog ? "is-danger" : "",
+    isTagEditorDialog ? "is-tag-editor-dialog" : "",
+  ].filter(Boolean).join(" ");
 
   return (
     <div
@@ -1077,24 +1079,24 @@ function ManagerDialog({
       <div
         aria-labelledby="manager-dialog-title"
         aria-modal="true"
-        className={isDeleteDialog ? "manager-dialog is-danger" : "manager-dialog"}
+        className={dialogClassName}
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="manager-dialog-accent" />
-        <div className="manager-dialog-header">
-          <div className="manager-dialog-heading">
-            <p className="eyebrow">{eyebrow}</p>
-            <h2 id="manager-dialog-title">{title}</h2>
-            <p>{description}</p>
-          </div>
-          <button className="ghost-button manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
-            关闭
-          </button>
-        </div>
 
         {isDeleteDialog ? (
           <>
+            <div className="manager-dialog-header">
+              <div className="manager-dialog-heading">
+                <p className="eyebrow">{eyebrow}</p>
+                <h2 id="manager-dialog-title">{title}</h2>
+                <p>{description}</p>
+              </div>
+              <button className="ghost-button manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
+                关闭
+              </button>
+            </div>
             <section className="manager-dialog-hero">
               <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
                 {isFolderDialog ? "DIR" : "TAG"}
@@ -1124,8 +1126,72 @@ function ManagerDialog({
               </button>
             </div>
           </>
+        ) : isTagEditorDialog ? (
+          <form className="manager-dialog-tag-shell" onSubmit={onSubmit}>
+            <button
+              className="ghost-button manager-dialog-close manager-dialog-close-floating"
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+            >
+              关闭
+            </button>
+            <div aria-hidden="true" className="manager-dialog-tag-orb is-top" />
+            <div aria-hidden="true" className="manager-dialog-tag-orb is-bottom" />
+            <div className="manager-dialog-tag-heading">
+              <p className="eyebrow">{eyebrow}</p>
+              <h2 id="manager-dialog-title">{title}</h2>
+              <p>{description}</p>
+            </div>
+
+            <section className="manager-dialog-tag-preview-card">
+              <span className="manager-dialog-tag-preview-label">
+                {state.kind === "create-tag" ? "即将创建" : "保存后效果"}
+              </span>
+              <strong className="manager-dialog-tag-preview-name">
+                #{nameValue.trim() || "新标签"}
+              </strong>
+              <p>
+                {state.kind === "create-tag"
+                  ? "创建完成后，这个标签可以立即用于书签筛选和批量整理。"
+                  : "保存后会保留原有标签关系，只更新显示名称。"}
+              </p>
+            </section>
+
+            <label className="field manager-dialog-tag-field">
+              <span>标签名称</span>
+              <input
+                autoFocus
+                maxLength={80}
+                placeholder={state.kind === "create-tag" ? "例如：稍后细读" : "输入新的标签名称"}
+                value={nameValue}
+                onChange={(event) => onNameChange(event.target.value)}
+              />
+            </label>
+
+            {error ? <p className="manager-dialog-error">{error}</p> : null}
+
+            <div className="manager-dialog-actions manager-dialog-tag-actions">
+              <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
+                取消
+              </button>
+              <button className="primary-button manager-dialog-tag-submit" type="submit" disabled={busy}>
+                {busy ? "处理中..." : submitLabel}
+              </button>
+            </div>
+          </form>
         ) : (
           <form className="manager-dialog-form" onSubmit={onSubmit}>
+            <div className="manager-dialog-header">
+              <div className="manager-dialog-heading">
+                <p className="eyebrow">{eyebrow}</p>
+                <h2 id="manager-dialog-title">{title}</h2>
+                <p>{description}</p>
+              </div>
+              <button className="ghost-button manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
+                关闭
+              </button>
+            </div>
             <section className="manager-dialog-hero">
               <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
                 {isFolderDialog ? "DIR" : "TAG"}
@@ -1172,44 +1238,6 @@ function ManagerDialog({
                   onChange={(event) => onPathChange(event.target.value)}
                 />
               </label>
-            ) : null}
-
-            {state.kind === "create-tag" || state.kind === "edit-tag" ? (
-              <>
-                <label className="field">
-                  <span>标签名称</span>
-                  <input
-                    autoFocus
-                    maxLength={80}
-                    placeholder="例如：稍后细读"
-                    value={nameValue}
-                    onChange={(event) => onNameChange(event.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>颜色说明</span>
-                  <input
-                    maxLength={32}
-                    placeholder="可选，例如 blue 或 #1d4ed8"
-                    value={colorValue}
-                    onChange={(event) => onColorChange(event.target.value)}
-                  />
-                </label>
-                <div className="manager-dialog-tag-preview">
-                  {tagColor ? (
-                    <span
-                      className="manager-dialog-tag-swatch"
-                      style={{ backgroundColor: tagColor }}
-                    />
-                  ) : (
-                    <span className="manager-dialog-tag-swatch is-empty" />
-                  )}
-                  <span className="manager-dialog-tag-chip">
-                    #{nameValue.trim() || "新标签"}
-                  </span>
-                  <small>{tagColor || "未设置颜色时会沿用默认样式。"}</small>
-                </div>
-              </>
             ) : null}
 
             {error ? <p className="manager-dialog-error">{error}</p> : null}
@@ -1326,10 +1354,7 @@ function LibraryManager({
               tags.map((tag) => (
                 <article className="tag-manager-row" key={tag.id}>
                   <div className="tag-manager-main">
-                    <span className="tag">
-                      #{tag.name}
-                      {tag.color ? <small>{tag.color}</small> : null}
-                    </span>
+                    <span className="tag">#{tag.name}</span>
                   </div>
                   <div className="folder-row-actions">
                     <button
@@ -1757,7 +1782,6 @@ export function App({
   const [managerDialog, setManagerDialog] = useState<ManagerDialogState>({ kind: "closed" });
   const [managerDialogName, setManagerDialogName] = useState("");
   const [managerDialogPath, setManagerDialogPath] = useState("");
-  const [managerDialogColor, setManagerDialogColor] = useState("");
   const [managerDialogError, setManagerDialogError] = useState<string | null>(null);
   const [metadataNote, setMetadataNote] = useState("");
   const [metadataFolderId, setMetadataFolderId] = useState("");
@@ -2112,30 +2136,25 @@ export function App({
     if (managerDialog.kind === "create-folder") {
       setManagerDialogName("");
       setManagerDialogPath("");
-      setManagerDialogColor("");
       return;
     }
     if (managerDialog.kind === "edit-folder") {
       setManagerDialogName("");
       setManagerDialogPath(managerDialog.folder.path);
-      setManagerDialogColor("");
       return;
     }
     if (managerDialog.kind === "create-tag") {
       setManagerDialogName("");
       setManagerDialogPath("");
-      setManagerDialogColor("");
       return;
     }
     if (managerDialog.kind === "edit-tag") {
       setManagerDialogName(managerDialog.tag.name);
       setManagerDialogPath("");
-      setManagerDialogColor(managerDialog.tag.color ?? "");
       return;
     }
     setManagerDialogName("");
     setManagerDialogPath("");
-    setManagerDialogColor("");
   }, [managerDialog]);
 
   useEffect(() => {
@@ -2436,13 +2455,12 @@ export function App({
     });
   }
 
-  async function handleCreateTag(name: string, color?: string) {
+  async function handleCreateTag(name: string) {
     const trimmedName = name.trim();
     if (isDemoMode) {
       try {
         const result = createDemoTag(demoState, {
           name: trimmedName,
-          color,
         });
         setDemoState(result.workspace);
         setManagerFeedback({
@@ -2462,18 +2480,16 @@ export function App({
     await runManagerAction(async () => {
       const tag = await createTag({
         name: trimmedName,
-        color,
       }, authToken!);
       return `已创建标签：#${tag.name}`;
     });
   }
 
-  async function handleEditTag(tag: Tag, nextName: string, nextColorRaw: string) {
+  async function handleEditTag(tag: Tag, nextName: string) {
     if (isDemoMode) {
       try {
         const result = updateDemoTag(demoState, tag.id, {
           name: nextName.trim(),
-          color: nextColorRaw.trim() || null,
         });
         setDemoState(result.workspace);
         setManagerFeedback({
@@ -2493,7 +2509,6 @@ export function App({
     await runManagerAction(async () => {
       const updated = await updateTag(tag.id, {
         name: nextName.trim(),
-        color: nextColorRaw.trim() || null,
       }, authToken!);
       return `已更新标签：#${updated.name}`;
     });
@@ -2564,7 +2579,7 @@ export function App({
           setManagerDialogError("标签名称不能为空。");
           return;
         }
-        await handleCreateTag(trimmedName, managerDialogColor.trim() || undefined);
+        await handleCreateTag(trimmedName);
         closeManagerDialog();
         return;
       }
@@ -2575,7 +2590,7 @@ export function App({
           setManagerDialogError("标签名称不能为空。");
           return;
         }
-        await handleEditTag(managerDialog.tag, trimmedName, managerDialogColor);
+        await handleEditTag(managerDialog.tag, trimmedName);
         closeManagerDialog();
       }
     } catch (error) {
@@ -2854,13 +2869,11 @@ export function App({
         error={managerDialogError}
         nameValue={managerDialogName}
         pathValue={managerDialogPath}
-        colorValue={managerDialogColor}
         onClose={closeManagerDialog}
         onSubmit={(event) => void handleManagerDialogSubmit(event)}
         onConfirmDelete={() => void handleManagerDialogDelete()}
         onNameChange={setManagerDialogName}
         onPathChange={setManagerDialogPath}
-        onColorChange={setManagerDialogColor}
       />
     </>
   );
