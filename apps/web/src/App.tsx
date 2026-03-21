@@ -1,6 +1,7 @@
 import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   useDeferredValue,
   useEffect,
@@ -91,6 +92,26 @@ type ManagerDialogState =
   | { kind: "create-tag" }
   | { kind: "edit-tag"; tag: Tag }
   | { kind: "delete-tag"; tag: Tag };
+
+type ContextMenuState =
+  | { kind: "closed" }
+  | { kind: "bookmark"; bookmark: Bookmark; x: number; y: number }
+  | { kind: "folder"; folder: Folder; x: number; y: number };
+
+type ContextMenuItem = {
+  id: string;
+  label: string;
+  icon: string;
+  shortcut?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+};
+
+type ContextMenuGroup = {
+  label?: string;
+  items: ContextMenuItem[];
+};
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 
@@ -215,6 +236,45 @@ function formatFileSize(input?: number) {
     return `${(input / 1024).toFixed(1)} KB`;
   }
   return `${input} B`;
+}
+
+async function copyTextToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.append(textarea);
+  textarea.select();
+  const successful = document.execCommand("copy");
+  textarea.remove();
+  if (!successful) {
+    throw new Error("当前环境不支持复制到剪贴板。");
+  }
+}
+
+function buildAppUrl(hash: string) {
+  return new URL(hash, window.location.href).toString();
+}
+
+function clampContextMenuPosition(x: number, y: number, width: number, height: number) {
+  const horizontalGap = 20;
+  const verticalGap = 20;
+  const left = Math.min(
+    Math.max(horizontalGap, x),
+    Math.max(horizontalGap, window.innerWidth - width - horizontalGap),
+  );
+  const top = Math.min(
+    Math.max(verticalGap, y),
+    Math.max(verticalGap, window.innerHeight - height - verticalGap),
+  );
+  return { left, top };
 }
 
 function folderDepth(path: string) {
@@ -464,9 +524,13 @@ function homeCoverTone(domain: string) {
 function HomeBookmarkCard({
   bookmark,
   onOpen,
+  onContextMenu,
+  isContextOpen,
 }: {
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
+  onContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
+  isContextOpen: boolean;
 }) {
   const [coverImageFailed, setCoverImageFailed] = useState(false);
 
@@ -481,10 +545,15 @@ function HomeBookmarkCard({
   const coverTone = homeCoverTone(bookmark.domain);
 
   return (
-    <article className={`home-bookmark-card${hasPreview ? " has-preview" : ""}`}>
+    <article
+      className={`home-bookmark-card${hasPreview ? " has-preview" : ""}${isContextOpen ? " is-context-open" : ""}`}
+      onContextMenuCapture={(event) => onContextMenu(bookmark, event)}
+      onContextMenu={(event) => onContextMenu(bookmark, event)}
+    >
       <button
         className="home-bookmark-hitarea"
         type="button"
+        onContextMenuCapture={(event) => onContextMenu(bookmark, event)}
         onClick={() => onOpen(bookmark.id)}
         aria-label={`打开归档：${bookmark.title}`}
       >
@@ -573,6 +642,8 @@ function AppShell({
   onOpenImportNew,
   onOpenImportHistory,
   onLogout,
+  contextMenuFolderId,
+  onFolderContextMenu,
   children,
   logoutLabel = "退出登录",
 }: {
@@ -593,6 +664,8 @@ function AppShell({
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
   onLogout: () => void;
+  contextMenuFolderId: string | null;
+  onFolderContextMenu: (folder: Folder, event: ReactMouseEvent<HTMLElement>) => void;
   children: ReactNode;
   logoutLabel?: string;
 }) {
@@ -792,15 +865,22 @@ function AppShell({
               <span className="home-folder-toggle-spacer" aria-hidden="true" />
             </div>
             {visibleFolderRows.map(({ folder, depth, hasChildren }) => (
-              <div className="home-folder-row" key={folder.id}>
+              <div
+                className="home-folder-row"
+                key={folder.id}
+                onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
+                onContextMenu={(event) => onFolderContextMenu(folder, event)}
+              >
                 <button
                   className={[
                     "home-folder-main",
                     selectedFolderId === folder.id ? "is-active" : "",
                     depth > 0 ? "is-child" : "",
+                    contextMenuFolderId === folder.id ? "is-context-open" : "",
                   ].filter(Boolean).join(" ")}
                   type="button"
                   style={{ paddingLeft: `${12 + depth * 14}px` }}
+                  onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
                   onClick={() => onSelectFolder(selectedFolderId === folder.id ? "" : folder.id)}
                 >
                   <span className="home-folder-name">{folder.name}</span>
@@ -810,10 +890,11 @@ function AppShell({
                   <button
                     className={
                       collapsedFolderIds.has(folder.id)
-                        ? "home-folder-toggle is-collapsed"
-                        : "home-folder-toggle"
+                        ? `home-folder-toggle is-collapsed${contextMenuFolderId === folder.id ? " is-context-open" : ""}`
+                        : `home-folder-toggle${contextMenuFolderId === folder.id ? " is-context-open" : ""}`
                     }
                     type="button"
+                    onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
                     onClick={() => handleToggleFolder(folder)}
                     aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "收起"} ${folder.name}`}
                   >
@@ -948,6 +1029,8 @@ function HomePage({
   onCreateTag,
   onEditTag,
   onDeleteTag,
+  contextMenuBookmarkId,
+  onBookmarkContextMenu,
 }: {
   items: Bookmark[];
   loadState: LoadState;
@@ -969,6 +1052,8 @@ function HomePage({
   onCreateTag: () => void;
   onEditTag: (tag: Tag) => void;
   onDeleteTag: (tag: Tag) => void;
+  contextMenuBookmarkId: string | null;
+  onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
 }) {
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
@@ -1005,7 +1090,13 @@ function HomePage({
       ) : (
         <section className="home-grid">
           {items.map((bookmark) => (
-            <HomeBookmarkCard key={bookmark.id} bookmark={bookmark} onOpen={onOpenBookmark} />
+            <HomeBookmarkCard
+              key={bookmark.id}
+              bookmark={bookmark}
+              onOpen={onOpenBookmark}
+              onContextMenu={onBookmarkContextMenu}
+              isContextOpen={contextMenuBookmarkId === bookmark.id}
+            />
           ))}
         </section>
       )}
@@ -1513,6 +1604,114 @@ function LibraryManager({
   );
 }
 
+function ContextMenu({
+  state,
+  groups,
+  onClose,
+}: {
+  state: Exclude<ContextMenuState, { kind: "closed" }>;
+  groups: ContextMenuGroup[];
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = useState(() => ({ left: state.x, top: state.y }));
+
+  useEffect(() => {
+    if (!menuRef.current) {
+      return;
+    }
+    const currentMenu = menuRef.current;
+
+    const { width, height } = currentMenu.getBoundingClientRect();
+    setPosition(clampContextMenuPosition(state.x, state.y, width, height));
+  }, [groups, state.x, state.y]);
+
+  useEffect(() => {
+    if (!menuRef.current) {
+      return;
+    }
+    const currentMenu = menuRef.current;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!currentMenu.contains(event.target as Node)) {
+        onClose();
+      }
+    }
+
+    function handleWindowContextMenu(event: MouseEvent) {
+      if (!currentMenu.contains(event.target as Node)) {
+        onClose();
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    function handleViewportChange() {
+      onClose();
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("contextmenu", handleWindowContextMenu);
+    window.addEventListener("keydown", handleEscape);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("contextmenu", handleWindowContextMenu);
+      window.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="context-menu-layer">
+      <div
+        ref={menuRef}
+        className="context-menu"
+        role="menu"
+        aria-label={state.kind === "bookmark" ? `${state.bookmark.title} 的右键菜单` : `${state.folder.name} 的右键菜单`}
+        style={{
+          left: `${position.left}px`,
+          top: `${position.top}px`,
+        }}
+      >
+        {groups.map((group, groupIndex) => (
+          <div key={`${state.kind}-${groupIndex}`}>
+            {groupIndex > 0 ? <div className="context-menu-divider" aria-hidden="true" /> : null}
+            {group.label ? <p className="context-menu-group-label">{group.label}</p> : null}
+            {group.items.map((item) => (
+              <button
+                key={item.id}
+                className={[
+                  "context-menu-item",
+                  item.danger ? "is-danger" : "",
+                  item.disabled ? "is-disabled" : "",
+                ].filter(Boolean).join(" ")}
+                type="button"
+                role="menuitem"
+                disabled={item.disabled}
+                onClick={() => {
+                  onClose();
+                  item.onSelect();
+                }}
+              >
+                <span className="context-menu-item-icon" aria-hidden="true">{item.icon}</span>
+                <span className="context-menu-item-label">{item.label}</span>
+                {item.shortcut ? <span className="context-menu-item-shortcut">{item.shortcut}</span> : null}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AuthPanel({
   mode,
   name,
@@ -1913,12 +2112,15 @@ export function App({
   const [metadataTagIds, setMetadataTagIds] = useState<string[]>([]);
   const [metadataSaving, setMetadataSaving] = useState(false);
   const [metadataFeedback, setMetadataFeedback] = useState<InlineFeedback | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: "closed" });
   const [isPending, startTransition] = useTransition();
 
   const deferredSearch = useDeferredValue(searchInput);
   const authToken = session.status === "authenticated" ? session.token : null;
   const logoutLabel = isDemoMode ? "重置 Mock 数据" : "退出登录";
   const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
+  const activeBookmarkContextId = contextMenu.kind === "bookmark" ? contextMenu.bookmark.id : null;
+  const activeFolderContextId = contextMenu.kind === "folder" ? contextMenu.folder.id : null;
 
   const importAdapter = useMemo<ImportPanelAdapter | undefined>(() => {
     if (!isDemoMode) {
@@ -1963,6 +2165,7 @@ export function App({
           message: "Mock 数据已重置到初始状态。",
         });
         setManagerDialog({ kind: "closed" });
+        setContextMenu({ kind: "closed" });
         setManagerDialogError(null);
         setMetadataFeedback(null);
       });
@@ -1991,6 +2194,7 @@ export function App({
       setArchivePreview({ status: "idle" });
       setManagerFeedback(null);
       setManagerDialog({ kind: "closed" });
+      setContextMenu({ kind: "closed" });
       setManagerDialogError(null);
       setMetadataFeedback(null);
     });
@@ -2001,9 +2205,48 @@ export function App({
     setManagerDialogError(null);
   }
 
+  function closeContextMenu() {
+    setContextMenu({ kind: "closed" });
+  }
+
   function openManagerDialog(nextState: ManagerDialogState) {
     setManagerDialog(nextState);
     setManagerDialogError(null);
+  }
+
+  function openBookmarkContextMenu(bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      kind: "bookmark",
+      bookmark,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  function openFolderContextMenu(folder: Folder, event: ReactMouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      kind: "folder",
+      folder,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  function pushHomeFeedback(kind: InlineFeedback["kind"], message: string) {
+    setManagerFeedback({ kind, message });
+  }
+
+  async function handleCopySuccess(value: string, successMessage: string) {
+    try {
+      await copyTextToClipboard(value);
+      pushHomeFeedback("success", successMessage);
+    } catch (error) {
+      pushHomeFeedback("error", toErrorMessage(error));
+    }
   }
 
   function handleProtectedApiError(error: unknown) {
@@ -2013,6 +2256,16 @@ export function App({
     }
     return false;
   }
+
+  useEffect(() => {
+    closeContextMenu();
+  }, [route]);
+
+  useEffect(() => {
+    if (isManagerDialogVisible) {
+      closeContextMenu();
+    }
+  }, [isManagerDialogVisible]);
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -2808,6 +3061,114 @@ export function App({
     }
   }
 
+  const contextMenuGroups = useMemo<ContextMenuGroup[]>(() => {
+    if (contextMenu.kind === "closed") {
+      return [];
+    }
+
+    if (contextMenu.kind === "bookmark") {
+      const bookmark = contextMenu.bookmark;
+      const detailHash = buildDetailHash(bookmark.id);
+      const detailUrl = buildAppUrl(detailHash);
+      return [
+        {
+          label: "书签",
+          items: [
+            {
+              id: "open-archive",
+              label: "打开归档",
+              icon: "AR",
+              shortcut: "Enter",
+              onSelect: () => openBookmark(bookmark.id),
+            },
+            {
+              id: "open-archive-new-tab",
+              label: "新标签打开归档",
+              icon: "NT",
+              onSelect: () => {
+                window.open(detailUrl, "_blank", "noopener,noreferrer");
+              },
+            },
+            {
+              id: "open-original",
+              label: "打开原网页",
+              icon: "GO",
+              onSelect: () => {
+                window.open(bookmark.sourceUrl, "_blank", "noopener,noreferrer");
+              },
+            },
+          ],
+        },
+        {
+          label: "快速操作",
+          items: [
+            {
+              id: "copy-original-link",
+              label: "复制原链接",
+              icon: "CP",
+              onSelect: () => void handleCopySuccess(bookmark.sourceUrl, "已复制原网页链接。"),
+            },
+            {
+              id: "copy-archive-link",
+              label: "复制归档链接",
+              icon: "LK",
+              onSelect: () => void handleCopySuccess(detailUrl, "已复制归档详情链接。"),
+            },
+            {
+              id: "edit-metadata",
+              label: "前往详情编辑",
+              icon: "ED",
+              onSelect: () => openBookmark(bookmark.id),
+            },
+          ],
+        },
+      ];
+    }
+
+    const folder = contextMenu.folder;
+    return [
+      {
+        label: "收藏夹",
+        items: [
+          {
+            id: "filter-folder",
+            label: selectedFolderId === folder.id ? "取消筛选" : "筛选这个收藏夹",
+            icon: "FL",
+            onSelect: () => {
+              setSelectedFolderId((current) => current === folder.id ? "" : folder.id);
+            },
+          },
+          {
+            id: "create-child-folder",
+            label: "新建子收藏夹",
+            icon: "NW",
+            disabled: managerBusy,
+            onSelect: () => openManagerDialog({ kind: "create-folder", parent: folder }),
+          },
+          {
+            id: "rename-folder",
+            label: "重命名收藏夹",
+            icon: "RN",
+            disabled: managerBusy,
+            onSelect: () => openManagerDialog({ kind: "edit-folder", folder }),
+          },
+        ],
+      },
+      {
+        items: [
+          {
+            id: "delete-folder",
+            label: "删除收藏夹",
+            icon: "DL",
+            danger: true,
+            disabled: managerBusy,
+            onSelect: () => openManagerDialog({ kind: "delete-folder", folder }),
+          },
+        ],
+      },
+    ];
+  }, [contextMenu, managerBusy, selectedFolderId]);
+
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthSubmitting(true);
@@ -2887,6 +3248,8 @@ export function App({
         onOpenImportNew={goToImportNew}
         onOpenImportHistory={goToImportList}
         onLogout={() => logout()}
+        contextMenuFolderId={activeFolderContextId}
+        onFolderContextMenu={openFolderContextMenu}
         logoutLabel={logoutLabel}
       >
         {route.page === "list" ? (
@@ -2911,6 +3274,8 @@ export function App({
             onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
             onEditTag={(tag) => openManagerDialog({ kind: "edit-tag", tag })}
             onDeleteTag={(tag) => openManagerDialog({ kind: "delete-tag", tag })}
+            contextMenuBookmarkId={activeBookmarkContextId}
+            onBookmarkContextMenu={openBookmarkContextMenu}
           />
         ) : route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
         <section className="loading">正在加载归档详情...</section>
@@ -3012,6 +3377,9 @@ export function App({
         onPathChange={setManagerDialogPath}
         onColorChange={setManagerDialogColor}
       />
+      {contextMenu.kind !== "closed" ? (
+        <ContextMenu state={contextMenu} groups={contextMenuGroups} onClose={closeContextMenu} />
+      ) : null}
     </>
   );
 }

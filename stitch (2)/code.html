@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "error-dim": "#4e0309",
+              "surface": "#f9f9fb",
+              "surface-container-low": "#f2f4f6",
+              "on-background": "#2d3338",
+              "inverse-on-surface": "#9c9d9f",
+              "on-tertiary-fixed": "#37354f",
+              "outline": "#757c81",
+              "on-secondary-fixed-variant": "#5a5b61",
+              "inverse-surface": "#0c0e10",
+              "on-secondary-container": "#505157",
+              "on-surface-variant": "#596065",
+              "outline-variant": "#acb3b8",
+              "surface-dim": "#d3dbe2",
+              "background": "#f9f9fb",
+              "secondary-fixed": "#e2e2e9",
+              "primary-container": "#e2e2e2",
+              "inverse-primary": "#ffffff",
+              "surface-container": "#ebeef2",
+              "on-primary-fixed-variant": "#5b5b5b",
+              "on-primary-container": "#525252",
+              "primary": "#5e5e5e",
+              "secondary-container": "#e2e2e9",
+              "surface-bright": "#f9f9fb",
+              "tertiary-dim": "#53506b",
+              "tertiary-fixed": "#d8d3f4",
+              "error-container": "#fe8983",
+              "surface-container-highest": "#dde3e9",
+              "on-primary": "#f8f8f8",
+              "tertiary-fixed-dim": "#cac6e6",
+              "secondary-fixed-dim": "#d4d4db",
+              "on-secondary-fixed": "#3e3f45",
+              "on-surface": "#2d3338",
+              "on-tertiary-fixed-variant": "#54516d",
+              "primary-dim": "#525252",
+              "error": "#9f403d",
+              "secondary-dim": "#515359",
+              "on-primary-fixed": "#3f3f3f",
+              "surface-variant": "#dde3e9",
+              "on-tertiary": "#fcf7ff",
+              "surface-tint": "#5e5e5e",
+              "primary-fixed": "#e2e2e2",
+              "on-error-container": "#752121",
+              "tertiary-container": "#d8d3f4",
+              "tertiary": "#5f5c78",
+              "surface-container-lowest": "#ffffff",
+              "surface-container-high": "#e4e9ee",
+              "secondary": "#5d5f65",
+              "on-secondary": "#f9f8ff",
+              "on-tertiary-container": "#4a4863",
+              "on-error": "#fff7f6",
+              "primary-fixed-dim": "#d4d4d4"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .tonal-transition {
+            background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(242,244,246,0.5) 100%);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xl shadow-[0_20px_40px_rgba(45,51,56,0.06)] flex justify-between items-center px-8 h-20 w-full">
+<div class="flex items-center gap-4">
+<span class="text-xl font-bold tracking-tighter text-zinc-900 dark:text-zinc-50">Luminous Bookmarks</span>
+</div>
+<div class="flex items-center gap-6">
+<nav class="hidden md:flex items-center gap-8">
+<a class="text-zinc-900 dark:text-zinc-50 font-bold font-['Inter'] tracking-tight" href="#">All Bookmarks</a>
+<a class="text-zinc-500 dark:text-zinc-400 font-['Inter'] tracking-tight" href="#">Recent</a>
+<a class="text-zinc-500 dark:text-zinc-400 font-['Inter'] tracking-tight" href="#">Favorites</a>
+</nav>
+<div class="flex items-center gap-2">
+<button class="p-2 rounded-full hover:bg-white/40 dark:hover:bg-zinc-800/40 transition-all duration-300 active:scale-95">
+<span class="material-symbols-outlined text-zinc-900 dark:text-zinc-50">add_circle</span>
+</button>
+<button class="p-2 rounded-full hover:bg-white/40 dark:hover:bg-zinc-800/40 transition-all duration-300 active:scale-95">
+<span class="material-symbols-outlined text-zinc-900 dark:text-zinc-50">settings</span>
+</button>
+<div class="w-10 h-10 rounded-full bg-surface-container overflow-hidden ml-4">
+<img class="w-full h-full object-cover" data-alt="User profile avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUP6FQo8MyqUULtKl-7RYhk-pprGuhsyHD-u1q3LfLGZKU-qADVmvhXxWKk21PM5KmwsARj-oldmX5dm9Ftu8sN3li-VtZkOAHXqY1r19LPou810HsG2crxPVUxzsJjuiCtyS_Kbrse7s-QjTa5oLQDYAPTvPfIQ51Tzt22qQ9FzmiEY3q58roOnfghf_owo5ykMPEWfxChOAnAZN5sRQV9-gexfUIWss4Wc6ef9zB7GiJeadIO9PeKq7_AEJ1FHh0Dxd4Nbgc1aY"/>
+</div>
+</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="h-screen w-72 fixed left-0 top-0 z-40 bg-zinc-50/50 dark:bg-zinc-950/50 backdrop-blur-2xl flex flex-col p-6 gap-y-4 pt-24">
+<div class="mb-8 px-2">
+<h2 class="text-lg font-black tracking-widest uppercase text-zinc-900 dark:text-zinc-50">Collections</h2>
+<p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Manage your links</p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-3 p-4 bg-white/80 dark:bg-zinc-800/80 shadow-sm text-zinc-900 dark:text-zinc-50 rounded-2xl transition-transform duration-200 active:scale-98" href="#">
+<span class="material-symbols-outlined" data-icon="bookmark">bookmark</span>
+<span class="font-['Inter'] text-sm tracking-wide">All Bookmarks</span>
+</a>
+<a class="flex items-center gap-3 p-4 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:translate-x-1 transition-transform duration-200 active:scale-98" href="#">
+<span class="material-symbols-outlined" data-icon="schedule">schedule</span>
+<span class="font-['Inter'] text-sm tracking-wide">Recent</span>
+</a>
+<a class="flex items-center gap-3 p-4 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:translate-x-1 transition-transform duration-200 active:scale-98" href="#">
+<span class="material-symbols-outlined" data-icon="star">star</span>
+<span class="font-['Inter'] text-sm tracking-wide">Favorites</span>
+</a>
+<a class="flex items-center gap-3 p-4 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:translate-x-1 transition-transform duration-200 active:scale-98" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-['Inter'] text-sm tracking-wide">Shared</span>
+</a>
+<a class="flex items-center gap-3 p-4 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:translate-x-1 transition-transform duration-200 active:scale-98" href="#">
+<span class="material-symbols-outlined" data-icon="archive">archive</span>
+<span class="font-['Inter'] text-sm tracking-wide">Archive</span>
+</a>
+</nav>
+<button class="mt-4 flex items-center justify-center gap-2 p-4 bg-primary text-on-primary rounded-2xl font-bold transition-all active:scale-95 shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined">add</span>
+<span>New Collection</span>
+</button>
+<div class="mt-auto pt-4 border-t border-zinc-200/50 dark:border-zinc-800/50 space-y-1">
+<a class="flex items-center gap-3 p-3 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 text-sm" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="help">help</span>
+<span>Help</span>
+</a>
+<a class="flex items-center gap-3 p-3 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 text-sm" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="shield">shield</span>
+<span>Privacy</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Canvas (Background Library View) -->
+<main class="ml-72 pt-24 px-12 pb-12 min-h-screen">
+<header class="mb-12">
+<h1 class="text-5xl font-extrabold tracking-tight text-on-surface mb-2">My Library</h1>
+<p class="text-on-surface-variant text-lg">Curated inspiration and saved resources.</p>
+</header>
+<!-- Bento Grid for Bookmarks -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+<div class="group relative aspect-[4/3] rounded-xl overflow-hidden bg-surface-container-lowest shadow-sm hover:shadow-xl transition-all duration-500">
+<img class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" data-alt="Minimalist desk lamp design inspiration" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDtHHPZuT1z8SxZTgGXSCf72MS5QIypLxLNSQ0MjiATrXyl41cYcxP6qE6ieJLD3bD2RnQ8jhmPRXcRA7Jw4bISYop14E7_p96m6kUZP3l9NSzEHBal4mr4S3YaQpzaNLSi8DowX7nkXbputbGy2iB-SEPpf_5-tGXzIMTfJ6dijSZrXL701sBBhEbAF_ygVH6lIkcC5bz5qUL6YbVTJJVEuBENGuPtihf1Mbu0ck6rk2Wz2eSFajuDG96uK81sGDa02PKFjdsy5_U"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+<span class="text-white font-bold text-xl">Minimalist Interiors</span>
+</div>
+</div>
+<div class="group relative aspect-[4/3] rounded-xl overflow-hidden bg-surface-container-lowest shadow-sm hover:shadow-xl transition-all duration-500">
+<img class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" data-alt="Modern web design layout mockup" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_mDnF-zBav6WKKZdhQWEFqrP9X2d5ALWg42Oee2p4tZYqvViFAA-LJfy1NoWLgTgpFbczvTmrhz0Vhg3megofnPH_6PYr5wITyFg_KQTMXnDqXZc2V9tPQ_mLn6XsBTfbZCPi7ZefaIJXC3R5L-zQ7x81d6hPaOoN8Zism628b-hAWYA6B6m7JH0CwSHbFa6qsUhBiG9wzWm5BFDNaHjF-0u6yhdWE7rlehuOPzeSDzYbgjQpg6Ps4n-2TbW9jS0IOJjOawPM_5E"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+<span class="text-white font-bold text-xl">Digital Design Trends</span>
+</div>
+</div>
+<div class="group relative aspect-[4/3] rounded-xl overflow-hidden bg-surface-container-lowest shadow-sm hover:shadow-xl transition-all duration-500">
+<img class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" data-alt="Startup workspace and collaboration" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCyXv3LbbXxgtm9bNYDmua22eBfcOwy3ODF3iGY8qgTYwhcqqkGx9fZzvx_9AHgykoDXQYCzpUjL2a9sOb5xEIAEK56XiE1-n56zI4OeY1-AdthFcREP3go1dlkU0LFXBQYVhUmlm2ch6af3wS9YL6GmG6fuQ145pa8gIXax1PNxR2Jh3_U3Y030Uhz9w-v_WIMns48UTnWvmdzY3v63BIPftNfvfi23a3ouhMKoFyTaecmmTzwMuyrj5yyjfa8jlpKA9ieu6zCGso"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+<span class="text-white font-bold text-xl">Product Strategy</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Modal Overlay -->
+<div class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-inverse-surface/10 backdrop-blur-md">
+<!-- New Collection Modal Dialog -->
+<div class="w-full max-w-xl bg-surface-container-lowest/80 backdrop-blur-[40px] rounded-xl shadow-[0_20px_40px_rgba(45,51,56,0.12)] overflow-hidden border border-white/40 transform scale-100">
+<div class="p-10">
+<!-- Header -->
+<div class="flex justify-between items-start mb-10">
+<div>
+<h2 class="text-3xl font-extrabold tracking-tight text-on-surface">New Collection</h2>
+<p class="text-on-surface-variant mt-2">Organize your bookmarks with a custom style.</p>
+</div>
+<button class="p-2 rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-outline">close</span>
+</button>
+</div>
+<!-- Form -->
+<div class="space-y-10">
+<!-- Input -->
+<div class="space-y-2">
+<label class="block text-[10px] uppercase tracking-widest font-bold text-on-surface-variant px-1">Collection Name</label>
+<input class="w-full bg-surface-container-low border-none focus:ring-2 focus:ring-surface-tint rounded-xl p-5 text-on-surface placeholder:text-outline/60 transition-all text-lg" placeholder="e.g. Design Inspiration" type="text"/>
+</div>
+<!-- Icon Grid -->
+<div class="space-y-4">
+<label class="block text-[10px] uppercase tracking-widest font-bold text-on-surface-variant px-1">Choose Icon</label>
+<div class="grid grid-cols-6 gap-3">
+<button class="aspect-square flex items-center justify-center rounded-lg bg-surface-container-low text-on-surface-variant hover:bg-white hover:text-primary transition-all active:scale-90 border border-transparent hover:border-outline-variant/20">
+<span class="material-symbols-outlined">folder</span>
+</button>
+<button class="aspect-square flex items-center justify-center rounded-lg bg-surface-container-low text-on-surface-variant hover:bg-white hover:text-primary transition-all active:scale-90 border border-transparent hover:border-outline-variant/20">
+<span class="material-symbols-outlined">star</span>
+</button>
+<button class="aspect-square flex items-center justify-center rounded-lg bg-primary text-on-primary shadow-lg shadow-primary/20 transition-all active:scale-90 border border-transparent">
+<span class="material-symbols-outlined">favorite</span>
+</button>
+<button class="aspect-square flex items-center justify-center rounded-lg bg-surface-container-low text-on-surface-variant hover:bg-white hover:text-primary transition-all active:scale-90 border border-transparent hover:border-outline-variant/20">
+<span class="material-symbols-outlined">work</span>
+</button>
+<button class="aspect-square flex items-center justify-center rounded-lg bg-surface-container-low text-on-surface-variant hover:bg-white hover:text-primary transition-all active:scale-90 border border-transparent hover:border-outline-variant/20">
+<span class="material-symbols-outlined">auto_awesome</span>
+</button>
+<button class="aspect-square flex items-center justify-center rounded-lg bg-surface-container-low text-on-surface-variant hover:bg-white hover:text-primary transition-all active:scale-90 border border-transparent hover:border-outline-variant/20">
+<span class="material-symbols-outlined">lightbulb</span>
+</button>
+</div>
+</div>
+<!-- Color Presets -->
+<div class="space-y-4">
+<label class="block text-[10px] uppercase tracking-widest font-bold text-on-surface-variant px-1">Theme Color</label>
+<div class="flex flex-wrap gap-4">
+<button class="w-10 h-10 rounded-full bg-[#E2E2E9] ring-2 ring-offset-4 ring-transparent hover:ring-outline-variant transition-all active:scale-90"></button>
+<button class="w-10 h-10 rounded-full bg-[#D8D3F4] ring-2 ring-offset-4 ring-primary transition-all active:scale-90"></button>
+<button class="w-10 h-10 rounded-full bg-[#D4EBE1] ring-2 ring-offset-4 ring-transparent hover:ring-outline-variant transition-all active:scale-90"></button>
+<button class="w-10 h-10 rounded-full bg-[#F4D3D3] ring-2 ring-offset-4 ring-transparent hover:ring-outline-variant transition-all active:scale-90"></button>
+<button class="w-10 h-10 rounded-full bg-[#F4EBD3] ring-2 ring-offset-4 ring-transparent hover:ring-outline-variant transition-all active:scale-90"></button>
+<button class="w-10 h-10 rounded-full bg-[#D3EBF4] ring-2 ring-offset-4 ring-transparent hover:ring-outline-variant transition-all active:scale-90"></button>
+</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="mt-12 flex gap-4">
+<button class="flex-1 py-4 px-6 rounded-full border-2 border-outline-variant/20 font-bold text-on-surface-variant hover:bg-surface-container transition-all active:scale-95">
+                        Cancel
+                    </button>
+<button class="flex-1 py-4 px-6 rounded-full bg-primary text-on-primary font-bold shadow-xl shadow-primary/20 hover:bg-primary-dim transition-all active:scale-95">
+                        Create
+                    </button>
+</div>
+</div>
+</div>
+</div>
+</body></html>

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-surface-variant": "#596065",
+                        "primary-container": "#e2e2e2",
+                        "tertiary-fixed-dim": "#cac6e6",
+                        "outline-variant": "#acb3b8",
+                        "on-secondary-fixed": "#3e3f45",
+                        "secondary-fixed-dim": "#d4d4db",
+                        "primary-dim": "#525252",
+                        "secondary-dim": "#515359",
+                        "on-primary-fixed": "#3f3f3f",
+                        "primary-fixed-dim": "#d4d4d4",
+                        "on-primary-fixed-variant": "#5b5b5b",
+                        "on-error-container": "#752121",
+                        "tertiary": "#5f5c78",
+                        "on-background": "#2d3338",
+                        "on-secondary-container": "#505157",
+                        "surface-bright": "#f9f9fb",
+                        "on-tertiary-fixed": "#37354f",
+                        "surface-tint": "#5e5e5e",
+                        "secondary-container": "#e2e2e9",
+                        "tertiary-dim": "#53506b",
+                        "surface": "#f9f9fb",
+                        "surface-variant": "#dde3e9",
+                        "tertiary-fixed": "#d8d3f4",
+                        "on-tertiary-container": "#4a4863",
+                        "on-primary-container": "#525252",
+                        "error": "#9f403d",
+                        "surface-container": "#ebeef2",
+                        "error-container": "#fe8983",
+                        "outline": "#757c81",
+                        "on-tertiary": "#fcf7ff",
+                        "on-primary": "#f8f8f8",
+                        "error-dim": "#4e0309",
+                        "on-surface": "#2d3338",
+                        "secondary-fixed": "#e2e2e9",
+                        "inverse-on-surface": "#9c9d9f",
+                        "surface-dim": "#d3dbe2",
+                        "secondary": "#5d5f65",
+                        "background": "#f9f9fb",
+                        "on-secondary-fixed-variant": "#5a5b61",
+                        "on-error": "#fff7f6",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-high": "#e4e9ee",
+                        "on-secondary": "#f9f8ff",
+                        "tertiary-container": "#d8d3f4",
+                        "surface-container-highest": "#dde3e9",
+                        "surface-container-low": "#f2f4f6",
+                        "on-tertiary-fixed-variant": "#54516d",
+                        "primary": "#5e5e5e",
+                        "inverse-surface": "#0c0e10",
+                        "inverse-primary": "#ffffff",
+                        "primary-fixed": "#e2e2e2"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            font-size: 20px;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body min-h-screen selection:bg-primary-container">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-screen w-72 bg-white/60 dark:bg-slate-900/60 backdrop-blur-[40px] border-r border-white/20 dark:border-slate-700/30 shadow-[0_20px_40px_rgba(45,51,56,0.06)] flex flex-col p-6 z-50">
+<div class="mb-10">
+<h1 class="text-2xl font-bold tracking-tighter text-slate-900 dark:text-white">Luminous</h1>
+<p class="text-xs text-on-surface-variant font-medium tracking-wide uppercase mt-1">Premium Curator</p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-3 px-4 py-3 bg-white/80 dark:bg-white/10 shadow-sm text-slate-900 dark:text-white rounded-2xl font-['Inter'] tracking-tight font-medium text-sm transition-all duration-300" href="#">
+<span class="material-symbols-outlined">bookmark</span>
+                All Bookmarks
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-white/5 rounded-2xl font-['Inter'] tracking-tight font-medium text-sm transition-all duration-300" href="#">
+<span class="material-symbols-outlined">schedule</span>
+                Recent
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-white/5 rounded-2xl font-['Inter'] tracking-tight font-medium text-sm transition-all duration-300" href="#">
+<span class="material-symbols-outlined">star</span>
+                Favorites
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-white/5 rounded-2xl font-['Inter'] tracking-tight font-medium text-sm transition-all duration-300" href="#">
+<span class="material-symbols-outlined">group</span>
+                Shared
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-white/5 rounded-2xl font-['Inter'] tracking-tight font-medium text-sm transition-all duration-300" href="#">
+<span class="material-symbols-outlined">delete</span>
+                Trash
+            </a>
+</nav>
+<button class="mt-auto bg-primary text-on-primary rounded-full py-4 font-semibold flex items-center justify-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined">add</span>
+            Add New
+        </button>
+</aside>
+<!-- Top Navigation -->
+<header class="fixed top-0 right-0 w-[calc(100%-18rem)] h-20 bg-white/40 dark:bg-slate-950/40 backdrop-blur-3xl border-b border-white/10 flex justify-between items-center px-8 z-40">
+<div class="flex items-center bg-surface-container-low rounded-xl px-4 py-2 w-96">
+<span class="material-symbols-outlined text-outline">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm w-full font-medium" placeholder="Search your library..." type="text"/>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:flex gap-8 items-center text-sm font-semibold">
+<a class="text-slate-500 hover:opacity-80 transition-opacity" href="#">Collections</a>
+<a class="text-slate-500 hover:opacity-80 transition-opacity" href="#">Tags</a>
+<a class="text-slate-500 hover:opacity-80 transition-opacity" href="#">Settings</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-on-surface-variant hover:bg-white/20 rounded-full transition-all">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-white/20 rounded-full transition-all">
+<span class="material-symbols-outlined">grid_view</span>
+</button>
+<div class="h-10 w-10 rounded-full overflow-hidden border-2 border-white/20 shadow-sm">
+<img alt="User Profile" data-alt="User avatar professional portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDK0y-cZelKzSgZRZgG_MJv1vd4E08aYeMN_oD1EOPJl6Z1bv2wyQyWkYbs3qKiw7X4ZIvlJb-uLgrI7lXAHHKRTBWK9FSgo2kpSH8lPICREKh0LHp87jzeyzLzt0wMlksp7TiL0DY3pVU1EREZ6SR0ONTvFqGmXpLiJ7i1IjgMklXurRQdipFrvviUN9oXNqAoqFO2G4w-Znoj67vukZ5v5okhENq05vVUQfyKWDn5vtWQZt-a44aXbjz1R7ARwHzH_kZD7MjC7vk"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-72 pt-28 px-12 pb-20 min-h-screen">
+<!-- Header Section -->
+<div class="mb-12">
+<h2 class="text-5xl font-extrabold tracking-tight text-on-surface mb-2">Curated Library</h2>
+<p class="text-on-surface-variant text-lg max-w-2xl">High-fidelity web preservation and knowledge organization for the digital age.</p>
+</div>
+<!-- Bento Grid / Cards with the "Context Menu" Overlay -->
+<div class="relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+<!-- Context Menu Target Card (Blurred) -->
+<div class="relative group">
+<div class="bg-surface-container-lowest border border-white/20 rounded-xl overflow-hidden shadow-sm filter blur-[2px] opacity-60">
+<div class="h-48 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Abstract gradient 3D fluid shape" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJbkro5LditMjsXnkoFPGJ6jQGRVd3MHsqhmaG3_iLSNkAeWz_jUP5gn_2c1LWTftK7GVYTdB07YrIhhEnZTuNxebY7u3KwEWWRdxyO1ScHEx254SzlPti0qLz68pAFFZ1OiquD9OetiUHe--DmgK93RxjKh0PGqhxErks6jWtBa3Pr_Ctjia2oq-283ago-8CK0eGb3xL3acKVNt4hPoAUfXt9rn3a6_3LnKPB0y2GP4b8u-ealjdQBWS4YKTHYXOkdxZ9u0AiZA"/>
+</div>
+<div class="p-6">
+<div class="flex items-center gap-2 mb-3">
+<span class="px-3 py-1 bg-primary-container text-on-primary-container text-[10px] font-bold uppercase tracking-wider rounded-full">Design</span>
+<span class="text-xs text-outline">2 hours ago</span>
+</div>
+<h3 class="text-xl font-bold mb-2">The Future of Spatial UI</h3>
+<p class="text-sm text-on-surface-variant line-clamp-2">Exploring the boundaries of physical and digital interfaces in the era of mixed reality computing.</p>
+</div>
+</div>
+<!-- THE BOOKMARK CONTEXT MENU (Floating) -->
+<div class="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+<div class="glass-panel w-72 rounded-[24px] shadow-2xl p-2 pointer-events-auto scale-100 ring-1 ring-black/[0.05]">
+<!-- Section 1 -->
+<div class="space-y-0.5 pb-1.5 mb-1.5 border-b border-black/[0.06]">
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Open Original Webpage</span>
+<span class="material-symbols-outlined !text-[18px]">open_in_new</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Open Archive</span>
+<span class="material-symbols-outlined !text-[18px]">history_edu</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Open Archive in New Tab</span>
+<span class="material-symbols-outlined !text-[18px]">tab</span>
+</button>
+</div>
+<!-- Section 2 -->
+<div class="space-y-0.5 pb-1.5 mb-1.5 border-b border-black/[0.06]">
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Copy Original Link</span>
+<span class="material-symbols-outlined !text-[18px]">link</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Copy Archive Link</span>
+<span class="material-symbols-outlined !text-[18px]">content_copy</span>
+</button>
+</div>
+<!-- Section 3 -->
+<div class="space-y-0.5 pb-1.5 mb-1.5 border-b border-black/[0.06]">
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Move to Collection</span>
+<span class="material-symbols-outlined !text-[18px]">folder_open</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Add/Remove Tags</span>
+<span class="material-symbols-outlined !text-[18px]">label</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Edit Note</span>
+<span class="material-symbols-outlined !text-[18px]">edit_note</span>
+</button>
+</div>
+<!-- Section 4 -->
+<div class="space-y-0.5 pb-1.5 mb-1.5 border-b border-black/[0.06]">
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Re-crawl</span>
+<span class="material-symbols-outlined !text-[18px]">refresh</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>View Historical Versions</span>
+<span class="material-symbols-outlined !text-[18px]">restore</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-medium text-on-surface rounded-xl hover:bg-primary/10 transition-colors">
+<span>Export HTML</span>
+<span class="material-symbols-outlined !text-[18px]">download</span>
+</button>
+</div>
+<!-- Section 5 -->
+<div>
+<button class="w-full flex items-center justify-between px-3 py-2 text-sm font-bold text-error rounded-xl hover:bg-error/10 transition-colors">
+<span>Delete Bookmark</span>
+<span class="material-symbols-outlined !text-[18px]">delete</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Other Cards for Background depth -->
+<div class="bg-surface-container-lowest border border-white/20 rounded-xl overflow-hidden shadow-sm hover:scale-[1.02] transition-all duration-500">
+<div class="h-48 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="React code on a dark monitor" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCqQOkfqNIcRFsG-GVaOx4OpsTI50cre4PH--mYGWWXzKwNmfpjTjhhCGexvFYoltM0RepV2CJOqCGFQI8Og0h5Q9wpRKZivIQ6qOZGFBifYBvZ55RbFoIX8MaPTirAfcT6mteLtwD_BWAOXDgrIUd7uXQCTbrtn00nVTZH8yuGAya1h2v2-xMat86SAyqCLECP_DFkFIN9kZwOyyRIkL6mrOOM1sEnfy0GNtH8XX0sOJLPmF39gN0RfqCMG3XDvSrLjPJIHJebaA8"/>
+</div>
+<div class="p-6">
+<div class="flex items-center gap-2 mb-3">
+<span class="px-3 py-1 bg-secondary-container text-on-secondary-container text-[10px] font-bold uppercase tracking-wider rounded-full">Engineering</span>
+<span class="text-xs text-outline">Yesterday</span>
+</div>
+<h3 class="text-xl font-bold mb-2">Modern State Management</h3>
+<p class="text-sm text-on-surface-variant line-clamp-2">Moving beyond Redux: Why Jotai and Zustand are winning the React ecosystem.</p>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-white/20 rounded-xl overflow-hidden shadow-sm hover:scale-[1.02] transition-all duration-500">
+<div class="h-48 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="Satellite view of earth with digital grid" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgd5zIDH9aCdOXc5aDe0K7VYZ-8FycN5C1XPAUWE41GoEp0gx7WJNcntFXZE_Hpz88tLc3KeN0LFA9no2S4i0-5OYL84A9HwisoX7hPfJYX_xKH4JyCWJA6JyPW0tjCvDD9b9ySqzVsUfIilPA8z5g6V945yfyaFjjv8sNJNdT5yHR5qY-QDiP2MSCl7I9AeY_tcez7o1FSWau6AdPYAKmjWp6EhXwmb7gDuMDdAw3ctrweMPbzHGihrQMK06y42Bc2xnpdPOxySI"/>
+</div>
+<div class="p-6">
+<div class="flex items-center gap-2 mb-3">
+<span class="px-3 py-1 bg-tertiary-container text-on-tertiary-container text-[10px] font-bold uppercase tracking-wider rounded-full">Science</span>
+<span class="text-xs text-outline">4 days ago</span>
+</div>
+<h3 class="text-xl font-bold mb-2">The Web as an Archive</h3>
+<p class="text-sm text-on-surface-variant line-clamp-2">How decentralized protocols are ensuring that digital knowledge remains permanent.</p>
+</div>
+</div>
+</div>
+<!-- Secondary Section: High-End Bento Grid Component -->
+<section class="mt-20">
+<h3 class="text-2xl font-bold mb-8">Recent Collections</h3>
+<div class="grid grid-cols-12 grid-rows-2 gap-6 h-[400px]">
+<div class="col-span-8 bg-surface-container-low rounded-xl p-8 flex flex-col justify-end relative overflow-hidden group">
+<img class="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:scale-105 transition-transform duration-700" data-alt="Retro technology aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAMMbQaP0hsihw4C-tubeHtWTPjS9p5qsi1a7I7XV-_wphEplqz-4LV1wUHvEEH_EZO_3V_KrfUVHpSwe1fDo86l4U_k_kKnfPX6VsfG6O1yy6Isu_9prUwA1hOS8UXfswIdYCWKVILEB6PzVugFWLt-dgPh5p6wM_V9iFMXGA02hhNN7AUCqezwlHjtqVpvRRMGyc83mhmmWvvxr1UINviHZ2lqPWK3QdrSfzeBCZL7-Inqa-vYrQ0Z1BO-1Cskj5Gx0aGy7zz0Kk"/>
+<div class="relative z-10">
+<h4 class="text-3xl font-black tracking-tight">Retro-Future Tech</h4>
+<p class="text-on-surface-variant mt-2 font-medium">124 items curated by Luminous</p>
+</div>
+</div>
+<div class="col-span-4 bg-primary text-on-primary rounded-xl p-8 flex flex-col justify-between">
+<span class="material-symbols-outlined !text-4xl" style="font-variation-settings: 'FILL' 1;">folder_special</span>
+<div>
+<h4 class="text-xl font-bold">Project Alpha</h4>
+<p class="text-white/70 text-sm mt-1">Shared with 12 collaborators</p>
+</div>
+</div>
+<div class="col-span-4 bg-tertiary-container rounded-xl p-8 flex flex-col justify-between">
+<span class="material-symbols-outlined !text-4xl text-on-tertiary-container">auto_awesome</span>
+<div>
+<h4 class="text-xl font-bold text-on-tertiary-container">Smart Suggestions</h4>
+<p class="text-on-tertiary-container/70 text-sm mt-1">AI-powered organization</p>
+</div>
+</div>
+<div class="col-span-8 bg-white border border-outline-variant/20 rounded-xl p-8 flex items-center justify-between">
+<div>
+<h4 class="text-xl font-bold">Cloud Sync Status</h4>
+<p class="text-on-surface-variant text-sm mt-1">All 4,821 bookmarks successfully encrypted</p>
+</div>
+<div class="flex -space-x-3">
+<div class="w-10 h-10 rounded-full border-2 border-white bg-slate-200"></div>
+<div class="w-10 h-10 rounded-full border-2 border-white bg-slate-300"></div>
+<div class="w-10 h-10 rounded-full border-2 border-white bg-slate-400 flex items-center justify-center text-[10px] font-bold">+8</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Nav (Mobile Only) -->
+<nav class="md:hidden fixed bottom-6 left-6 right-6 h-16 glass-panel rounded-full flex items-center justify-around px-4 z-50 shadow-lg">
+<button class="p-2 text-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">bookmark</span>
+</button>
+<button class="p-2 text-outline">
+<span class="material-symbols-outlined">explore</span>
+</button>
+<button class="p-2 text-outline">
+<span class="material-symbols-outlined">add_circle</span>
+</button>
+<button class="p-2 text-outline">
+<span class="material-symbols-outlined">collections_bookmark</span>
+</button>
+<button class="p-2 text-outline">
+<span class="material-symbols-outlined">person</span>
+</button>
+</nav>
+</body></html>
