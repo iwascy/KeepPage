@@ -1238,6 +1238,10 @@ function ManagerDialog({
 
   const isDeleteDialog = state.kind === "delete-bookmark" || state.kind === "delete-folder" || state.kind === "delete-tag";
   const isBookmarkDialog = state.kind === "delete-bookmark";
+  const bookmarkDeleteTarget = state.kind === "delete-bookmark" ? state.bookmark : null;
+  const bookmarkDeleteFaviconSrc = bookmarkDeleteTarget
+    ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(bookmarkDeleteTarget.domain)}&sz=64`
+    : "";
   const isFolderDialog = state.kind === "edit-folder" || state.kind === "delete-folder";
   const isTagDialog = state.kind === "edit-tag" || state.kind === "delete-tag";
   const tagColor = colorValue.trim();
@@ -1254,9 +1258,9 @@ function ManagerDialog({
     submitLabel = "保存路径";
   } else if (state.kind === "delete-bookmark") {
     eyebrow = "Delete Bookmark";
-    title = "确认删除这条书签";
+    title = "删除这条书签？";
     description = "它会从归档列表中移除，关联的版本记录也会一起删除。";
-    submitLabel = "删除书签";
+    submitLabel = "删除";
   } else if (state.kind === "delete-folder") {
     eyebrow = "Delete Folder";
     title = "确认删除这个收藏夹";
@@ -1277,7 +1281,7 @@ function ManagerDialog({
   return (
     <div
       aria-hidden="true"
-      className="manager-dialog-backdrop"
+      className={isBookmarkDialog ? "manager-dialog-backdrop is-bookmark-delete" : "manager-dialog-backdrop"}
       onClick={() => {
         if (!busy) {
           onClose();
@@ -1287,40 +1291,88 @@ function ManagerDialog({
       <div
         aria-labelledby="manager-dialog-title"
         aria-modal="true"
-        className={isDeleteDialog ? "manager-dialog is-danger" : "manager-dialog"}
+        className={isBookmarkDialog ? "manager-dialog bookmark-delete-dialog" : isDeleteDialog ? "manager-dialog is-danger" : "manager-dialog"}
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="manager-dialog-accent" />
-        <div className="manager-dialog-header">
-          <div className="manager-dialog-heading">
-            <p className="eyebrow">{eyebrow}</p>
-            <h2 id="manager-dialog-title">{title}</h2>
-            <p>{description}</p>
-          </div>
-          <button className="ghost-button manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
-            关闭
-          </button>
-        </div>
-
-        {isDeleteDialog ? (
+        {isBookmarkDialog && bookmarkDeleteTarget ? (
           <>
+            <div className="bookmark-delete-dialog-shell">
+              <div className="bookmark-delete-dialog-header">
+                <div className="bookmark-delete-dialog-heading">
+                  <p className="eyebrow">{eyebrow}</p>
+                  <h2 id="manager-dialog-title">{title}</h2>
+                  <p>{description}</p>
+                </div>
+                <button
+                  aria-label="关闭"
+                  className="bookmark-delete-dialog-close"
+                  type="button"
+                  onClick={onClose}
+                  disabled={busy}
+                >
+                  <DialogCloseIcon />
+                </button>
+              </div>
+
+              <section className="bookmark-delete-card">
+                <img
+                  alt=""
+                  className="bookmark-delete-card-favicon"
+                  src={bookmarkDeleteFaviconSrc}
+                  width={28}
+                  height={28}
+                />
+                <div className="bookmark-delete-card-body">
+                  <strong>{bookmarkDeleteTarget.title}</strong>
+                  <span className="bookmark-delete-card-domain">{bookmarkDeleteTarget.domain}</span>
+                </div>
+              </section>
+
+              <div className="bookmark-delete-warning">
+                <p>删除后，这条书签和它的归档版本会一起从列表中移除。</p>
+              </div>
+
+              {error ? <p className="manager-dialog-error bookmark-delete-dialog-error">{error}</p> : null}
+
+              <div className="bookmark-delete-dialog-actions">
+                <button className="bookmark-delete-action is-secondary" type="button" onClick={onClose} disabled={busy}>
+                  取消
+                </button>
+                <button className="bookmark-delete-action is-danger" type="button" onClick={onConfirmDelete} disabled={busy}>
+                  {busy ? "处理中..." : submitLabel}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : isDeleteDialog ? (
+          <>
+            <div className="manager-dialog-accent" />
+            <div className="manager-dialog-header">
+              <div className="manager-dialog-heading">
+                <p className="eyebrow">{eyebrow}</p>
+                <h2 id="manager-dialog-title">{title}</h2>
+                <p>{description}</p>
+              </div>
+              <button className="ghost-button manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
+                关闭
+              </button>
+            </div>
+
             <section className="manager-dialog-hero">
-              <div className={isBookmarkDialog ? "manager-dialog-mark" : isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
-                {isBookmarkDialog ? "ARC" : isFolderDialog ? "DIR" : "TAG"}
+              <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
+                {isFolderDialog ? "DIR" : "TAG"}
               </div>
               <div className="manager-dialog-hero-copy">
                 <strong>
-                  {state.kind === "delete-bookmark"
-                    ? state.bookmark.title
-                    : state.kind === "delete-folder"
-                      ? state.folder.path
-                      : `#${state.tag.name}`}
+                  {state.kind === "delete-folder"
+                    ? state.folder.path
+                    : state.kind === "delete-tag"
+                    ? `#${state.tag.name}`
+                    : ""}
                 </strong>
                 <span>
-                  {state.kind === "delete-bookmark"
-                    ? "删除后，这条归档会立刻从当前列表里消失。"
-                    : state.kind === "delete-folder"
+                  {state.kind === "delete-folder"
                     ? "删除后会立即从收藏夹列表中消失。"
                     : "删除后，这个标签会从所有相关网页上解绑。"}
                 </span>
@@ -1341,87 +1393,101 @@ function ManagerDialog({
             </div>
           </>
         ) : (
-          <form className="manager-dialog-form" onSubmit={onSubmit}>
-            <section className="manager-dialog-hero">
-              <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
-                {isFolderDialog ? "DIR" : "TAG"}
+          <>
+            <div className="manager-dialog-accent" />
+            <div className="manager-dialog-header">
+              <div className="manager-dialog-heading">
+                <p className="eyebrow">{eyebrow}</p>
+                <h2 id="manager-dialog-title">{title}</h2>
+                <p>{description}</p>
               </div>
-              <div className="manager-dialog-hero-copy">
-                <strong>
-                  {state.kind === "edit-folder"
-                    ? (pathValue.trim() || state.folder.path)
-                    : `#${nameValue.trim() || "新标签"}`}
-                </strong>
-                <span>
-                  {state.kind === "edit-folder"
-                    ? "完整路径支持多层结构，例如：工作/研究/案例。"
-                    : "先预览一下最终效果，不满意可以继续改。"}
-                </span>
-              </div>
-            </section>
-
-            {state.kind === "edit-folder" ? (
-              <label className="field">
-                <span>完整路径</span>
-                <input
-                  autoFocus
-                  maxLength={240}
-                  placeholder="例如：工作/研究"
-                  value={pathValue}
-                  onChange={(event) => onPathChange(event.target.value)}
-                />
-              </label>
-            ) : null}
-
-            {state.kind === "edit-tag" ? (
-              <>
-                <label className="field">
-                  <span>标签名称</span>
-                  <input
-                    autoFocus
-                    maxLength={80}
-                    placeholder="例如：稍后细读"
-                    value={nameValue}
-                    onChange={(event) => onNameChange(event.target.value)}
-                  />
-                </label>
-                <label className="field">
-                  <span>颜色说明</span>
-                  <input
-                    maxLength={32}
-                    placeholder="可选，例如 blue 或 #1d4ed8"
-                    value={colorValue}
-                    onChange={(event) => onColorChange(event.target.value)}
-                  />
-                </label>
-                <div className="manager-dialog-tag-preview">
-                  {tagColor ? (
-                    <span
-                      className="manager-dialog-tag-swatch"
-                      style={{ backgroundColor: tagColor }}
-                    />
-                  ) : (
-                    <span className="manager-dialog-tag-swatch is-empty" />
-                  )}
-                  <span className="manager-dialog-tag-chip">
-                    #{nameValue.trim() || "新标签"}
-                  </span>
-                  <small>{tagColor || "未设置颜色时会沿用默认样式。"}</small>
-                </div>
-              </>
-            ) : null}
-
-            {error ? <p className="manager-dialog-error">{error}</p> : null}
-
-            <div className="manager-dialog-actions">
-              <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
-                取消
-              </button>
-              <button className="primary-button" type="submit" disabled={busy}>
-                {busy ? "处理中..." : submitLabel}
+              <button className="ghost-button manager-dialog-close" type="button" onClick={onClose} disabled={busy}>
+                关闭
               </button>
             </div>
-          </form>
+
+            <form className="manager-dialog-form" onSubmit={onSubmit}>
+              <section className="manager-dialog-hero">
+                <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
+                  {isFolderDialog ? "DIR" : "TAG"}
+                </div>
+                <div className="manager-dialog-hero-copy">
+                  <strong>
+                    {state.kind === "edit-folder"
+                      ? (pathValue.trim() || state.folder.path)
+                      : `#${nameValue.trim() || "新标签"}`}
+                  </strong>
+                  <span>
+                    {state.kind === "edit-folder"
+                      ? "完整路径支持多层结构，例如：工作/研究/案例。"
+                      : "先预览一下最终效果，不满意可以继续改。"}
+                  </span>
+                </div>
+              </section>
+
+              {state.kind === "edit-folder" ? (
+                <label className="field">
+                  <span>完整路径</span>
+                  <input
+                    autoFocus
+                    maxLength={240}
+                    placeholder="例如：工作/研究"
+                    value={pathValue}
+                    onChange={(event) => onPathChange(event.target.value)}
+                  />
+                </label>
+              ) : null}
+
+              {state.kind === "edit-tag" ? (
+                <>
+                  <label className="field">
+                    <span>标签名称</span>
+                    <input
+                      autoFocus
+                      maxLength={80}
+                      placeholder="例如：稍后细读"
+                      value={nameValue}
+                      onChange={(event) => onNameChange(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>颜色说明</span>
+                    <input
+                      maxLength={32}
+                      placeholder="可选，例如 blue 或 #1d4ed8"
+                      value={colorValue}
+                      onChange={(event) => onColorChange(event.target.value)}
+                    />
+                  </label>
+                  <div className="manager-dialog-tag-preview">
+                    {tagColor ? (
+                      <span
+                        className="manager-dialog-tag-swatch"
+                        style={{ backgroundColor: tagColor }}
+                      />
+                    ) : (
+                      <span className="manager-dialog-tag-swatch is-empty" />
+                    )}
+                    <span className="manager-dialog-tag-chip">
+                      #{nameValue.trim() || "新标签"}
+                    </span>
+                    <small>{tagColor || "未设置颜色时会沿用默认样式。"}</small>
+                  </div>
+                </>
+              ) : null}
+
+              {error ? <p className="manager-dialog-error">{error}</p> : null}
+
+              <div className="manager-dialog-actions">
+                <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
+                  取消
+                </button>
+                <button className="primary-button" type="submit" disabled={busy}>
+                  {busy ? "处理中..." : submitLabel}
+                </button>
+              </div>
+            </form>
+          </>
         )}
       </div>
     </div>
