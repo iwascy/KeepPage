@@ -96,6 +96,194 @@ select {
   backdrop-filter: blur(14px);
 }
 
+.manager-dialog-backdrop.is-create-folder {
+  padding: 1.5rem;
+  background: rgba(12, 14, 16, 0.1);
+  backdrop-filter: blur(22px);
+}
+
+.create-folder-dialog {
+  width: min(432px, 100%);
+  border-radius: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.44);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow:
+    0 24px 60px rgba(45, 51, 56, 0.16),
+    0 10px 28px rgba(45, 51, 56, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(42px);
+  animation: dialog-rise 180ms ease;
+}
+
+.create-folder-dialog-shell {
+  padding: 2rem 1.9rem 1.95rem;
+}
+
+.create-folder-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.7rem;
+}
+
+.create-folder-dialog-heading h2 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 2.18rem);
+  line-height: 1.05;
+  letter-spacing: -0.05em;
+  font-weight: 800;
+}
+
+.create-folder-dialog-heading p {
+  margin: 0.55rem 0 0;
+  color: #68717a;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.create-folder-dialog-close {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #7d848c;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.create-folder-dialog-close:hover {
+  background: rgba(233, 236, 239, 0.9);
+  color: #5d646b;
+  transform: translateY(-1px);
+}
+
+.create-folder-dialog-close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.create-folder-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.7rem;
+}
+
+.create-folder-parent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(245, 246, 248, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.create-folder-parent-pill span {
+  color: #818891;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.create-folder-parent-pill strong {
+  min-width: 0;
+  color: #40474d;
+  font-size: 0.84rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.create-folder-dialog-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.create-folder-dialog-label {
+  display: block;
+  padding-left: 0.15rem;
+  color: #7b838b;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.create-folder-dialog-input {
+  min-height: 50px;
+  border-radius: 999px;
+  padding: 0.95rem 1.35rem;
+  background: rgba(242, 244, 246, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 1px 2px rgba(45, 51, 56, 0.03);
+  font-size: 0.98rem;
+  color: #2e3439;
+}
+
+.create-folder-dialog-input:focus {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 0 0 2px rgba(93, 93, 93, 0.16),
+    0 1px 3px rgba(45, 51, 56, 0.05);
+}
+
+.create-folder-dialog-error {
+  border-radius: 18px;
+  background: rgba(159, 64, 61, 0.08);
+}
+
+.create-folder-dialog-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.create-folder-action-button {
+  min-height: 46px;
+  border-radius: 999px;
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.96rem;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.create-folder-action-button:disabled,
+.create-folder-dialog-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.create-folder-action-button:hover {
+  transform: translateY(-1px);
+}
+
+.create-folder-action-button.is-secondary {
+  border: 1px solid rgba(214, 219, 223, 0.92);
+  background: rgba(255, 255, 255, 0.42);
+  color: #5f666d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.create-folder-action-button.is-primary {
+  background: linear-gradient(180deg, #737373 0%, #666666 100%);
+  color: #ffffff;
+  box-shadow: 0 14px 26px rgba(93, 93, 93, 0.24);
+}
+
 .manager-dialog {
   position: relative;
   width: min(620px, 100%);
@@ -2068,6 +2256,34 @@ button {
 
   .manager-dialog-backdrop {
     padding: 0.75rem;
+  }
+
+  .manager-dialog-backdrop.is-create-folder {
+    padding: 1rem;
+  }
+
+  .create-folder-dialog-shell {
+    padding: 1.4rem 1.15rem 1.2rem;
+  }
+
+  .create-folder-dialog-header {
+    margin-bottom: 1.35rem;
+  }
+
+  .create-folder-dialog-heading h2 {
+    font-size: 1.8rem;
+  }
+
+  .create-folder-dialog-heading p {
+    font-size: 0.92rem;
+  }
+
+  .create-folder-dialog-form {
+    gap: 1.35rem;
+  }
+
+  .create-folder-dialog-actions {
+    grid-template-columns: 1fr;
   }
 
   .manager-dialog-header,

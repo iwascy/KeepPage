@@ -342,9 +342,18 @@ function isManagerDialogOpen(state: ManagerDialogState) {
   return state.kind !== "closed";
 }
 
-function buildFolderPreviewPath(name: string, parentPath?: string | null) {
-  const normalizedName = name.trim() || "新收藏夹";
-  return parentPath ? `${parentPath}/${normalizedName}` : normalizedName;
+function DialogCloseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path
+        d="m5.75 5.75 8.5 8.5m0-8.5-8.5 8.5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.65"
+      />
+    </svg>
+  );
 }
 
 function LinkIcon() {
@@ -1020,9 +1029,94 @@ function ManagerDialog({
     return null;
   }
 
+  if (state.kind === "create-folder" || state.kind === "create-tag") {
+    const isCreateFolder = state.kind === "create-folder";
+    const createTitle = isCreateFolder ? "New Collection" : "New Tag";
+    const createDescription = isCreateFolder
+      ? (state.parent
+        ? "Organize your bookmarks inside a focused parent collection."
+        : "Organize your bookmarks with a custom style.")
+      : "Keep related bookmarks grouped under a concise label.";
+    const fieldLabel = isCreateFolder ? "Collection Name" : "Tag Name";
+    const placeholder = isCreateFolder ? "e.g. Design Inspiration" : "e.g. Read Later";
+    const submitLabel = busy
+      ? (isCreateFolder ? "Creating..." : "Saving...")
+      : "Create";
+
+    return (
+      <div
+        aria-hidden="true"
+        className="manager-dialog-backdrop is-create-folder"
+        onClick={() => {
+          if (!busy) {
+            onClose();
+          }
+        }}
+      >
+        <div
+          aria-labelledby="manager-dialog-title"
+          aria-modal="true"
+          className="create-folder-dialog"
+          role="dialog"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="create-folder-dialog-shell">
+            <div className="create-folder-dialog-header">
+              <div className="create-folder-dialog-heading">
+                <h2 id="manager-dialog-title">{createTitle}</h2>
+                <p>{createDescription}</p>
+              </div>
+              <button
+                aria-label="关闭"
+                className="create-folder-dialog-close"
+                type="button"
+                onClick={onClose}
+                disabled={busy}
+              >
+                <DialogCloseIcon />
+              </button>
+            </div>
+
+            <form className="create-folder-dialog-form" onSubmit={onSubmit}>
+              {isCreateFolder && state.parent ? (
+                <div className="create-folder-parent-pill">
+                  <span>Parent</span>
+                  <strong>{state.parent.path}</strong>
+                </div>
+              ) : null}
+
+              <label className="create-folder-dialog-section">
+                <span className="create-folder-dialog-label">{fieldLabel}</span>
+                <input
+                  autoFocus
+                  className="create-folder-dialog-input"
+                  maxLength={isCreateFolder ? 120 : 80}
+                  placeholder={placeholder}
+                  value={nameValue}
+                  onChange={(event) => onNameChange(event.target.value)}
+                />
+              </label>
+
+              {error ? <p className="manager-dialog-error create-folder-dialog-error">{error}</p> : null}
+
+              <div className="create-folder-dialog-actions">
+                <button className="create-folder-action-button is-secondary" type="button" onClick={onClose} disabled={busy}>
+                  Cancel
+                </button>
+                <button className="create-folder-action-button is-primary" type="submit" disabled={busy}>
+                  {submitLabel}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isDeleteDialog = state.kind === "delete-folder" || state.kind === "delete-tag";
-  const isFolderDialog = state.kind === "create-folder" || state.kind === "edit-folder" || state.kind === "delete-folder";
-  const isTagDialog = state.kind === "create-tag" || state.kind === "edit-tag" || state.kind === "delete-tag";
+  const isFolderDialog = state.kind === "edit-folder" || state.kind === "delete-folder";
+  const isTagDialog = state.kind === "edit-tag" || state.kind === "delete-tag";
   const tagColor = colorValue.trim();
 
   let title = "";
@@ -1030,14 +1124,7 @@ function ManagerDialog({
   let eyebrow = "";
   let submitLabel = "";
 
-  if (state.kind === "create-folder") {
-    eyebrow = state.parent ? "New Child Folder" : "New Folder";
-    title = state.parent ? "给当前目录加一个新分支" : "新建一个收藏夹";
-    description = state.parent
-      ? `会创建在“${state.parent.path}”下面，适合继续往下分层。`
-      : "给归档库起一个清晰入口，后续筛选和整理都会轻松很多。";
-    submitLabel = "创建收藏夹";
-  } else if (state.kind === "edit-folder") {
+  if (state.kind === "edit-folder") {
     eyebrow = "Edit Folder Path";
     title = "调整收藏夹路径";
     description = "直接改完整路径，系统会自动识别父级并把它移动到正确位置。";
@@ -1047,11 +1134,6 @@ function ManagerDialog({
     title = "确认删除这个收藏夹";
     description = "它自己会被删除，子收藏夹会上移一层，当前文件夹下的网页会解除归档。";
     submitLabel = "删除收藏夹";
-  } else if (state.kind === "create-tag") {
-    eyebrow = "New Tag";
-    title = "新建一个标签";
-    description = "做一个好记的主题标签，后续筛选、批量整理都会更顺手。";
-    submitLabel = "创建标签";
   } else if (state.kind === "edit-tag") {
     eyebrow = "Edit Tag";
     title = "调整标签名称和颜色";
@@ -1132,34 +1214,17 @@ function ManagerDialog({
               </div>
               <div className="manager-dialog-hero-copy">
                 <strong>
-                  {state.kind === "create-folder"
-                    ? buildFolderPreviewPath(nameValue, state.parent?.path)
-                    : state.kind === "edit-folder"
-                      ? (pathValue.trim() || state.folder.path)
-                      : `#${nameValue.trim() || "新标签"}`}
+                  {state.kind === "edit-folder"
+                    ? (pathValue.trim() || state.folder.path)
+                    : `#${nameValue.trim() || "新标签"}`}
                 </strong>
                 <span>
-                  {state.kind === "create-folder"
-                    ? (state.parent ? "会自动挂到当前父级下面。" : "会作为新的根目录出现。")
-                    : state.kind === "edit-folder"
-                      ? "完整路径支持多层结构，例如：工作/研究/案例。"
-                      : "先预览一下最终效果，不满意可以继续改。"}
+                  {state.kind === "edit-folder"
+                    ? "完整路径支持多层结构，例如：工作/研究/案例。"
+                    : "先预览一下最终效果，不满意可以继续改。"}
                 </span>
               </div>
             </section>
-
-            {state.kind === "create-folder" ? (
-              <label className="field">
-                <span>收藏夹名称</span>
-                <input
-                  autoFocus
-                  maxLength={120}
-                  placeholder={state.parent ? "例如：灵感池" : "例如：工作台"}
-                  value={nameValue}
-                  onChange={(event) => onNameChange(event.target.value)}
-                />
-              </label>
-            ) : null}
 
             {state.kind === "edit-folder" ? (
               <label className="field">
@@ -1174,7 +1239,7 @@ function ManagerDialog({
               </label>
             ) : null}
 
-            {state.kind === "create-tag" || state.kind === "edit-tag" ? (
+            {state.kind === "edit-tag" ? (
               <>
                 <label className="field">
                   <span>标签名称</span>
