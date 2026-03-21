@@ -26,14 +26,17 @@ export const captureProfileValues = [
 ] as const;
 
 export const qualityGradeValues = ["high", "medium", "low"] as const;
+export const bookmarkListViewValues = ["all", "recent", "favorites"] as const;
 
 export const captureStatusSchema = z.enum(captureStatusValues);
 export const captureProfileSchema = z.enum(captureProfileValues);
 export const qualityGradeSchema = z.enum(qualityGradeValues);
+export const bookmarkListViewSchema = z.enum(bookmarkListViewValues);
 
 export type CaptureStatus = z.infer<typeof captureStatusSchema>;
 export type CaptureProfile = z.infer<typeof captureProfileSchema>;
 export type QualityGrade = z.infer<typeof qualityGradeSchema>;
+export type BookmarkListView = z.infer<typeof bookmarkListViewSchema>;
 
 export const captureSourceSchema = z.object({
   url: z.url(),
@@ -184,6 +187,7 @@ export const bookmarkSchema = z.object({
   domain: z.string().min(1),
   coverImageUrl: z.url().optional(),
   note: z.string().default(""),
+  isFavorite: z.boolean().default(false),
   tags: z.array(tagSchema).default([]),
   folder: folderSchema.optional(),
   latestVersionId: z.string().min(1).optional(),
@@ -271,9 +275,13 @@ export const bookmarkMetadataUpdateRequestSchema = z.object({
   note: z.string().max(4000).optional(),
   folderId: z.string().min(1).nullable().optional(),
   tagIds: z.array(z.string().min(1)).max(100).optional(),
+  isFavorite: z.boolean().optional(),
 }).refine(
   (value) =>
-    value.note !== undefined || value.folderId !== undefined || value.tagIds !== undefined,
+    value.note !== undefined
+      || value.folderId !== undefined
+      || value.tagIds !== undefined
+      || value.isFavorite !== undefined,
   {
     message: "At least one field must be updated.",
   },

@@ -344,6 +344,13 @@ function parseImportEntries(rawInput: string): ParsedImportItem[] {
 }
 
 function matchesQuery(bookmark: Bookmark, query: BookmarkQuery) {
+  const recentThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  if (query.view === "favorites" && !bookmark.isFavorite) {
+    return false;
+  }
+  if (query.view === "recent" && new Date(bookmark.updatedAt).getTime() < recentThreshold) {
+    return false;
+  }
   if (query.quality !== "all" && bookmark.latestQuality?.grade !== query.quality) {
     return false;
   }
@@ -771,6 +778,7 @@ export function createDemoWorkspace(): DemoWorkspace {
       title: "OpenAI Responses API 文本生成指南：结构化输出、工具调用与长上下文提示词编排",
       domain: "platform.openai.com",
       note: "这条 mock 用来测试长标题、多标签、API 文档类内容以及详情页里的高质量版本切换。",
+      isFavorite: true,
       tags: tags.filter((tag) => ["tag_ai", "tag_backend", "tag_research"].includes(tag.id)),
       folder: folders.find((folder) => folder.id === "folder_eng_api"),
       latestVersionId: "ver_ai_002",
@@ -811,6 +819,7 @@ export function createDemoWorkspace(): DemoWorkspace {
       title: "Chrome Extensions MV3 Overview",
       domain: "developer.chrome.com",
       note: "Capture profile switched to complete for code examples and iframe docs.",
+      isFavorite: false,
       tags: tags.filter((tag) => ["tag_browser", "tag_extension"].includes(tag.id)),
       folder: folders.find((folder) => folder.id === "folder_eng_ext"),
       latestVersionId: "ver_guide_003",
@@ -825,6 +834,7 @@ export function createDemoWorkspace(): DemoWorkspace {
       title: "AutoFill Updates in Safari",
       domain: "webkit.org",
       note: "Possible iframe drop on embedded media section.",
+      isFavorite: false,
       tags: tags.filter((tag) => ["tag_web", "tag_research"].includes(tag.id)),
       folder: folders.find((folder) => folder.id === "folder_browser_notes"),
       latestVersionId: "ver_article_002",
@@ -839,6 +849,7 @@ export function createDemoWorkspace(): DemoWorkspace {
       title: "Alpha Release Notes (Internal Mirror)",
       domain: "example.com",
       note: "",
+      isFavorite: false,
       tags: tags.filter((tag) => tag.id === "tag_release"),
       folder: folders.find((folder) => folder.id === "folder_releases"),
       latestVersionId: "ver_release_002",
@@ -853,6 +864,7 @@ export function createDemoWorkspace(): DemoWorkspace {
       title: "Material 3 Color System",
       domain: "m3.material.io",
       note: "参考这一页的层级和密度，后续可以继续在 mock 模式里调整。",
+      isFavorite: true,
       tags: tags.filter((tag) => ["tag_design", "tag_research"].includes(tag.id)),
       folder: folders.find((folder) => folder.id === "folder_design"),
       latestVersionId: "ver_design_001",
@@ -867,6 +879,7 @@ export function createDemoWorkspace(): DemoWorkspace {
       title: "GOV.UK Design System Accordion",
       domain: "design-system.service.gov.uk",
       note: "这条数据用于测试只有阅读视图可用时的预览回退和下载按钮状态。",
+      isFavorite: true,
       tags: tags.filter((tag) => ["tag_design", "tag_research"].includes(tag.id)),
       folder: folders.find((folder) => folder.id === "folder_design"),
       latestVersionId: "ver_reader_001",
@@ -881,6 +894,7 @@ export function createDemoWorkspace(): DemoWorkspace {
       title: "MDN Lazy loading",
       domain: "developer.mozilla.org",
       note: "这是 links_only 导入后的元数据样本，还没有任何归档版本。",
+      isFavorite: false,
       tags: tags.filter((tag) => ["tag_web", "tag_research"].includes(tag.id)),
       folder: folders.find((folder) => folder.id === "folder_inbox"),
       versionCount: 0,
@@ -893,6 +907,7 @@ export function createDemoWorkspace(): DemoWorkspace {
       title: "CDN 超时事故复盘：截图缺失、正文裁切与第三方脚本超时",
       domain: "status.example.net",
       note: "低质量样本，方便测试告警原因列表、失败态描述和事故类标签筛选。",
+      isFavorite: false,
       tags: tags.filter((tag) => ["tag_incident", "tag_backend"].includes(tag.id)),
       folder: folders.find((folder) => folder.id === "folder_ops_incidents"),
       latestVersionId: "ver_incident_001",
@@ -1307,7 +1322,9 @@ export function createDemoWorkspace(): DemoWorkspace {
 }
 
 export function filterDemoBookmarks(workspace: DemoWorkspace, query: BookmarkQuery) {
-  return workspace.bookmarks.filter((bookmark) => matchesQuery(bookmark, query));
+  return workspace.bookmarks
+    .filter((bookmark) => matchesQuery(bookmark, query))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function getDemoBookmarkDetail(workspace: DemoWorkspace, bookmarkId: string): BookmarkDetailResult | null {
@@ -1491,6 +1508,7 @@ export function updateDemoBookmarkMetadata(
     note?: string;
     folderId?: string | null;
     tagIds?: string[];
+    isFavorite?: boolean;
   },
 ) {
   const current = cloneWorkspace(workspace);
@@ -1506,6 +1524,7 @@ export function updateDemoBookmarkMetadata(
       ? {
           ...bookmark,
           note: input.note ?? bookmark.note,
+          isFavorite: input.isFavorite ?? bookmark.isFavorite,
           folder: input.folderId !== undefined ? folder : bookmark.folder,
           tags: nextTags ?? bookmark.tags,
           updatedAt: new Date().toISOString(),
@@ -1567,6 +1586,7 @@ function createGeneratedBookmark(
     title: entry.title || entry.domain || entry.url!,
     domain: entry.domain!,
     note: request.mode === "links_only" ? "由 Mock 导入工作台生成的轻量书签。" : "由 Mock 导入工作台生成，并附带预览归档。",
+    isFavorite: false,
     tags: batchTag ? [batchTag] : [],
     folder,
     latestVersionId: hasArchive ? versionInfo.id : undefined,

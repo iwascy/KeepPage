@@ -85,6 +85,7 @@ export const bookmarks = pgTable(
     latestVersionId: uuid("latest_version_id"),
     folderId: uuid("folder_id").references(() => folders.id, { onDelete: "set null" }),
     note: text("note").default("").notNull(),
+    isFavorite: boolean("is_favorite").default(false).notNull(),
     isPinnedOffline: boolean("is_pinned_offline").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

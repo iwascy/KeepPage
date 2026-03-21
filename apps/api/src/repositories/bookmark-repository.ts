@@ -1,6 +1,7 @@
 import type {
   AuthUser,
   Bookmark,
+  BookmarkListView,
   BookmarkMetadataUpdateRequest,
   BookmarkSearchResponse,
   BookmarkVersion,
@@ -22,6 +23,7 @@ import type {
 export type BookmarkSearchQuery = {
   q?: string;
   quality?: "high" | "medium" | "low";
+  view?: BookmarkListView;
   domain?: string;
   folderId?: string;
   tagId?: string;

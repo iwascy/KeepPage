@@ -8,6 +8,7 @@ export const mockBookmarks: Bookmark[] = [
     title: "Chrome Extensions MV3 Overview",
     domain: "developer.chrome.com",
     note: "Capture profile switched to complete for code examples and iframe docs.",
+    isFavorite: true,
     tags: [
       { id: "tag_browser", name: "browser" },
       { id: "tag_extension", name: "extension" },
@@ -55,6 +56,7 @@ export const mockBookmarks: Bookmark[] = [
     title: "AutoFill Updates in Safari",
     domain: "webkit.org",
     note: "Possible iframe drop on embedded media section.",
+    isFavorite: false,
     tags: [
       { id: "tag_web", name: "web-platform" },
       { id: "tag_research", name: "research" },
@@ -108,6 +110,7 @@ export const mockBookmarks: Bookmark[] = [
     title: "Alpha Release Notes (Internal Mirror)",
     domain: "example.com",
     note: "",
+    isFavorite: false,
     tags: [{ id: "tag_release", name: "release-note" }],
     folder: {
       id: "folder_product",

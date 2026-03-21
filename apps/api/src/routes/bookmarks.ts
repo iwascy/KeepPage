@@ -1,4 +1,5 @@
 import {
+  bookmarkListViewSchema,
   bookmarkMetadataUpdateRequestSchema,
   bookmarkDetailResponseSchema,
   bookmarkSchema,
@@ -14,6 +15,7 @@ import type { ObjectStorage } from "../storage/object-storage";
 const searchQuerySchema = z.object({
   q: z.string().optional(),
   quality: qualityGradeSchema.optional(),
+  view: bookmarkListViewSchema.optional(),
   domain: z.string().optional(),
   folderId: z.string().min(1).optional(),
   tagId: z.string().min(1).optional(),

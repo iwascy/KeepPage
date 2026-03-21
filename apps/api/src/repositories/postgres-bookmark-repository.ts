@@ -41,6 +41,7 @@ import {
   count,
   desc,
   eq,
+  gte,
   inArray,
   ilike,
   or,
@@ -354,6 +355,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
           title: input.source.title,
           domain: input.source.domain,
           note: "",
+          isFavorite: false,
           isPinnedOffline: false,
           createdAt: now,
           updatedAt: now,
@@ -486,6 +488,12 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
   async searchBookmarks(userId: string, query: BookmarkSearchQuery) {
     const conditions = [eq(bookmarks.userId, userId)];
+    if (query.view === "favorites") {
+      conditions.push(eq(bookmarks.isFavorite, true));
+    }
+    if (query.view === "recent") {
+      conditions.push(gte(bookmarks.updatedAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)));
+    }
     if (query.domain) {
       conditions.push(eq(bookmarks.domain, query.domain));
     }
@@ -541,6 +549,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         title: bookmarks.title,
         domain: bookmarks.domain,
         note: bookmarks.note,
+        isFavorite: bookmarks.isFavorite,
         latestVersionId: bookmarks.latestVersionId,
         createdAt: bookmarks.createdAt,
         updatedAt: bookmarks.updatedAt,
@@ -633,6 +642,9 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       };
       if (input.note !== undefined) {
         patch.note = input.note;
+      }
+      if (input.isFavorite !== undefined) {
+        patch.isFavorite = input.isFavorite;
       }
       if (input.folderId !== undefined) {
         patch.folderId = folderId;
@@ -1275,6 +1287,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         title: bookmarks.title,
         domain: bookmarks.domain,
         note: bookmarks.note,
+        isFavorite: bookmarks.isFavorite,
         latestVersionId: bookmarks.latestVersionId,
         createdAt: bookmarks.createdAt,
         updatedAt: bookmarks.updatedAt,
@@ -1434,6 +1447,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       latestVersionId: null,
       folderId,
       note: "",
+      isFavorite: false,
       isPinnedOffline: false,
       createdAt: now,
       updatedAt: now,
@@ -1717,6 +1731,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       title: string;
       domain: string;
       note: string;
+      isFavorite: boolean;
       latestVersionId: string | null;
       createdAt: Date;
       updatedAt: Date;
@@ -1741,6 +1756,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       domain: row.domain,
       coverImageUrl: this.readCoverImageUrl(row.latestSourceMeta),
       note: row.note,
+      isFavorite: row.isFavorite,
       tags: options.tags,
       folder: row.folderId && row.folderName && row.folderPath
         ? {

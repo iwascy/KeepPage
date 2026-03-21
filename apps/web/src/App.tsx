@@ -10,7 +10,15 @@ import {
   useState,
   useTransition,
 } from "react";
-import type { AuthUser, Bookmark, Folder, QualityGrade, QualityReport, Tag } from "@keeppage/domain";
+import type {
+  AuthUser,
+  Bookmark,
+  BookmarkListView,
+  Folder,
+  QualityGrade,
+  QualityReport,
+  Tag,
+} from "@keeppage/domain";
 import {
   ApiError,
   type BookmarkDetailResult,
@@ -587,7 +595,14 @@ function HomeBookmarkCard({
           {!hasPreview ? (
             <span className="home-bookmark-chip home-bookmark-chip-inline">{folderLabel}</span>
           ) : null}
-          <h2>{bookmark.title}</h2>
+          <div className="home-bookmark-title-row">
+            <h2>{bookmark.title}</h2>
+            {bookmark.isFavorite ? (
+              <span className="home-bookmark-favorite material-symbols-outlined" aria-hidden="true">
+                star
+              </span>
+            ) : null}
+          </div>
           <p>{summary}</p>
           <footer className="home-bookmark-meta">
             <span className="home-bookmark-domain">{bookmark.domain}</span>
@@ -628,11 +643,13 @@ function AppShell({
   items,
   folders,
   tags,
+  bookmarkView,
   selectedFolderId,
   selectedTagId,
   searchInput,
   onSearchChange,
   managerBusy,
+  onSelectBookmarkView,
   onSelectFolder,
   onSelectTag,
   onGoHome,
@@ -650,11 +667,13 @@ function AppShell({
   items: Bookmark[];
   folders: Folder[];
   tags: Tag[];
+  bookmarkView: BookmarkListView;
   selectedFolderId: string;
   selectedTagId: string;
   searchInput: string;
   onSearchChange: (value: string) => void;
   managerBusy: boolean;
+  onSelectBookmarkView: (view: BookmarkListView) => void;
   onSelectFolder: (folderId: string) => void;
   onSelectTag: (tagId: string) => void;
   onGoHome: () => void;
@@ -669,8 +688,8 @@ function AppShell({
   logoutLabel?: string;
 }) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
-  const [activeNav, setActiveNav] = useState<"all" | "recent" | "favorites" | null>("all");
   const [sidebarView, setSidebarView] = useState<"main" | "settings">("main");
+  const activeNav = selectedFolderId || selectedTagId ? null : bookmarkView;
 
   const sortedFolders = useMemo(
     () => [...folders].sort((left, right) => left.path.localeCompare(right.path, "zh-CN")),
@@ -769,19 +788,9 @@ function AppShell({
 
   const displayName = displayUserName(user);
 
-  // Sync activeNav with real filter state: if folder/tag is selected externally
-  // (e.g. via context menu), clear quick nav highlight
-  useEffect(() => {
-    if (selectedFolderId || selectedTagId) {
-      setActiveNav(null);
-      return;
-    }
-    setActiveNav((current) => current ?? "all");
-  }, [selectedFolderId, selectedTagId]);
-
-  function handleSelectQuickNav(nextNav: "all" | "recent" | "favorites") {
+  function handleSelectQuickNav(nextNav: BookmarkListView) {
     setSidebarView("main");
-    setActiveNav(nextNav);
+    onSelectBookmarkView(nextNav);
     onSelectFolder("");
     onSelectTag("");
   }
@@ -962,7 +971,7 @@ function AppShell({
                         onClick={() => {
                           const nextFolderId = selectedFolderId === folder.id ? "" : folder.id;
                           setSidebarView("main");
-                          setActiveNav(nextFolderId || selectedTagId ? null : "all");
+                          onSelectBookmarkView("all");
                           onSelectFolder(nextFolderId);
                         }}
                       >
@@ -1020,12 +1029,12 @@ function AppShell({
                         key={tag.id}
                         className={active ? "home-tag-chip is-active" : "home-tag-chip"}
                         type="button"
-                        onClick={() => {
-                          const nextTagId = active ? "" : tag.id;
-                          setSidebarView("main");
-                          setActiveNav(nextTagId || selectedFolderId ? null : "all");
-                          onSelectTag(nextTagId);
-                        }}
+                      onClick={() => {
+                        const nextTagId = active ? "" : tag.id;
+                        setSidebarView("main");
+                        onSelectBookmarkView("all");
+                        onSelectTag(nextTagId);
+                      }}
                       >
                         {tag.name}
                       </button>
@@ -1078,6 +1087,7 @@ function AppShell({
 
 function HomePage({
   items,
+  bookmarkView,
   loadState,
   listError,
   hasActiveFilters,
@@ -1087,6 +1097,7 @@ function HomePage({
   onBookmarkContextMenu,
 }: {
   items: Bookmark[];
+  bookmarkView: BookmarkListView;
   loadState: LoadState;
   listError: string | null;
   hasActiveFilters: boolean;
@@ -1098,6 +1109,20 @@ function HomePage({
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
   const showEmpty = !showLoading && !showError && items.length === 0;
+  const emptyTitle = hasActiveFilters
+    ? "当前筛选下没有匹配的归档"
+    : bookmarkView === "favorites"
+      ? "还没有收藏的归档"
+      : bookmarkView === "recent"
+        ? "最近 7 天还没有归档更新"
+        : "还没有归档记录";
+  const emptyDescription = hasActiveFilters
+    ? "换个关键词，或者切换收藏夹和标签试试。"
+    : bookmarkView === "favorites"
+      ? "把常看的页面加入收藏后，会显示在这里。"
+      : bookmarkView === "recent"
+        ? "最近新归档或编辑过的页面会优先显示在这里。"
+        : "扩展同步的网页归档会优先显示在这里。";
 
   return (
     <>
@@ -1124,8 +1149,8 @@ function HomePage({
         </section>
       ) : showEmpty ? (
         <section className="home-empty-panel">
-          <h2>{hasActiveFilters ? "当前筛选下没有匹配的归档" : "还没有归档记录"}</h2>
-          <p>{hasActiveFilters ? "换个关键词，或者切换收藏夹和标签试试。" : "扩展同步的网页归档会优先显示在这里。"}</p>
+          <h2>{emptyTitle}</h2>
+          <p>{emptyDescription}</p>
         </section>
       ) : (
         <section className="home-grid">
@@ -1768,11 +1793,13 @@ function DetailPanel({
   folders,
   tags,
   metadataNote,
+  metadataIsFavorite,
   metadataFolderId,
   metadataTagIds,
   metadataSaving,
   metadataFeedback,
   onMetadataNoteChange,
+  onMetadataFavoriteChange,
   onMetadataFolderChange,
   onMetadataTagToggle,
   onPreviewModeChange,
@@ -1786,11 +1813,13 @@ function DetailPanel({
   folders: Folder[];
   tags: Tag[];
   metadataNote: string;
+  metadataIsFavorite: boolean;
   metadataFolderId: string;
   metadataTagIds: string[];
   metadataSaving: boolean;
   metadataFeedback: InlineFeedback | null;
   onMetadataNoteChange: (value: string) => void;
+  onMetadataFavoriteChange: (value: boolean) => void;
   onMetadataFolderChange: (value: string) => void;
   onMetadataTagToggle: (tagId: string) => void;
   onPreviewModeChange: (mode: ArchiveViewMode) => void;
@@ -1824,7 +1853,14 @@ function DetailPanel({
         </button>
 
         <div className="detail-block">
-          <h2 className="detail-title">{detail.bookmark.title}</h2>
+          <div className="detail-title-row">
+            <h2 className="detail-title">{detail.bookmark.title}</h2>
+            {detail.bookmark.isFavorite ? (
+              <span className="detail-favorite material-symbols-outlined" aria-hidden="true">
+                star
+              </span>
+            ) : null}
+          </div>
           <a className="url" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
             {detail.bookmark.sourceUrl}
           </a>
@@ -1844,6 +1880,14 @@ function DetailPanel({
               rows={3}
               placeholder="备注"
             />
+          </label>
+          <label className="tag-check">
+            <input
+              type="checkbox"
+              checked={metadataIsFavorite}
+              onChange={(event) => onMetadataFavoriteChange(event.target.checked)}
+            />
+            <span>收藏这条归档</span>
           </label>
           <label className="field">
             <select value={metadataFolderId} onChange={(event) => onMetadataFolderChange(event.target.value)}>
@@ -2044,6 +2088,7 @@ export function App({
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [searchInput, setSearchInput] = useState("");
+  const [bookmarkView, setBookmarkView] = useState<BookmarkListView>("all");
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>("all");
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [selectedTagId, setSelectedTagId] = useState("");
@@ -2067,6 +2112,7 @@ export function App({
   const [managerDialogColor, setManagerDialogColor] = useState("");
   const [managerDialogError, setManagerDialogError] = useState<string | null>(null);
   const [metadataNote, setMetadataNote] = useState("");
+  const [metadataIsFavorite, setMetadataIsFavorite] = useState(false);
   const [metadataFolderId, setMetadataFolderId] = useState("");
   const [metadataTagIds, setMetadataTagIds] = useState<string[]>([]);
   const [metadataSaving, setMetadataSaving] = useState(false);
@@ -2110,6 +2156,7 @@ export function App({
           error: null,
         });
         setSearchInput("");
+        setBookmarkView("all");
         setQualityFilter("all");
         setSelectedFolderId("");
         setSelectedTagId("");
@@ -2143,6 +2190,7 @@ export function App({
       setItems([]);
       setFolders([]);
       setTags([]);
+      setBookmarkView("all");
       setSelectedFolderId("");
       setSelectedTagId("");
       setDetail(null);
@@ -2359,6 +2407,7 @@ export function App({
         setItems(filterDemoBookmarks(demoState, {
           search: deferredSearch,
           quality: qualityFilter,
+          view: bookmarkView,
           folderId: selectedFolderId || undefined,
           tagId: selectedTagId || undefined,
         }));
@@ -2375,6 +2424,7 @@ export function App({
       {
         search: deferredSearch,
         quality: qualityFilter,
+        view: bookmarkView,
         folderId: selectedFolderId || undefined,
         tagId: selectedTagId || undefined,
       },
@@ -2403,7 +2453,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [authToken, deferredSearch, demoState, isDemoMode, qualityFilter, selectedFolderId, selectedTagId]);
+  }, [authToken, bookmarkView, deferredSearch, demoState, isDemoMode, qualityFilter, selectedFolderId, selectedTagId]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
@@ -2457,12 +2507,14 @@ export function App({
   useEffect(() => {
     if (!detail) {
       setMetadataNote("");
+      setMetadataIsFavorite(false);
       setMetadataFolderId("");
       setMetadataTagIds([]);
       setMetadataFeedback(null);
       return;
     }
     setMetadataNote(detail.bookmark.note);
+    setMetadataIsFavorite(detail.bookmark.isFavorite);
     setMetadataFolderId(detail.bookmark.folder?.id ?? "");
     setMetadataTagIds(detail.bookmark.tags.map((tag) => tag.id));
     setMetadataFeedback(null);
@@ -2649,6 +2701,7 @@ export function App({
       {
         search: deferredSearch,
         quality: qualityFilter,
+        view: bookmarkView,
         folderId: selectedFolderId || undefined,
         tagId: selectedTagId || undefined,
       },
@@ -3007,13 +3060,14 @@ export function App({
       try {
         const result = updateDemoBookmarkMetadata(demoState, route.bookmarkId, {
           note: metadataNote,
+          isFavorite: metadataIsFavorite,
           folderId: metadataFolderId || null,
           tagIds: metadataTagIds,
         });
         setDemoState(result.workspace);
         setMetadataFeedback({
           kind: "success",
-          message: "Mock 数据中的书签元数据已更新。",
+          message: "Mock 数据中的收藏状态、收藏夹、标签和备注已更新。",
         });
       } catch (error) {
         setMetadataFeedback({
@@ -3031,6 +3085,7 @@ export function App({
         route.bookmarkId,
         {
           note: metadataNote,
+          isFavorite: metadataIsFavorite,
           folderId: metadataFolderId || null,
           tagIds: metadataTagIds,
         },
@@ -3040,7 +3095,7 @@ export function App({
       await refreshBookmarkDetail(authToken, updated.id);
       setMetadataFeedback({
         kind: "success",
-        message: "书签的收藏夹、标签和备注已经保存。",
+        message: "书签的收藏状态、收藏夹、标签和备注已经保存。",
       });
     } catch (error) {
       if (handleProtectedApiError(error)) {
@@ -3052,6 +3107,43 @@ export function App({
       });
     } finally {
       setMetadataSaving(false);
+    }
+  }
+
+  async function handleToggleFavorite(bookmark: Bookmark, isFavorite: boolean) {
+    if (!authToken) {
+      return;
+    }
+
+    setManagerBusy(true);
+    setManagerFeedback(null);
+    try {
+      if (isDemoMode) {
+        const result = updateDemoBookmarkMetadata(demoState, bookmark.id, { isFavorite });
+        setDemoState(result.workspace);
+      } else {
+        await updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
+        await refreshBookmarksList(authToken);
+        if (route.page === "detail" && route.bookmarkId === bookmark.id) {
+          await refreshBookmarkDetail(authToken, bookmark.id);
+        }
+      }
+
+      setManagerFeedback({
+        kind: "success",
+        message: isFavorite ? "已加入收藏。" : "已取消收藏。",
+      });
+      closeContextMenu();
+    } catch (error) {
+      if (handleProtectedApiError(error)) {
+        return;
+      }
+      setManagerFeedback({
+        kind: "error",
+        message: toErrorMessage(error),
+      });
+    } finally {
+      setManagerBusy(false);
     }
   }
 
@@ -3097,6 +3189,13 @@ export function App({
           label: "快速操作",
           items: [
             {
+              id: "toggle-favorite",
+              label: bookmark.isFavorite ? "取消收藏" : "加入收藏",
+              icon: "FV",
+              disabled: managerBusy,
+              onSelect: () => void handleToggleFavorite(bookmark, !bookmark.isFavorite),
+            },
+            {
               id: "copy-original-link",
               label: "复制原链接",
               icon: "CP",
@@ -3137,6 +3236,7 @@ export function App({
             label: selectedFolderId === folder.id ? "取消筛选" : "筛选这个收藏夹",
             icon: "FL",
             onSelect: () => {
+              setBookmarkView("all");
               setSelectedFolderId((current) => current === folder.id ? "" : folder.id);
             },
           },
@@ -3169,7 +3269,7 @@ export function App({
         ],
       },
     ];
-  }, [contextMenu, managerBusy, selectedFolderId]);
+  }, [contextMenu, managerBusy, selectedFolderId, route, authToken, demoState, isDemoMode, bookmarkView]);
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3237,11 +3337,13 @@ export function App({
         items={items}
         folders={folders}
         tags={tags}
+        bookmarkView={bookmarkView}
         selectedFolderId={selectedFolderId}
         selectedTagId={selectedTagId}
         searchInput={searchInput}
         onSearchChange={setSearchInput}
         managerBusy={managerBusy}
+        onSelectBookmarkView={setBookmarkView}
         onSelectFolder={setSelectedFolderId}
         onSelectTag={setSelectedTagId}
         onGoHome={goToList}
@@ -3257,9 +3359,16 @@ export function App({
         {route.page === "list" ? (
           <HomePage
             items={items}
+            bookmarkView={bookmarkView}
             loadState={loadState}
             listError={listError}
-            hasActiveFilters={Boolean(searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId)}
+            hasActiveFilters={Boolean(
+              searchInput.trim()
+              || bookmarkView !== "all"
+              || qualityFilter !== "all"
+              || selectedFolderId
+              || selectedTagId,
+            )}
             managerFeedback={managerFeedback}
             onOpenBookmark={openBookmark}
             contextMenuBookmarkId={activeBookmarkContextId}
@@ -3308,11 +3417,13 @@ export function App({
           folders={folders}
           tags={tags}
           metadataNote={metadataNote}
+          metadataIsFavorite={metadataIsFavorite}
           metadataFolderId={metadataFolderId}
           metadataTagIds={metadataTagIds}
           metadataSaving={metadataSaving}
           metadataFeedback={metadataFeedback}
           onMetadataNoteChange={setMetadataNote}
+          onMetadataFavoriteChange={setMetadataIsFavorite}
           onMetadataFolderChange={setMetadataFolderId}
           onMetadataTagToggle={(tagId) => {
             setMetadataTagIds((current) => (

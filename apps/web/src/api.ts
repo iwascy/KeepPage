@@ -2,6 +2,7 @@ import {
   authSessionSchema,
   authUserSchema,
   bookmarkDetailResponseSchema,
+  bookmarkListViewSchema,
   bookmarkMetadataUpdateRequestSchema,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
@@ -15,6 +16,7 @@ import {
   type AuthSession,
   type AuthUser,
   type Bookmark,
+  type BookmarkListView,
   type BookmarkMetadataUpdateRequest,
   type BookmarkDetailVersion,
   type Folder,
@@ -44,6 +46,7 @@ export class ApiError extends Error {
 export type BookmarkQuery = {
   search: string;
   quality: "all" | QualityGrade;
+  view: BookmarkListView;
   folderId?: string;
   tagId?: string;
 };
@@ -371,6 +374,7 @@ export async function fetchBookmarks(query: BookmarkQuery, token: string): Promi
   if (query.search.trim()) {
     params.set("q", query.search.trim());
   }
+  params.set("view", bookmarkListViewSchema.parse(query.view));
   if (query.quality !== "all") {
     params.set("quality", query.quality);
   }

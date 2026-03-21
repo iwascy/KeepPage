@@ -260,7 +260,16 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     const state = this.ensureUserState(userId);
     const keyword = query.q?.trim().toLowerCase();
     const folderIds = query.folderId ? this.collectFolderSubtreeIds(state, query.folderId) : null;
+    const recentThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const filtered = [...state.bookmarks.values()].filter((bookmark) => {
+      if (query.view === "favorites" && !bookmark.isFavorite) {
+        return false;
+      }
+
+      if (query.view === "recent" && new Date(bookmark.updatedAt).getTime() < recentThreshold) {
+        return false;
+      }
+
       if (query.domain && bookmark.domain !== query.domain) {
         return false;
       }
@@ -355,6 +364,10 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     const now = new Date().toISOString();
     if (input.note !== undefined) {
       bookmark.note = input.note;
+    }
+
+    if (input.isFavorite !== undefined) {
+      bookmark.isFavorite = input.isFavorite;
     }
 
     if (input.folderId !== undefined) {
@@ -910,6 +923,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       domain: input.source.domain,
       coverImageUrl: input.source.coverImageUrl,
       note: "",
+      isFavorite: false,
       tags: [],
       versionCount: 1,
       latestQuality: input.quality,
@@ -958,6 +972,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       title: this.pickImportTitle(item.url, item, options),
       domain: item.domain,
       note: "",
+      isFavorite: false,
       tags: this.resolveTags(state, item, taskName, options),
       folder: this.resolveFolder(state, item, options),
       latestVersionId: undefined,
