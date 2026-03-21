@@ -1,4 +1,12 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap");
+
+/* Global Material Symbols configuration for refined look */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+  font-size: 20px;
+  display: inline-block;
+}
 
 :root {
   --bg: #f7f8fb;
@@ -915,62 +923,77 @@ button {
   background: rgba(255, 255, 255, 0.52);
   backdrop-filter: blur(34px);
   -webkit-backdrop-filter: blur(34px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 10px 0 42px rgba(45, 51, 56, 0.05);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .home-brand {
-  appearance: none;
-  width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.8rem;
-  padding: 0.35rem 0.15rem;
+  justify-content: space-between;
+  padding: 0.15rem 0.15rem 0;
+}
+
+.home-brand-home {
+  appearance: none;
+  min-width: 0;
+  padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: transform 160ms ease, opacity 160ms ease;
+  transition: opacity 160ms ease;
 }
 
-.home-brand:hover {
-  transform: translateX(2px);
+.home-brand-home:hover {
+  opacity: 0.72;
 }
 
-.home-brand:focus-visible {
+.home-brand-home:focus-visible {
   outline: none;
-  opacity: 1;
-  transform: translateX(2px);
+  opacity: 0.72;
 }
 
-.home-brand-mark {
+.home-brand-title {
+  margin: 0;
+  color: #18181b;
+  font-size: 1.125rem;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+}
+
+.home-brand-action {
+  appearance: none;
   width: 2rem;
   height: 2rem;
-  border-radius: 50%;
-  display: grid;
+  display: inline-grid;
   place-items: center;
-  color: white;
-  font-size: 0.82rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, #666666, #454545);
-  box-shadow: 0 14px 24px rgba(87, 87, 87, 0.2);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.home-brand h1 {
-  margin: 0;
-  font-size: 1.15rem;
-  line-height: 1;
-  letter-spacing: -0.03em;
+.home-brand-action:hover {
+  background: rgba(255, 255, 255, 0.4);
+  color: #27272a;
 }
 
-.home-brand p {
-  margin: 0.2rem 0 0;
-  color: var(--soft);
-  font-size: 0.6rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+.home-brand-action:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 0 3px rgba(94, 94, 94, 0.12);
+  color: #27272a;
+}
+
+.home-brand-action:active {
+  transform: scale(0.95);
 }
 
 .home-search {
@@ -1005,38 +1028,74 @@ button {
 
 .home-search-icon {
   position: absolute;
-  left: 0.95rem;
+  left: 0.85rem;
   top: 50%;
-  width: 0.82rem;
-  height: 0.82rem;
-  border: 2px solid #a2adb8;
-  border-radius: 50%;
   transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #596065;
+  font-size: 1rem;
+  pointer-events: none;
 }
 
-.home-search-icon::after {
-  content: "";
-  position: absolute;
-  right: -0.34rem;
-  bottom: -0.28rem;
-  width: 0.45rem;
-  height: 2px;
-  border-radius: var(--radius-button);
-  background: #a2adb8;
-  transform: rotate(42deg);
+.home-quick-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 1.5rem;
+}
+
+.home-quick-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.75rem;
+  color: #71717a;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+
+.home-quick-nav-item:hover {
+  color: #27272a;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.home-quick-nav-item.is-active {
+  background: rgba(255, 255, 255, 0.8);
+  color: #18181b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.home-quick-nav-item.is-active:active {
+  transform: scale(0.95);
+}
+
+.home-sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  scrollbar-width: none;
+}
+
+.home-sidebar-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .home-sidebar-section {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-}
-
-.home-sidebar-section:hover .home-section-action,
-.home-sidebar-section:focus-within .home-section-action {
-  opacity: 1;
-  transform: scale(1);
-  pointer-events: auto;
+  gap: 0.65rem;
 }
 
 .home-sidebar-section-head {
@@ -1044,14 +1103,19 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 0 0.2rem;
+  color: rgba(89, 96, 101, 0.6);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .home-sidebar-section-head span {
-  color: var(--soft);
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
 }
 
 .home-section-action,
@@ -1070,42 +1134,28 @@ button {
   display: inline-grid;
   place-items: center;
   padding: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    0 6px 16px rgba(45, 51, 56, 0.08);
+  border-radius: 0.75rem;
+  background: transparent;
+  box-shadow: none;
   font-size: 1.1rem;
   font-weight: 500;
   line-height: 1;
-  opacity: 0;
-  transform: scale(0.82);
-  pointer-events: none;
   transition:
-    opacity 160ms ease,
-    transform 160ms ease,
     background 160ms ease,
     color 160ms ease,
-    box-shadow 160ms ease;
+    transform 160ms ease;
 }
 
 .home-section-action:hover:not(:disabled) {
-  color: #56616a;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    0 10px 22px rgba(45, 51, 56, 0.12);
+  color: #27272a;
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .home-section-action:focus-visible {
-  opacity: 1;
-  transform: scale(1);
-  pointer-events: auto;
-  color: #56616a;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    0 0 0 3px rgba(94, 94, 94, 0.12),
-    0 10px 22px rgba(45, 51, 56, 0.12);
+  outline: none;
+  color: #27272a;
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 0 3px rgba(94, 94, 94, 0.12);
 }
 
 .home-section-action span {
@@ -1120,22 +1170,20 @@ button {
 
 @media (hover: none) {
   .home-section-action {
-    opacity: 1;
-    transform: scale(1);
-    pointer-events: auto;
+    transform: none;
   }
 }
 
 .home-folder-list {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
 .home-folder-row {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
 .home-folder-main {
@@ -1145,47 +1193,53 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
-  padding: 0.68rem 0.8rem;
-  border-radius: 18px;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.75rem;
   background: transparent;
-  color: var(--muted);
+  color: #71717a;
   cursor: pointer;
   text-align: left;
   font-family: "Inter", ui-sans-serif, sans-serif;
-  transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease, color 160ms ease;
+  transition: all 0.2s ease;
 }
 
 .home-folder-main:hover {
-  transform: translateX(2px);
-  color: var(--text);
+  color: #27272a;
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .home-folder-main.is-active {
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--text);
-  box-shadow: 0 12px 26px rgba(45, 51, 56, 0.07);
+  background: rgba(255, 255, 255, 0.8);
+  color: #18181b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.home-folder-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.home-folder-icon {
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  color: inherit;
 }
 
 .home-folder-name {
-  position: relative;
   min-width: 0;
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .home-folder-main.is-child .home-folder-name::before {
-  content: "";
-  position: absolute;
-  left: -0.42rem;
-  top: 50%;
-  width: 0.55rem;
-  height: 1px;
-  border-radius: var(--radius-button);
-  background: rgba(156, 166, 176, 0.45);
+  content: none;
 }
 
 .home-folder-count {
@@ -1209,50 +1263,225 @@ button {
 
 .home-folder-toggle {
   border: 0;
-  border-radius: 10px;
+  border-radius: 0.75rem;
   display: grid;
   place-items: center;
-  background: rgba(239, 242, 245, 0.96);
-  color: #7b8790;
+  background: transparent;
+  color: #71717a;
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease;
+  transition: all 0.2s ease;
 }
 
 .home-folder-toggle:hover {
-  background: rgba(232, 236, 240, 1);
+  background: rgba(255, 255, 255, 0.4);
+  color: #27272a;
 }
 
-.home-folder-toggle.is-collapsed {
-  transform: rotate(-90deg);
+.home-folder-toggle.is-expanded {
+  transform: rotate(90deg);
 }
 
 .home-tag-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.5rem;
 }
 
 .home-tag-chip {
-  border: 0;
-  border-radius: var(--radius-button);
-  padding: 0.55rem 0.8rem;
-  background: rgba(235, 239, 243, 0.96);
-  color: #75808a;
+  border: 1px solid rgba(172, 179, 184, 0.1);
+  border-radius: 9999px;
+  padding: 0.45rem 0.7rem;
+  background: #f2f4f6;
+  color: #596065;
   cursor: pointer;
   font-family: "Inter", ui-sans-serif, sans-serif;
-  font-size: 0.72rem;
-  font-weight: 700;
-  transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+  font-size: 11px;
+  font-weight: 600;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .home-tag-chip:hover {
-  transform: translateY(-1px);
+  border-color: rgba(94, 94, 94, 0.4);
 }
 
 .home-tag-chip.is-active {
-  background: linear-gradient(135deg, #666666, #4a4a4a);
-  color: white;
-  box-shadow: 0 12px 22px rgba(74, 74, 74, 0.22);
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(94, 94, 94, 0.28);
+  color: #18181b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.home-sidebar-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.home-add-new-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0;
+  border-radius: 0.75rem;
+  background: #5e5e5e;
+  color: #f8f8f8;
+  font-weight: 700;
+  font-size: 0.875rem;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 10px 15px rgba(94, 94, 94, 0.1);
+  transition: all 0.15s ease;
+}
+
+.home-add-new-btn:hover {
+  background: #525252;
+}
+
+.home-add-new-btn:active {
+  transform: scale(0.95);
+}
+
+.home-user-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem;
+}
+
+.home-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #3f3f3f;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #eef1f4, #dfe5ea);
+  box-shadow: 0 8px 18px rgba(45, 51, 56, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+}
+
+.home-user-profile .home-avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.home-user-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.home-user-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #18181b;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-user-plan {
+  font-size: 10px;
+  color: #71717a;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.home-settings-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #a1a1aa;
+  display: flex;
+  align-items: center;
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+  transition: color 0.15s ease;
+}
+
+.home-settings-btn:hover {
+  color: #52525b;
+}
+
+.home-settings-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-top: 0;
+}
+
+.home-settings-back {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  margin-bottom: 1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #18181b;
+  transition: opacity 0.15s ease;
+}
+
+.home-settings-back:hover {
+  opacity: 0.7;
+}
+
+.home-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+}
+
+.home-settings-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  min-height: 2.5rem;
+  border-radius: 0.875rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #27272a;
+  width: 100%;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.home-settings-item:hover {
+  background: rgba(255, 255, 255, 0.5);
+  transform: translateY(1px);
+}
+
+.home-settings-item.is-danger {
+  color: #8c4040;
+}
+
+.home-settings-item.is-danger:hover {
+  background: rgba(140, 64, 64, 0.06);
+}
+
+.home-settings-divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.06);
+  margin: 0.5rem 0.9rem;
 }
 
 /* ── Shell (content area right of sidebar) ── */
@@ -1279,6 +1508,7 @@ button {
   box-shadow: var(--shadow-soft);
 }
 
+/* Deprecated: profile actions moved to sidebar footer/settings panel. */
 .home-profile {
   display: flex;
   align-items: center;
@@ -1321,19 +1551,6 @@ button {
 
 .home-profile-menu {
   position: relative;
-}
-
-.home-avatar {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: white;
-  font-size: 0.72rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, #9ab6ff, #ffd6ae);
-  box-shadow: 0 14px 24px rgba(109, 130, 170, 0.18);
 }
 
 .home-profile-caret {
@@ -2601,6 +2818,11 @@ button {
     width: auto;
     margin: 1rem;
     border-radius: 30px;
+    overflow: visible;
+  }
+
+  .home-sidebar-scroll {
+    overflow: visible;
   }
 
   .home-shell {

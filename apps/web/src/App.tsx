@@ -669,8 +669,8 @@ function AppShell({
   logoutLabel?: string;
 }) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const [activeNav, setActiveNav] = useState<"all" | "recent" | "favorites" | null>("all");
+  const [sidebarView, setSidebarView] = useState<"main" | "settings">("main");
 
   const sortedFolders = useMemo(
     () => [...folders].sort((left, right) => left.path.localeCompare(right.path, "zh-CN")),
@@ -767,35 +767,23 @@ function AppShell({
     });
   }, [sortedFolders]);
 
-  useEffect(() => {
-    if (!isProfileMenuOpen) {
-      return;
-    }
-
-    function handlePointerDown(event: PointerEvent) {
-      if (!profileMenuRef.current?.contains(event.target as Node)) {
-        setIsProfileMenuOpen(false);
-      }
-    }
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsProfileMenuOpen(false);
-      }
-    }
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleEscape);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleEscape);
-    };
-  }, [isProfileMenuOpen]);
-
   const displayName = displayUserName(user);
 
-  function closeProfileMenu() {
-    setIsProfileMenuOpen(false);
+  // Sync activeNav with real filter state: if folder/tag is selected externally
+  // (e.g. via context menu), clear quick nav highlight
+  useEffect(() => {
+    if (selectedFolderId || selectedTagId) {
+      setActiveNav(null);
+      return;
+    }
+    setActiveNav((current) => current ?? "all");
+  }, [selectedFolderId, selectedTagId]);
+
+  function handleSelectQuickNav(nextNav: "all" | "recent" | "favorites") {
+    setSidebarView("main");
+    setActiveNav(nextNav);
+    onSelectFolder("");
+    onSelectTag("");
   }
 
   function handleToggleFolder(folder: Folder) {
@@ -818,186 +806,267 @@ function AppShell({
   return (
     <main className="home-page">
       <aside className="home-sidebar">
-        <button className="home-brand" type="button" onClick={onGoHome} aria-label="返回主页">
-          <div className="home-brand-mark">{userInitials(user).slice(0, 1)}</div>
-          <div>
-            <h1>KeepPage</h1>
-            <p>Your Archive Space</p>
-          </div>
-        </button>
-
-        <label className="home-search">
-          <span className="home-search-icon" aria-hidden="true" />
-          <input
-            className="home-search-input"
-            type="search"
-            value={searchInput}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="搜索标题、域名、标签..."
-          />
-        </label>
-
-        <section className="home-sidebar-section">
-          <header className="home-sidebar-section-head">
-            <span>Collections</span>
+        {sidebarView === "settings" ? (
+          <div className="home-settings-panel">
             <button
-              className="home-section-action"
+              className="home-settings-back"
               type="button"
-              onClick={onCreateRootFolder}
-              disabled={managerBusy}
-              aria-label="新建收藏夹"
-              title="新建收藏夹"
+              onClick={() => setSidebarView("main")}
+              aria-label="返回侧边栏"
             >
-              <span aria-hidden="true">+</span>
+              <span className="material-symbols-outlined" aria-hidden="true">
+                arrow_back
+              </span>
+              <span>Settings</span>
             </button>
-          </header>
-          <div className="home-folder-list">
-            <div className="home-folder-row">
+
+            <div className="home-settings-list">
               <button
-                className={selectedFolderId ? "home-folder-main" : "home-folder-main is-active"}
+                className="home-settings-item"
                 type="button"
-                onClick={() => onSelectFolder("")}
+                onClick={() => { setSidebarView("main"); onOpenImportNew(); }}
               >
-                <span className="home-folder-name">全部归档</span>
-                <span className="home-folder-count">{items.length}</span>
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  add
+                </span>
+                <span>新建导入</span>
               </button>
-              <span className="home-folder-toggle-spacer" aria-hidden="true" />
-            </div>
-            {visibleFolderRows.map(({ folder, depth, hasChildren }) => (
-              <div
-                className="home-folder-row"
-                key={folder.id}
-                onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
-                onContextMenu={(event) => onFolderContextMenu(folder, event)}
+              <button
+                className="home-settings-item"
+                type="button"
+                onClick={() => { setSidebarView("main"); onOpenImportHistory(); }}
               >
-                <button
-                  className={[
-                    "home-folder-main",
-                    selectedFolderId === folder.id ? "is-active" : "",
-                    depth > 0 ? "is-child" : "",
-                    contextMenuFolderId === folder.id ? "is-context-open" : "",
-                  ].filter(Boolean).join(" ")}
-                  type="button"
-                  style={{ paddingLeft: `${12 + depth * 14}px` }}
-                  onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
-                  onClick={() => onSelectFolder(selectedFolderId === folder.id ? "" : folder.id)}
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  history
+                </span>
+                <span>导入历史</span>
+              </button>
+              <div className="home-settings-divider" aria-hidden="true" />
+              <button
+                className="home-settings-item is-danger"
+                type="button"
+                onClick={() => { setSidebarView("main"); onLogout(); }}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  logout
+                </span>
+                <span>{logoutLabel}</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="home-brand">
+              <button className="home-brand-home" type="button" onClick={onGoHome} aria-label="返回主页">
+                <span className="home-brand-title">KeepPage</span>
+              </button>
+              <button
+                className="home-brand-action"
+                type="button"
+                onClick={() => setSidebarView("settings")}
+                aria-label="打开设置"
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  more_horiz
+                </span>
+              </button>
+            </div>
+
+            <label className="home-search">
+              <span className="home-search-icon material-symbols-outlined" aria-hidden="true">
+                search
+              </span>
+              <input
+                className="home-search-input"
+                type="search"
+                value={searchInput}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="搜索标题、域名、标签..."
+              />
+            </label>
+
+            <nav className="home-quick-nav" aria-label="快捷导航">
+              <button
+                className={activeNav === "all" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
+                type="button"
+                onClick={() => handleSelectQuickNav("all")}
+              >
+                <span
+                  className="material-symbols-outlined"
+                  aria-hidden="true"
+                  style={
+                    activeNav === "all"
+                      ? { fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 20" }
+                      : undefined
+                  }
                 >
-                  <span className="home-folder-name">{folder.name}</span>
-                  <span className="home-folder-count">{folderCounts.get(folder.id) ?? 0}</span>
-                </button>
-                {hasChildren ? (
+                  bookmark
+                </span>
+                <span>All Bookmarks</span>
+              </button>
+              <button
+                className={activeNav === "recent" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
+                type="button"
+                onClick={() => handleSelectQuickNav("recent")}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  schedule
+                </span>
+                <span>Recent</span>
+              </button>
+              <button
+                className={activeNav === "favorites" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
+                type="button"
+                onClick={() => handleSelectQuickNav("favorites")}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  star
+                </span>
+                <span>Favorites</span>
+              </button>
+            </nav>
+
+            <div className="home-sidebar-scroll">
+              <section className="home-sidebar-section">
+                <header className="home-sidebar-section-head">
+                  <span>Collections</span>
                   <button
-                    className={
-                      collapsedFolderIds.has(folder.id)
-                        ? `home-folder-toggle is-collapsed${contextMenuFolderId === folder.id ? " is-context-open" : ""}`
-                        : `home-folder-toggle${contextMenuFolderId === folder.id ? " is-context-open" : ""}`
-                    }
+                    className="home-section-action"
                     type="button"
-                    onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
-                    onClick={() => handleToggleFolder(folder)}
-                    aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "收起"} ${folder.name}`}
+                    onClick={onCreateRootFolder}
+                    disabled={managerBusy}
+                    aria-label="新建收藏夹"
+                    title="新建收藏夹"
                   >
-                    ▾
+                    <span aria-hidden="true">+</span>
                   </button>
-                ) : (
-                  <span className="home-folder-toggle-spacer" aria-hidden="true" />
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
+                </header>
+                <div className="home-folder-list">
+                  {visibleFolderRows.map(({ folder, depth, hasChildren }) => (
+                    <div
+                      className="home-folder-row"
+                      key={folder.id}
+                      onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
+                      onContextMenu={(event) => onFolderContextMenu(folder, event)}
+                    >
+                      <button
+                        className={[
+                          "home-folder-main",
+                          selectedFolderId === folder.id ? "is-active" : "",
+                          depth > 0 ? "is-child" : "",
+                          contextMenuFolderId === folder.id ? "is-context-open" : "",
+                        ].filter(Boolean).join(" ")}
+                        type="button"
+                        style={{ paddingLeft: `${12 + depth * 14}px` }}
+                        onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
+                        onClick={() => {
+                          const nextFolderId = selectedFolderId === folder.id ? "" : folder.id;
+                          setSidebarView("main");
+                          setActiveNav(nextFolderId || selectedTagId ? null : "all");
+                          onSelectFolder(nextFolderId);
+                        }}
+                      >
+                        <span className="home-folder-label">
+                          <span className="home-folder-icon material-symbols-outlined" aria-hidden="true">
+                            folder_open
+                          </span>
+                          <span className="home-folder-name">{folder.name}</span>
+                        </span>
+                        <span className="home-folder-count">{folderCounts.get(folder.id) ?? 0}</span>
+                      </button>
+                      {hasChildren ? (
+                        <button
+                          className={[
+                            "home-folder-toggle",
+                            collapsedFolderIds.has(folder.id) ? "" : "is-expanded",
+                            contextMenuFolderId === folder.id ? "is-context-open" : "",
+                          ].filter(Boolean).join(" ")}
+                          type="button"
+                          onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
+                          onClick={() => handleToggleFolder(folder)}
+                          aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "收起"} ${folder.name}`}
+                        >
+                          <span className="material-symbols-outlined" aria-hidden="true">
+                            keyboard_arrow_right
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="home-folder-toggle-spacer" aria-hidden="true" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
 
-        <section className="home-sidebar-section">
-          <header className="home-sidebar-section-head">
-            <span>Tags</span>
-            <button
-              className="home-section-action"
-              type="button"
-              onClick={onCreateTag}
-              disabled={managerBusy}
-              aria-label="新建标签"
-              title="新建标签"
-            >
-              <span aria-hidden="true">+</span>
-            </button>
-          </header>
-          <div className="home-tag-list">
-            {tags.map((tag) => {
-              const active = selectedTagId === tag.id;
-              return (
+              <section className="home-sidebar-section">
+                <header className="home-sidebar-section-head">
+                  <span>Tags</span>
+                  <button
+                    className="home-section-action"
+                    type="button"
+                    onClick={onCreateTag}
+                    disabled={managerBusy}
+                    aria-label="新建标签"
+                    title="新建标签"
+                  >
+                    <span aria-hidden="true">+</span>
+                  </button>
+                </header>
+                <div className="home-tag-list">
+                  {tags.map((tag) => {
+                    const active = selectedTagId === tag.id;
+                    return (
+                      <button
+                        key={tag.id}
+                        className={active ? "home-tag-chip is-active" : "home-tag-chip"}
+                        type="button"
+                        onClick={() => {
+                          const nextTagId = active ? "" : tag.id;
+                          setSidebarView("main");
+                          setActiveNav(nextTagId || selectedFolderId ? null : "all");
+                          onSelectTag(nextTagId);
+                        }}
+                      >
+                        {tag.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+
+            <div className="home-sidebar-footer">
+              <button className="home-add-new-btn" type="button" onClick={onOpenImportNew}>
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  add
+                </span>
+                <span>Add New</span>
+              </button>
+
+              <div className="home-user-profile">
+                <div className="home-avatar">{userInitials(user)}</div>
+                <div className="home-user-info">
+                  <span className="home-user-name">{displayName}</span>
+                  <span className="home-user-plan">Pro Plan</span>
+                </div>
                 <button
-                  key={tag.id}
-                  className={active ? "home-tag-chip is-active" : "home-tag-chip"}
+                  className="home-settings-btn"
                   type="button"
-                  onClick={() => onSelectTag(active ? "" : tag.id)}
+                  onClick={() => setSidebarView("settings")}
+                  aria-label="打开设置"
                 >
-                  #{tag.name}
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    settings
+                  </span>
                 </button>
-              );
-            })}
-          </div>
-        </section>
-
+              </div>
+            </div>
+          </>
+        )}
       </aside>
 
       <div className="home-shell">
-        <header className="home-topbar">
-          <div className="home-profile-menu" ref={profileMenuRef}>
-            <button
-              className={isProfileMenuOpen ? "home-profile is-open" : "home-profile"}
-              type="button"
-              onClick={() => setIsProfileMenuOpen((current) => !current)}
-              aria-haspopup="menu"
-              aria-expanded={isProfileMenuOpen}
-              aria-label="打开账号菜单"
-            >
-              <div className="home-profile-copy">
-                <strong>{displayName}</strong>
-              </div>
-              <div className="home-avatar">{userInitials(user)}</div>
-              <span className="home-profile-caret" aria-hidden="true">
-                ▾
-              </span>
-            </button>
-            {isProfileMenuOpen ? (
-              <div className="home-profile-dropdown" role="menu" aria-label="账号菜单">
-                <button
-                  className="home-profile-menu-item"
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    closeProfileMenu();
-                    onOpenImportNew();
-                  }}
-                >
-                  新建导入
-                </button>
-                <button
-                  className="home-profile-menu-item"
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    closeProfileMenu();
-                    onOpenImportHistory();
-                  }}
-                >
-                  导入历史
-                </button>
-                <button
-                  className="home-profile-menu-item is-danger"
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    closeProfileMenu();
-                    onLogout();
-                  }}
-                >
-                  {logoutLabel}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </header>
+        <header className="home-topbar" />
 
         <section className="home-content">
           {children}
