@@ -1847,159 +1847,6 @@ function DetailPanel({
 
   return (
     <section className="detail-shell">
-      <aside className="detail-panel">
-        <button className="ghost-button" type="button" onClick={goToList}>
-          ← 返回列表
-        </button>
-
-        <div className="detail-block">
-          <div className="detail-title-row">
-            <h2 className="detail-title">{detail.bookmark.title}</h2>
-            {detail.bookmark.isFavorite ? (
-              <span className="detail-favorite material-symbols-outlined" aria-hidden="true">
-                star
-              </span>
-            ) : null}
-          </div>
-          <a className="url" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
-            {detail.bookmark.sourceUrl}
-          </a>
-        </div>
-
-        <div className="detail-block compact-gap">
-          <div className="panel-header-inline">
-            <p className="panel-title">编辑</p>
-            <button className="primary-button compact-button" type="button" onClick={onMetadataSave} disabled={metadataSaving}>
-              {metadataSaving ? "保存中..." : "保存"}
-            </button>
-          </div>
-          <label className="field">
-            <textarea
-              value={metadataNote}
-              onChange={(event) => onMetadataNoteChange(event.target.value)}
-              rows={3}
-              placeholder="备注"
-            />
-          </label>
-          <label className="tag-check">
-            <input
-              type="checkbox"
-              checked={metadataIsFavorite}
-              onChange={(event) => onMetadataFavoriteChange(event.target.checked)}
-            />
-            <span>收藏这条归档</span>
-          </label>
-          <label className="field">
-            <select value={metadataFolderId} onChange={(event) => onMetadataFolderChange(event.target.value)}>
-              <option value="">未归档</option>
-              {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.path}
-                </option>
-              ))}
-            </select>
-          </label>
-          {tags.length > 0 ? (
-            <div className="tag-selector">
-              {tags.map((tag) => {
-                const checked = metadataTagIds.includes(tag.id);
-                return (
-                  <label className={checked ? "tag-check is-active" : "tag-check"} key={tag.id}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => onMetadataTagToggle(tag.id)}
-                    />
-                    <span>#{tag.name}</span>
-                  </label>
-                );
-              })}
-            </div>
-          ) : null}
-          {metadataFeedback ? (
-            <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
-              {metadataFeedback.message}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="detail-block">
-          <div className="detail-meta-row">
-            <span>创建</span>
-            <strong>{formatWhen(detail.bookmark.createdAt)}</strong>
-          </div>
-          <div className="detail-meta-row">
-            <span>更新</span>
-            <strong>{formatWhen(detail.bookmark.updatedAt)}</strong>
-          </div>
-          <div className="detail-meta-row">
-            <span>体积</span>
-            <strong>{formatFileSize(displayedArchiveSize)}</strong>
-          </div>
-        </div>
-
-        <div className="detail-block">
-          <div className="panel-header-inline">
-            <p className="panel-title">版本</p>
-            <span className="panel-subtle">{detail.versions.length}</span>
-          </div>
-          <div className="version-list">
-            {detail.versions.map((version) => {
-              const active = version.id === selectedVersion.id;
-              return (
-                <button
-                  key={version.id}
-                  className={`version-item${active ? " is-active" : ""}`}
-                  type="button"
-                  onClick={() => openBookmark(detail.bookmark.id, version.id)}
-                >
-                  <strong>v{version.versionNo}</strong>
-                  <span>{formatWhen(version.createdAt)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <details className="detail-quality-toggle">
-          <summary>质量报告 · {quality.score}分</summary>
-          <div className="detail-block compact-gap">
-            <div className="signal-grid">
-              <article className="signal-card">
-                <span>文本保留</span>
-                <strong>
-                  {retentionLabel(
-                    quality.archiveSignals.textLength,
-                    quality.liveSignals.textLength,
-                  )}
-                </strong>
-              </article>
-              <article className="signal-card">
-                <span>图片保留</span>
-                <strong>
-                  {retentionLabel(
-                    quality.archiveSignals.imageCount,
-                    quality.liveSignals.imageCount,
-                  )}
-                </strong>
-              </article>
-            </div>
-            {quality.reasons.length > 0 ? (
-              <div className="reason-list">
-                {quality.reasons.map((reason) => (
-                  <article className="reason-card" key={`${selectedVersion.id}-${reason.code}`}>
-                    <strong>{reason.code}</strong>
-                    <p>{reason.message}</p>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="detail-note">无质量告警。</p>
-            )}
-          </div>
-        </details>
-      </aside>
-
       <section className="detail-preview-panel">
         <header className="preview-header">
           <div className="preview-controls">
@@ -2063,6 +1910,191 @@ function DetailPanel({
           />
         ) : null}
       </section>
+
+      <aside className="detail-panel">
+        <button className="ghost-button" type="button" onClick={goToList}>
+          ← 返回列表
+        </button>
+
+        <div className="detail-block">
+          <div className="detail-title-row">
+            <h2 className="detail-title">{detail.bookmark.title}</h2>
+            {detail.bookmark.isFavorite ? (
+              <span className="detail-favorite material-symbols-outlined" aria-hidden="true">
+                star
+              </span>
+            ) : null}
+          </div>
+          <a className="url" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
+            {detail.bookmark.sourceUrl}
+          </a>
+        </div>
+
+        <details className="detail-collapsible" open>
+          <summary>
+            <span className="detail-summary-label">
+              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
+                edit_square
+              </span>
+              <span>编辑</span>
+            </span>
+          </summary>
+          <div className="detail-collapsible-body">
+            <label className="field">
+              <textarea
+                value={metadataNote}
+                onChange={(event) => onMetadataNoteChange(event.target.value)}
+                rows={3}
+                placeholder="备注"
+              />
+            </label>
+            <label className="tag-check">
+              <input
+                type="checkbox"
+                checked={metadataIsFavorite}
+                onChange={(event) => onMetadataFavoriteChange(event.target.checked)}
+              />
+              <span>收藏这条归档</span>
+            </label>
+            <label className="field">
+              <select value={metadataFolderId} onChange={(event) => onMetadataFolderChange(event.target.value)}>
+                <option value="">未归档</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.path}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {tags.length > 0 ? (
+              <div className="tag-selector">
+                {tags.map((tag) => {
+                  const checked = metadataTagIds.includes(tag.id);
+                  return (
+                    <label className={checked ? "tag-check is-active" : "tag-check"} key={tag.id}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => onMetadataTagToggle(tag.id)}
+                      />
+                      <span>#{tag.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : null}
+            <button className="primary-button compact-button" type="button" onClick={onMetadataSave} disabled={metadataSaving}>
+              {metadataSaving ? "保存中..." : "保存"}
+            </button>
+            {metadataFeedback ? (
+              <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
+                {metadataFeedback.message}
+              </p>
+            ) : null}
+          </div>
+        </details>
+
+        <details className="detail-collapsible">
+          <summary>
+            <span className="detail-summary-label">
+              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
+                info
+              </span>
+              <span>信息</span>
+            </span>
+          </summary>
+          <div className="detail-collapsible-body">
+            <div className="detail-meta-row">
+              <span>创建</span>
+              <strong>{formatWhen(detail.bookmark.createdAt)}</strong>
+            </div>
+            <div className="detail-meta-row">
+              <span>更新</span>
+              <strong>{formatWhen(detail.bookmark.updatedAt)}</strong>
+            </div>
+            <div className="detail-meta-row">
+              <span>体积</span>
+              <strong>{formatFileSize(displayedArchiveSize)}</strong>
+            </div>
+          </div>
+        </details>
+
+        <details className="detail-collapsible">
+          <summary>
+            <span className="detail-summary-label">
+              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
+                history
+              </span>
+              <span>版本</span>
+            </span>
+            <span className="badge">{detail.versions.length}</span>
+          </summary>
+          <div className="detail-collapsible-body">
+            <div className="version-list">
+              {detail.versions.map((version) => {
+                const active = version.id === selectedVersion.id;
+                return (
+                  <button
+                    key={version.id}
+                    className={`version-item${active ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => openBookmark(detail.bookmark.id, version.id)}
+                  >
+                    <strong>v{version.versionNo}</strong>
+                    <span>{formatWhen(version.createdAt)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </details>
+
+        <details className="detail-collapsible detail-quality-report">
+          <summary>
+            <span className="detail-summary-label">
+              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
+                analytics
+              </span>
+              <span>质量报告</span>
+            </span>
+            <span className="badge">{quality.score}分</span>
+          </summary>
+          <div className="detail-collapsible-body">
+            <div className="signal-grid">
+              <article className="signal-card">
+                <span>文本保留</span>
+                <strong>
+                  {retentionLabel(
+                    quality.archiveSignals.textLength,
+                    quality.liveSignals.textLength,
+                  )}
+                </strong>
+              </article>
+              <article className="signal-card">
+                <span>图片保留</span>
+                <strong>
+                  {retentionLabel(
+                    quality.archiveSignals.imageCount,
+                    quality.liveSignals.imageCount,
+                  )}
+                </strong>
+              </article>
+            </div>
+            {quality.reasons.length > 0 ? (
+              <div className="reason-list">
+                {quality.reasons.map((reason) => (
+                  <article className="reason-card" key={`${selectedVersion.id}-${reason.code}`}>
+                    <strong>{reason.code}</strong>
+                    <p>{reason.message}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="detail-note">无质量告警。</p>
+            )}
+          </div>
+        </details>
+      </aside>
     </section>
   );
 }
