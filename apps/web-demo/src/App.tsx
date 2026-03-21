@@ -216,10 +216,6 @@ function formatFileSize(input?: number) {
   return `${input} B`;
 }
 
-function folderDepth(path: string) {
-  return Math.max(0, path.split("/").length - 1);
-}
-
 function retentionLabel(numerator: number, denominator: number) {
   if (denominator <= 0) {
     return "—";
@@ -839,43 +835,15 @@ function HomePage({
   loadState,
   listError,
   hasActiveFilters,
-  managerBusy,
   managerFeedback,
-  folders,
-  tags,
-  selectedFolderId,
-  selectedTagId,
-  onSelectFolder,
-  onSelectTag,
   onOpenBookmark,
-  onCreateRootFolder,
-  onCreateChildFolder,
-  onEditFolderPath,
-  onDeleteFolder,
-  onCreateTag,
-  onEditTag,
-  onDeleteTag,
 }: {
   items: Bookmark[];
   loadState: LoadState;
   listError: string | null;
   hasActiveFilters: boolean;
-  managerBusy: boolean;
   managerFeedback: InlineFeedback | null;
-  folders: Folder[];
-  tags: Tag[];
-  selectedFolderId: string;
-  selectedTagId: string;
-  onSelectFolder: (folderId: string) => void;
-  onSelectTag: (tagId: string) => void;
   onOpenBookmark: (bookmarkId: string) => void;
-  onCreateRootFolder: () => void;
-  onCreateChildFolder: (folder: Folder) => void;
-  onEditFolderPath: (folder: Folder) => void;
-  onDeleteFolder: (folder: Folder) => void;
-  onCreateTag: () => void;
-  onEditTag: (tag: Tag) => void;
-  onDeleteTag: (tag: Tag) => void;
 }) {
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
@@ -916,30 +884,6 @@ function HomePage({
           ))}
         </section>
       )}
-
-      <details className="home-manager">
-        <summary>高级管理</summary>
-        <div className="home-manager-body">
-          <p className="home-manager-note">需要新建子收藏夹、改路径、删除标签时，在这里处理。</p>
-          <LibraryManager
-            folders={folders}
-            tags={tags}
-            selectedFolderId={selectedFolderId}
-            selectedTagId={selectedTagId}
-            busy={managerBusy}
-            feedback={null}
-            onSelectFolderFilter={onSelectFolder}
-            onSelectTagFilter={onSelectTag}
-            onCreateRootFolder={onCreateRootFolder}
-            onCreateChildFolder={onCreateChildFolder}
-            onEditFolderPath={onEditFolderPath}
-            onDeleteFolder={onDeleteFolder}
-            onCreateTag={onCreateTag}
-            onEditTag={onEditTag}
-            onDeleteTag={onDeleteTag}
-          />
-        </div>
-      </details>
 
       <footer className="home-footer">
         <span>Privacy</span>
@@ -1226,141 +1170,6 @@ function ManagerDialog({
         )}
       </div>
     </div>
-  );
-}
-
-function LibraryManager({
-  folders,
-  tags,
-  selectedFolderId,
-  selectedTagId,
-  busy,
-  feedback,
-  onSelectFolderFilter,
-  onSelectTagFilter,
-  onCreateRootFolder,
-  onCreateChildFolder,
-  onEditFolderPath,
-  onDeleteFolder,
-  onCreateTag,
-  onEditTag,
-  onDeleteTag,
-}: {
-  folders: Folder[];
-  tags: Tag[];
-  selectedFolderId: string;
-  selectedTagId: string;
-  busy: boolean;
-  feedback: InlineFeedback | null;
-  onSelectFolderFilter: (folderId: string) => void;
-  onSelectTagFilter: (tagId: string) => void;
-  onCreateRootFolder: () => void;
-  onCreateChildFolder: (parent: Folder) => void;
-  onEditFolderPath: (folder: Folder) => void;
-  onDeleteFolder: (folder: Folder) => void;
-  onCreateTag: () => void;
-  onEditTag: (tag: Tag) => void;
-  onDeleteTag: (tag: Tag) => void;
-}) {
-  return (
-    <>
-      <section className="library-manager">
-        <article className="manager-card">
-          <div className="panel-header-inline">
-            <div>
-              <p className="eyebrow">Folders</p>
-              <h2 className="manager-title">多层收藏夹</h2>
-            </div>
-            <button className="secondary-button" type="button" onClick={onCreateRootFolder} disabled={busy}>
-              新建收藏夹
-            </button>
-          </div>
-          <p className="detail-note">删除当前收藏夹时会保留子收藏夹，并自动上移一层。</p>
-          <div className="folder-list">
-            {folders.length > 0 ? (
-              folders.map((folder) => (
-                <article className="folder-row" key={folder.id} style={{ paddingLeft: `${folderDepth(folder.path) * 18}px` }}>
-                  <div className="folder-row-main">
-                    <strong>{folder.name}</strong>
-                    <span>{folder.path}</span>
-                  </div>
-                  <div className="folder-row-actions">
-                    <button
-                      className={selectedFolderId === folder.id ? "primary-button compact-button" : "secondary-button compact-button"}
-                      type="button"
-                      onClick={() => onSelectFolderFilter(selectedFolderId === folder.id ? "" : folder.id)}
-                      disabled={busy}
-                    >
-                      {selectedFolderId === folder.id ? "取消筛选" : "筛选"}
-                    </button>
-                    <button className="ghost-button compact-button" type="button" onClick={() => onCreateChildFolder(folder)} disabled={busy}>
-                      子收藏夹
-                    </button>
-                    <button className="ghost-button compact-button" type="button" onClick={() => onEditFolderPath(folder)} disabled={busy}>
-                      改路径
-                    </button>
-                    <button className="ghost-button compact-button danger-button" type="button" onClick={() => onDeleteFolder(folder)} disabled={busy}>
-                      删除
-                    </button>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <p className="detail-note">还没有收藏夹，先建一个根目录也可以。</p>
-            )}
-          </div>
-        </article>
-
-        <article className="manager-card">
-          <div className="panel-header-inline">
-            <div>
-              <p className="eyebrow">Tags</p>
-              <h2 className="manager-title">标签管理</h2>
-            </div>
-            <button className="secondary-button" type="button" onClick={onCreateTag} disabled={busy}>
-              新建标签
-            </button>
-          </div>
-          <div className="tag-manager-list">
-            {tags.length > 0 ? (
-              tags.map((tag) => (
-                <article className="tag-manager-row" key={tag.id}>
-                  <div className="tag-manager-main">
-                    <span className="tag">
-                      #{tag.name}
-                      {tag.color ? <small>{tag.color}</small> : null}
-                    </span>
-                  </div>
-                  <div className="folder-row-actions">
-                    <button
-                      className={selectedTagId === tag.id ? "primary-button compact-button" : "secondary-button compact-button"}
-                      type="button"
-                      onClick={() => onSelectTagFilter(selectedTagId === tag.id ? "" : tag.id)}
-                      disabled={busy}
-                    >
-                      {selectedTagId === tag.id ? "取消筛选" : "筛选"}
-                    </button>
-                    <button className="ghost-button compact-button" type="button" onClick={() => onEditTag(tag)} disabled={busy}>
-                      编辑
-                    </button>
-                    <button className="ghost-button compact-button danger-button" type="button" onClick={() => onDeleteTag(tag)} disabled={busy}>
-                      删除
-                    </button>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <p className="detail-note">还没有标签，先建几个常用主题会更方便筛选。</p>
-            )}
-          </div>
-        </article>
-      </section>
-      {feedback ? (
-        <p className={feedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
-          {feedback.message}
-        </p>
-      ) : null}
-    </>
   );
 }
 
@@ -2745,22 +2554,8 @@ export function App({
             loadState={loadState}
             listError={listError}
             hasActiveFilters={Boolean(searchInput.trim() || qualityFilter !== "all" || selectedFolderId || selectedTagId)}
-            managerBusy={managerBusy}
             managerFeedback={managerFeedback}
-            folders={folders}
-            tags={tags}
-            selectedFolderId={selectedFolderId}
-            selectedTagId={selectedTagId}
-            onSelectFolder={setSelectedFolderId}
-            onSelectTag={setSelectedTagId}
             onOpenBookmark={openBookmark}
-            onCreateRootFolder={() => openManagerDialog({ kind: "create-folder" })}
-            onCreateChildFolder={(folder) => openManagerDialog({ kind: "create-folder", parent: folder })}
-            onEditFolderPath={(folder) => openManagerDialog({ kind: "edit-folder", folder })}
-            onDeleteFolder={(folder) => openManagerDialog({ kind: "delete-folder", folder })}
-            onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
-            onEditTag={(tag) => openManagerDialog({ kind: "edit-tag", tag })}
-            onDeleteTag={(tag) => openManagerDialog({ kind: "delete-tag", tag })}
           />
         ) : route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
         <section className="loading">正在加载归档详情...</section>

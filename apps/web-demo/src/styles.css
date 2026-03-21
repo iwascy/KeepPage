@@ -1144,35 +1144,6 @@ button {
   max-width: 32rem;
 }
 
-.home-manager {
-  margin-top: 1.5rem;
-  border-radius: var(--radius-card);
-  background: rgba(255, 255, 255, 0.64);
-  box-shadow: var(--shadow-soft);
-  overflow: hidden;
-}
-
-.home-manager summary {
-  cursor: pointer;
-  padding: 1rem 1.15rem;
-  font-weight: 700;
-  list-style: none;
-}
-
-.home-manager summary::-webkit-details-marker {
-  display: none;
-}
-
-.home-manager-body {
-  padding: 0 1.15rem 1.15rem;
-}
-
-.home-manager-note {
-  margin: 0 0 1rem;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
 .home-footer {
   display: flex;
   align-items: center;
@@ -1226,70 +1197,6 @@ button {
 .home-skeleton-line.is-short { width: 66%; }
 .home-skeleton-line.is-meta { width: 42%; margin-bottom: 0; }
 .home-skeleton-line.is-meta-short { width: 24%; margin-bottom: 0; }
-
-/* ── Library Manager (inside AppShell) ── */
-
-.library-manager {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.8rem;
-  margin-bottom: 1rem;
-}
-
-.manager-card {
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  box-shadow: var(--shadow-soft);
-}
-
-.manager-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.folder-list,
-.tag-manager-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.folder-row,
-.tag-manager-row {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: space-between;
-  align-items: flex-start;
-  border-radius: 18px;
-  background: rgba(239, 242, 245, 0.72);
-  padding: 0.7rem;
-}
-
-.folder-row-main,
-.tag-manager-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.folder-row-main span {
-  color: var(--muted);
-  font-size: 0.78rem;
-  overflow-wrap: anywhere;
-}
-
-.folder-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.35rem;
-}
 
 .panel-header-inline {
   display: flex;
@@ -2147,16 +2054,6 @@ button {
 
   .signal-grid {
     grid-template-columns: 1fr;
-  }
-
-  .folder-row,
-  .tag-manager-row {
-    flex-direction: column;
-  }
-
-  .folder-row-actions {
-    width: 100%;
-    justify-content: flex-start;
   }
 
   .source-grid {
