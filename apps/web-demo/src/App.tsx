@@ -1174,6 +1174,7 @@ function ManagerDialog({
 }
 
 function AuthPanel({
+  isDemoMode,
   mode,
   name,
   email,
@@ -1186,6 +1187,7 @@ function AuthPanel({
   onPasswordChange,
   onSubmit,
 }: {
+  isDemoMode: boolean;
   mode: AuthMode;
   name: string;
   email: string;
@@ -1236,9 +1238,9 @@ function AuthPanel({
               type="email"
               value={email}
               onChange={(event) => onEmailChange(event.target.value)}
-              placeholder="邮箱"
+              placeholder={isDemoMode ? "邮箱（演示模式可留空）" : "邮箱"}
               autoComplete="email"
-              required
+              required={!isDemoMode}
             />
           </label>
           <label className="field">
@@ -1246,9 +1248,9 @@ function AuthPanel({
               type="password"
               value={password}
               onChange={(event) => onPasswordChange(event.target.value)}
-              placeholder={isRegister ? "密码（至少 8 位）" : "密码"}
+              placeholder={isDemoMode ? "密码（演示模式不校验）" : isRegister ? "密码（至少 8 位）" : "密码"}
               autoComplete={isRegister ? "new-password" : "current-password"}
-              required
+              required={!isDemoMode}
             />
           </label>
           {error ? <p className="auth-error">{error}</p> : null}
@@ -1325,30 +1327,58 @@ function DetailPanel({
           ← 返回列表
         </button>
 
-        <div className="detail-block">
-          <h2 className="detail-title">{detail.bookmark.title}</h2>
-          <a className="url" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
-            {detail.bookmark.sourceUrl}
-          </a>
-        </div>
-
-        <div className="detail-block compact-gap">
-          <div className="panel-header-inline">
-            <p className="panel-title">编辑</p>
-            <button className="primary-button compact-button" type="button" onClick={onMetadataSave} disabled={metadataSaving}>
-              {metadataSaving ? "保存中..." : "保存"}
+        {/* Preview Mode Switch */}
+        <div className="detail-preview-mode">
+          <div className="preview-mode-switch" role="tablist" aria-label="归档预览模式">
+            <button
+              className={activePreviewMode === "reader" ? "preview-mode-button is-active" : "preview-mode-button"}
+              type="button"
+              onClick={() => onPreviewModeChange("reader")}
+              disabled={!readerPreviewAvailable}
+              aria-pressed={activePreviewMode === "reader"}
+            >
+              阅读视图
+            </button>
+            <button
+              className={activePreviewMode === "original" ? "preview-mode-button is-active" : "preview-mode-button"}
+              type="button"
+              onClick={() => onPreviewModeChange("original")}
+              disabled={!originalPreviewAvailable}
+              aria-pressed={activePreviewMode === "original"}
+            >
+              原始归档
             </button>
           </div>
-          <label className="field">
-            <textarea
-              value={metadataNote}
-              onChange={(event) => onMetadataNoteChange(event.target.value)}
-              rows={3}
-              placeholder="备注"
-            />
-          </label>
-          <label className="field">
-            <select value={metadataFolderId} onChange={(event) => onMetadataFolderChange(event.target.value)}>
+          {previewFallbackMessage ? (
+            <p className="preview-mode-note">{previewFallbackMessage}</p>
+          ) : null}
+        </div>
+
+        {/* Header: label + ID */}
+        <div className="detail-block">
+          <div className="detail-header-label">
+            <span className="detail-header-label-text">Detail View</span>
+            <span className="detail-header-label-id">#{detail.bookmark.id.slice(0, 8).toUpperCase()}</span>
+          </div>
+          <h2 className="detail-title">{detail.bookmark.title}</h2>
+          <div className="detail-url-row">
+            <span className="material-symbols-outlined" aria-hidden="true">link</span>
+            <a href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
+              {detail.bookmark.sourceUrl}
+            </a>
+            <span className="material-symbols-outlined url-external-icon" aria-hidden="true">open_in_new</span>
+          </div>
+        </div>
+
+        {/* Compact Metadata Grid */}
+        <div className="detail-meta-grid">
+          <div className="detail-meta-cell">
+            <span className="detail-meta-cell-label">收藏夹</span>
+            <select
+              className="detail-meta-cell-value"
+              value={metadataFolderId}
+              onChange={(event) => onMetadataFolderChange(event.target.value)}
+            >
               <option value="">未归档</option>
               {folders.map((folder) => (
                 <option key={folder.id} value={folder.id}>
@@ -1356,13 +1386,30 @@ function DetailPanel({
                 </option>
               ))}
             </select>
-          </label>
-          {tags.length > 0 ? (
-            <div className="tag-selector">
+          </div>
+          <div className="detail-meta-cell">
+            <span className="detail-meta-cell-label">创建</span>
+            <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.createdAt)}</span>
+          </div>
+          <div className="detail-meta-cell">
+            <span className="detail-meta-cell-label">体积</span>
+            <span className="detail-meta-cell-value">{formatFileSize(displayedArchiveSize)}</span>
+          </div>
+          <div className="detail-meta-cell">
+            <span className="detail-meta-cell-label">更新</span>
+            <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.updatedAt)}</span>
+          </div>
+        </div>
+
+        {/* Tags */}
+        {tags.length > 0 ? (
+          <div className="detail-tags-section">
+            <span className="detail-tags-section-label">标签</span>
+            <div className="detail-tags-wrap">
               {tags.map((tag) => {
                 const checked = metadataTagIds.includes(tag.id);
                 return (
-                  <label className={checked ? "tag-check is-active" : "tag-check"} key={tag.id}>
+                  <label className={checked ? "detail-tag-pill is-active" : "detail-tag-pill"} key={tag.id}>
                     <input
                       type="checkbox"
                       checked={checked}
@@ -1373,55 +1420,82 @@ function DetailPanel({
                 );
               })}
             </div>
-          ) : null}
-          {metadataFeedback ? (
-            <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
-              {metadataFeedback.message}
-            </p>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
-        <div className="detail-block">
-          <div className="detail-meta-row">
-            <span>创建</span>
-            <strong>{formatWhen(detail.bookmark.createdAt)}</strong>
+        {/* Version History */}
+        <details className="detail-collapsible" open>
+          <summary>
+            <span className="detail-summary-label">
+              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
+                history
+              </span>
+              <span>版本历史</span>
+            </span>
+            <span className="badge">{detail.versions.length}</span>
+          </summary>
+          <div className="detail-collapsible-body">
+            <div className="version-list">
+              {detail.versions.map((version) => {
+                const active = version.id === selectedVersion.id;
+                return (
+                  <button
+                    key={version.id}
+                    className={`version-item${active ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => openBookmark(detail.bookmark.id, version.id)}
+                  >
+                    <strong>v{version.versionNo}</strong>
+                    <span>{formatWhen(version.createdAt)}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="detail-meta-row">
-            <span>更新</span>
-            <strong>{formatWhen(detail.bookmark.updatedAt)}</strong>
-          </div>
-          <div className="detail-meta-row">
-            <span>体积</span>
-            <strong>{formatFileSize(displayedArchiveSize)}</strong>
-          </div>
-        </div>
+        </details>
 
-        <div className="detail-block">
-          <div className="panel-header-inline">
-            <p className="panel-title">版本</p>
-            <span className="panel-subtle">{detail.versions.length}</span>
+        {/* Personal Notes */}
+        <details className="detail-collapsible" open>
+          <summary>
+            <span className="detail-summary-label">
+              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
+                edit_note
+              </span>
+              <span>备注</span>
+            </span>
+          </summary>
+          <div className="detail-collapsible-body">
+            <label className="field">
+              <textarea
+                value={metadataNote}
+                onChange={(event) => onMetadataNoteChange(event.target.value)}
+                rows={3}
+                placeholder="添加备注..."
+              />
+            </label>
+            <button className="primary-button compact-button" type="button" onClick={onMetadataSave} disabled={metadataSaving}>
+              {metadataSaving ? "保存中..." : "保存"}
+            </button>
+            {metadataFeedback ? (
+              <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
+                {metadataFeedback.message}
+              </p>
+            ) : null}
           </div>
-          <div className="version-list">
-            {detail.versions.map((version) => {
-              const active = version.id === selectedVersion.id;
-              return (
-                <button
-                  key={version.id}
-                  className={`version-item${active ? " is-active" : ""}`}
-                  type="button"
-                  onClick={() => openBookmark(detail.bookmark.id, version.id)}
-                >
-                  <strong>v{version.versionNo}</strong>
-                  <span>{formatWhen(version.createdAt)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        </details>
 
-        <details className="detail-quality-toggle">
-          <summary>质量报告 · {quality.score}分</summary>
-          <div className="detail-block compact-gap">
+        {/* Quality Report */}
+        <details className="detail-collapsible">
+          <summary>
+            <span className="detail-summary-label">
+              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
+                analytics
+              </span>
+              <span>质量报告</span>
+            </span>
+            <span className="badge">{quality.score}分</span>
+          </summary>
+          <div className="detail-collapsible-body">
             <div className="signal-grid">
               <article className="signal-card">
                 <span>文本保留</span>
@@ -1456,51 +1530,32 @@ function DetailPanel({
             )}
           </div>
         </details>
+
+        {/* Action Buttons */}
+        <div className="detail-actions-footer">
+          {previewState.status === "ready" && activePreviewMode ? (
+            <a
+              className="detail-action-button"
+              href={previewState.url}
+              download={`keeppage-${detail.bookmark.id}-v${selectedVersion.versionNo}-${activePreviewMode === "reader" ? "reader" : "original"}.html`}
+            >
+              <span className="material-symbols-outlined" aria-hidden="true">ios_share</span>
+              导出
+            </a>
+          ) : (
+            <span className="detail-action-button" style={{ opacity: 0.4, cursor: "not-allowed" }}>
+              <span className="material-symbols-outlined" aria-hidden="true">ios_share</span>
+              导出
+            </span>
+          )}
+          <button className="detail-action-button is-danger" type="button">
+            <span className="material-symbols-outlined" aria-hidden="true">delete</span>
+            删除
+          </button>
+        </div>
       </aside>
 
       <section className="detail-preview-panel">
-        <header className="preview-header">
-          <div className="preview-controls">
-            <div className="preview-mode-switch" role="tablist" aria-label="归档预览模式">
-              <button
-                className={activePreviewMode === "reader" ? "preview-mode-button is-active" : "preview-mode-button"}
-                type="button"
-                onClick={() => onPreviewModeChange("reader")}
-                disabled={!readerPreviewAvailable}
-                aria-pressed={activePreviewMode === "reader"}
-              >
-                阅读视图
-              </button>
-              <button
-                className={activePreviewMode === "original" ? "preview-mode-button is-active" : "preview-mode-button"}
-                type="button"
-                onClick={() => onPreviewModeChange("original")}
-                disabled={!originalPreviewAvailable}
-                aria-pressed={activePreviewMode === "original"}
-              >
-                原始归档
-              </button>
-            </div>
-            {previewFallbackMessage ? (
-              <p className="preview-mode-note">{previewFallbackMessage}</p>
-            ) : null}
-          </div>
-          <div className="preview-actions">
-            <a className="secondary-button" href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
-              原网页
-            </a>
-            {previewState.status === "ready" && activePreviewMode ? (
-              <a
-                className="primary-button"
-                href={previewState.url}
-                download={`keeppage-${detail.bookmark.id}-v${selectedVersion.versionNo}-${activePreviewMode === "reader" ? "reader" : "original"}.html`}
-              >
-                下载{previewModeLabel(activePreviewMode)}
-              </a>
-            ) : null}
-          </div>
-        </header>
-
         {!activePreviewMode ? (
           <section className="empty-state preview-empty">
             <h2>归档对象不可用</h2>
@@ -2474,6 +2529,19 @@ export function App({
     setAuthError(null);
 
     try {
+      if (isDemoMode) {
+        setStoredToken("demo-token");
+        setSession({
+          status: "authenticated",
+          token: "demo-token",
+          user: demoState.user,
+          error: null,
+        });
+        setAuthPassword("");
+        goToList();
+        return;
+      }
+
       const sessionResult = authMode === "register"
         ? await registerAccount({
             name: authName.trim() || undefined,
@@ -2509,6 +2577,7 @@ export function App({
       </main>
     ) : (
       <AuthPanel
+        isDemoMode={isDemoMode}
         mode={authMode}
         name={authName}
         email={authEmail}

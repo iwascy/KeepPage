@@ -2650,6 +2650,259 @@ button {
   padding: 0.15rem 0.35rem;
 }
 
+/* ── Detail Panel – Preview Mode (in sidebar) ── */
+
+.detail-preview-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* ── Detail Panel – Header Label ── */
+
+.detail-header-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.detail-header-label-text {
+  font-size: 0.6rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+}
+
+.detail-header-label-id {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ── Detail Panel – URL Row ── */
+
+.detail-url-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  transition: background 160ms ease;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.detail-url-row:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.detail-url-row .material-symbols-outlined {
+  font-size: 0.85rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.detail-url-row a {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.detail-url-row a:hover {
+  text-decoration: underline;
+}
+
+.detail-url-row .url-external-icon {
+  font-size: 0.7rem;
+  color: var(--soft);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Detail Panel – Compact Metadata Grid ── */
+
+.detail-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.55rem;
+}
+
+.detail-meta-cell {
+  padding: 0.65rem 0.75rem;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  transition: background 160ms ease;
+}
+
+.detail-meta-cell:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.detail-meta-cell-label {
+  display: block;
+  font-size: 0.55rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--soft);
+  margin-bottom: 0.25rem;
+}
+
+.detail-meta-cell-value {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.detail-meta-cell select {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text);
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+}
+
+.detail-meta-cell select:focus {
+  outline: none;
+}
+
+/* ── Detail Panel – Tags Section ── */
+
+.detail-tags-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.detail-tags-section-label {
+  font-size: 0.55rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--soft);
+  padding: 0 0.15rem;
+}
+
+.detail-tags-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.detail-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.6rem;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: var(--radius-button);
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #52525b;
+  cursor: pointer;
+  transition: background 160ms ease;
+  gap: 0.3rem;
+}
+
+.detail-tag-pill:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.detail-tag-pill.is-active {
+  background: linear-gradient(135deg, #666666, #4a4a4a);
+  color: white;
+  border-color: transparent;
+}
+
+.detail-tag-pill input {
+  display: none;
+}
+
+.detail-tag-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(87, 87, 87, 0.2);
+  border-radius: var(--radius-button);
+  background: transparent;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.detail-tag-add:hover {
+  background: rgba(87, 87, 87, 0.05);
+}
+
+.detail-tag-add .material-symbols-outlined {
+  font-size: 0.62rem;
+}
+
+/* ── Detail Panel – Actions Footer ── */
+
+.detail-actions-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.4);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+
+.detail-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #3f3f46;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.detail-action-button:hover {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 6px 16px rgba(45, 51, 56, 0.06);
+}
+
+.detail-action-button .material-symbols-outlined {
+  font-size: 1rem;
+}
+
+.detail-action-button.is-danger {
+  color: var(--low);
+}
+
+.detail-action-button.is-danger:hover {
+  background: rgba(147, 42, 42, 0.05);
+  border-color: rgba(147, 42, 42, 0.2);
+}
+
 /* ── Empty / Loading States ── */
 
 .loading,
