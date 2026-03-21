@@ -5,6 +5,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
 } from "react";
@@ -566,6 +567,7 @@ function AppShell({
   managerBusy,
   onSelectFolder,
   onSelectTag,
+  onGoHome,
   onCreateRootFolder,
   onCreateTag,
   onOpenImportNew,
@@ -585,6 +587,7 @@ function AppShell({
   managerBusy: boolean;
   onSelectFolder: (folderId: string) => void;
   onSelectTag: (tagId: string) => void;
+  onGoHome: () => void;
   onCreateRootFolder: () => void;
   onCreateTag: () => void;
   onOpenImportNew: () => void;
@@ -594,6 +597,8 @@ function AppShell({
   logoutLabel?: string;
 }) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
   const sortedFolders = useMemo(
     () => [...folders].sort((left, right) => left.path.localeCompare(right.path, "zh-CN")),
@@ -690,7 +695,36 @@ function AppShell({
     });
   }, [sortedFolders]);
 
+  useEffect(() => {
+    if (!isProfileMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!profileMenuRef.current?.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsProfileMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isProfileMenuOpen]);
+
   const displayName = displayUserName(user);
+
+  function closeProfileMenu() {
+    setIsProfileMenuOpen(false);
+  }
 
   function handleToggleFolder(folder: Folder) {
     setCollapsedFolderIds((current) => {
@@ -712,13 +746,13 @@ function AppShell({
   return (
     <main className="home-page">
       <aside className="home-sidebar">
-        <div className="home-brand">
+        <button className="home-brand" type="button" onClick={onGoHome} aria-label="返回主页">
           <div className="home-brand-mark">{userInitials(user).slice(0, 1)}</div>
           <div>
             <h1>KeepPage</h1>
             <p>Your Archive Space</p>
           </div>
-        </div>
+        </button>
 
         <label className="home-search">
           <span className="home-search-icon" aria-hidden="true" />
@@ -734,8 +768,15 @@ function AppShell({
         <section className="home-sidebar-section">
           <header className="home-sidebar-section-head">
             <span>Collections</span>
-            <button className="home-section-action" type="button" onClick={onCreateRootFolder} disabled={managerBusy}>
-              新建
+            <button
+              className="home-section-action"
+              type="button"
+              onClick={onCreateRootFolder}
+              disabled={managerBusy}
+              aria-label="新建收藏夹"
+              title="新建收藏夹"
+            >
+              <span aria-hidden="true">+</span>
             </button>
           </header>
           <div className="home-folder-list">
@@ -789,8 +830,15 @@ function AppShell({
         <section className="home-sidebar-section">
           <header className="home-sidebar-section-head">
             <span>Tags</span>
-            <button className="home-section-action" type="button" onClick={onCreateTag} disabled={managerBusy}>
-              新建
+            <button
+              className="home-section-action"
+              type="button"
+              onClick={onCreateTag}
+              disabled={managerBusy}
+              aria-label="新建标签"
+              title="新建标签"
+            >
+              <span aria-hidden="true">+</span>
             </button>
           </header>
           <div className="home-tag-list">
@@ -810,28 +858,64 @@ function AppShell({
           </div>
         </section>
 
-        <div className="home-sidebar-footer">
-          <button className="home-cta-button" type="button" onClick={onOpenImportNew}>
-            + 新建导入
-          </button>
-          <div className="home-sidebar-links">
-            <button className="home-sidebar-link" type="button" onClick={onOpenImportHistory}>
-              导入历史
-            </button>
-            <button className="home-sidebar-link" type="button" onClick={onLogout}>
-              {logoutLabel}
-            </button>
-          </div>
-        </div>
       </aside>
 
       <div className="home-shell">
         <header className="home-topbar">
-          <div className="home-profile">
-            <div className="home-profile-copy">
-              <strong>{displayName}</strong>
-            </div>
-            <div className="home-avatar">{userInitials(user)}</div>
+          <div className="home-profile-menu" ref={profileMenuRef}>
+            <button
+              className={isProfileMenuOpen ? "home-profile is-open" : "home-profile"}
+              type="button"
+              onClick={() => setIsProfileMenuOpen((current) => !current)}
+              aria-haspopup="menu"
+              aria-expanded={isProfileMenuOpen}
+              aria-label="打开账号菜单"
+            >
+              <div className="home-profile-copy">
+                <strong>{displayName}</strong>
+              </div>
+              <div className="home-avatar">{userInitials(user)}</div>
+              <span className="home-profile-caret" aria-hidden="true">
+                ▾
+              </span>
+            </button>
+            {isProfileMenuOpen ? (
+              <div className="home-profile-dropdown" role="menu" aria-label="账号菜单">
+                <button
+                  className="home-profile-menu-item"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeProfileMenu();
+                    onOpenImportNew();
+                  }}
+                >
+                  新建导入
+                </button>
+                <button
+                  className="home-profile-menu-item"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeProfileMenu();
+                    onOpenImportHistory();
+                  }}
+                >
+                  导入历史
+                </button>
+                <button
+                  className="home-profile-menu-item is-danger"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeProfileMenu();
+                    onLogout();
+                  }}
+                >
+                  {logoutLabel}
+                </button>
+              </div>
+            ) : null}
           </div>
         </header>
 
@@ -2797,6 +2881,7 @@ export function App({
         managerBusy={managerBusy}
         onSelectFolder={setSelectedFolderId}
         onSelectTag={setSelectedTagId}
+        onGoHome={goToList}
         onCreateRootFolder={() => openManagerDialog({ kind: "create-folder" })}
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
         onOpenImportNew={goToImportNew}
