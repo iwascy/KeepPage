@@ -18,6 +18,7 @@ import {
   createFolder,
   createTag,
   createArchiveObjectUrl,
+  deleteBookmark,
   deleteFolder,
   deleteTag,
   fetchBookmarkDetail,
@@ -42,6 +43,7 @@ import {
   createDemoImportTask,
   createDemoTag,
   createDemoWorkspace,
+  deleteDemoBookmark,
   deleteDemoFolder,
   deleteDemoTag,
   filterDemoBookmarks,
@@ -86,6 +88,7 @@ type InlineFeedback = {
 
 type ManagerDialogState =
   | { kind: "closed" }
+  | { kind: "delete-bookmark"; bookmark: Bookmark }
   | { kind: "create-folder"; parent?: Folder }
   | { kind: "edit-folder"; folder: Folder }
   | { kind: "delete-folder"; folder: Folder }
@@ -1289,7 +1292,8 @@ function ManagerDialog({
     );
   }
 
-  const isDeleteDialog = state.kind === "delete-folder" || state.kind === "delete-tag";
+  const isDeleteDialog = state.kind === "delete-bookmark" || state.kind === "delete-folder" || state.kind === "delete-tag";
+  const isBookmarkDialog = state.kind === "delete-bookmark";
   const isFolderDialog = state.kind === "edit-folder" || state.kind === "delete-folder";
   const isTagDialog = state.kind === "edit-tag" || state.kind === "delete-tag";
   const tagColor = colorValue.trim();
@@ -1304,6 +1308,11 @@ function ManagerDialog({
     title = "调整收藏夹路径";
     description = "直接改完整路径，系统会自动识别父级并把它移动到正确位置。";
     submitLabel = "保存路径";
+  } else if (state.kind === "delete-bookmark") {
+    eyebrow = "Delete Bookmark";
+    title = "确认删除这条书签";
+    description = "它会从归档列表中移除，关联的版本记录也会一起删除。";
+    submitLabel = "删除书签";
   } else if (state.kind === "delete-folder") {
     eyebrow = "Delete Folder";
     title = "确认删除这个收藏夹";
@@ -1353,15 +1362,21 @@ function ManagerDialog({
         {isDeleteDialog ? (
           <>
             <section className="manager-dialog-hero">
-              <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
-                {isFolderDialog ? "DIR" : "TAG"}
+              <div className={isBookmarkDialog ? "manager-dialog-mark" : isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
+                {isBookmarkDialog ? "ARC" : isFolderDialog ? "DIR" : "TAG"}
               </div>
               <div className="manager-dialog-hero-copy">
                 <strong>
-                  {state.kind === "delete-folder" ? state.folder.path : `#${state.tag.name}`}
+                  {state.kind === "delete-bookmark"
+                    ? state.bookmark.title
+                    : state.kind === "delete-folder"
+                      ? state.folder.path
+                      : `#${state.tag.name}`}
                 </strong>
                 <span>
-                  {state.kind === "delete-folder"
+                  {state.kind === "delete-bookmark"
+                    ? "删除后，这条归档会立刻从当前列表里消失。"
+                    : state.kind === "delete-folder"
                     ? "删除后会立即从收藏夹列表中消失。"
                     : "删除后，这个标签会从所有相关网页上解绑。"}
                 </span>
@@ -2739,6 +2754,36 @@ export function App({
     }
   }
 
+  async function handleDeleteBookmark(bookmark: Bookmark) {
+    if (isDemoMode) {
+      try {
+        setDemoState(deleteDemoBookmark(demoState, bookmark.id));
+        if (route.page === "detail" && route.bookmarkId === bookmark.id) {
+          goToList();
+        }
+        setManagerFeedback({
+          kind: "success",
+          message: `已删除书签：${bookmark.title}`,
+        });
+      } catch (error) {
+        setManagerFeedback({
+          kind: "error",
+          message: toErrorMessage(error),
+        });
+        throw error;
+      }
+      return;
+    }
+
+    await runManagerAction(async () => {
+      await deleteBookmark(bookmark.id, authToken!);
+      if (route.page === "detail" && route.bookmarkId === bookmark.id) {
+        goToList();
+      }
+      return `已删除书签：${bookmark.title}`;
+    });
+  }
+
   async function handleCreateFolder(name: string, parent?: Folder) {
     const trimmedName = name.trim();
     if (isDemoMode) {
@@ -2988,6 +3033,11 @@ export function App({
   async function handleManagerDialogDelete() {
     setManagerDialogError(null);
     try {
+      if (managerDialog.kind === "delete-bookmark") {
+        await handleDeleteBookmark(managerDialog.bookmark);
+        closeManagerDialog();
+        return;
+      }
       if (managerDialog.kind === "delete-folder") {
         await handleDeleteFolder(managerDialog.folder);
         closeManagerDialog();
@@ -3119,6 +3169,14 @@ export function App({
               label: "前往详情编辑",
               icon: "ED",
               onSelect: () => openBookmark(bookmark.id),
+            },
+            {
+              id: "delete-bookmark",
+              label: "删除书签",
+              icon: "DL",
+              danger: true,
+              disabled: managerBusy,
+              onSelect: () => openManagerDialog({ kind: "delete-bookmark", bookmark }),
             },
           ],
         },

@@ -1522,6 +1522,23 @@ export function updateDemoBookmarkMetadata(
   };
 }
 
+export function deleteDemoBookmark(workspace: DemoWorkspace, bookmarkId: string) {
+  const current = cloneWorkspace(workspace);
+  const existed = current.bookmarks.some((bookmark) => bookmark.id === bookmarkId);
+  if (!existed) {
+    throw new Error("未找到要删除的书签。");
+  }
+
+  const versionIds = (current.versionsByBookmarkId[bookmarkId] ?? []).map((version) => version.id);
+  current.bookmarks = current.bookmarks.filter((bookmark) => bookmark.id !== bookmarkId);
+  delete current.versionsByBookmarkId[bookmarkId];
+  for (const versionId of versionIds) {
+    delete current.archiveHtmlByVersionId[versionId];
+  }
+
+  return current;
+}
+
 export function previewDemoImport(workspace: DemoWorkspace, request: ImportPreviewRequest) {
   const entries = parseImportEntries(request.rawInput);
   return createImportPreviewFromEntries(entries, workspace, request);

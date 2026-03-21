@@ -97,6 +97,7 @@ export interface BookmarkRepository {
   completeCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult>;
   searchBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse>;
   getBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null>;
+  deleteBookmark(userId: string, bookmarkId: string): Promise<boolean>;
   updateBookmarkMetadata(
     userId: string,
     bookmarkId: string,

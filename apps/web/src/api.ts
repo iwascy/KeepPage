@@ -415,6 +415,13 @@ export async function fetchBookmarkDetail(
   }
 }
 
+export async function deleteBookmark(bookmarkId: string, token: string) {
+  await requestVoid(`/bookmarks/${encodeURIComponent(bookmarkId)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
 export async function updateBookmarkMetadata(
   bookmarkId: string,
   input: BookmarkMetadataUpdateRequest,

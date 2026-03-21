@@ -75,6 +75,39 @@ export async function registerBookmarkRoutes(
     return reply.send(payload);
   });
 
+  app.delete<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId", async (request, reply) => {
+    const user = await authService.requireUser(request);
+    const params = bookmarkParamsSchema.parse(request.params);
+    const detail = await repository.getBookmarkDetail(user.id, params.bookmarkId);
+    if (!detail) {
+      return reply.status(404).send({
+        error: "BookmarkNotFound",
+        message: "Bookmark not found.",
+      });
+    }
+
+    const deleted = await repository.deleteBookmark(user.id, params.bookmarkId);
+    if (!deleted) {
+      return reply.status(404).send({
+        error: "BookmarkNotFound",
+        message: "Bookmark not found.",
+      });
+    }
+
+    await Promise.allSettled(
+      detail.versions.flatMap((version) => (
+        [
+          objectStorage.deleteObject(version.htmlObjectKey),
+          version.readerHtmlObjectKey
+            ? objectStorage.deleteObject(version.readerHtmlObjectKey)
+            : Promise.resolve(),
+        ]
+      )),
+    );
+
+    return reply.status(204).send();
+  });
+
   app.patch<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId/metadata", async (request, reply) => {
     const user = await authService.requireUser(request);
     const params = bookmarkParamsSchema.parse(request.params);

@@ -589,6 +589,16 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     };
   }
 
+  async deleteBookmark(userId: string, bookmarkId: string) {
+    const rows = await this.db
+      .delete(bookmarks)
+      .where(and(eq(bookmarks.id, bookmarkId), eq(bookmarks.userId, userId)))
+      .returning({
+        id: bookmarks.id,
+      });
+    return Boolean(rows[0]);
+  }
+
   async updateBookmarkMetadata(
     userId: string,
     bookmarkId: string,

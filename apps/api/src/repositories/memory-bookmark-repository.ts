@@ -321,6 +321,26 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     };
   }
 
+  async deleteBookmark(userId: string, bookmarkId: string) {
+    const state = this.ensureUserState(userId);
+    const bookmark = state.bookmarks.get(bookmarkId);
+    if (!bookmark) {
+      return false;
+    }
+
+    const versions = state.versionsByBookmark.get(bookmarkId) ?? [];
+    for (const version of versions) {
+      state.versionsByObjectKey.delete(version.htmlObjectKey);
+      if (version.readerHtmlObjectKey) {
+        state.versionsByObjectKey.delete(version.readerHtmlObjectKey);
+      }
+    }
+
+    state.versionsByBookmark.delete(bookmarkId);
+    state.bookmarks.delete(bookmarkId);
+    return true;
+  }
+
   async updateBookmarkMetadata(
     userId: string,
     bookmarkId: string,

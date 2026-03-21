@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path, { dirname, posix } from "node:path";
 import { type ApiConfig } from "../config";
 
@@ -15,6 +15,7 @@ export interface ObjectStorage {
   readObject(objectKey: string): Promise<Buffer>;
   hasObject(objectKey: string): Promise<boolean>;
   statObject(objectKey: string): Promise<{ size: number } | null>;
+  deleteObject(objectKey: string): Promise<void>;
 }
 
 type LocalObjectStorageOptions = {
@@ -72,6 +73,16 @@ export class LocalObjectStorage implements ObjectStorage {
       };
     } catch {
       return null;
+    }
+  }
+
+  async deleteObject(objectKey: string) {
+    try {
+      await rm(this.resolveObjectPath(objectKey), {
+        force: true,
+      });
+    } catch {
+      return;
     }
   }
 
