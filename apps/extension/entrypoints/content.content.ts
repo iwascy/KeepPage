@@ -83,6 +83,9 @@ type SelectionSession = {
 const TOAST_HOST_ID = "keeppage-in-page-toast";
 const SELECTION_OVERLAY_HOST_ID = "keeppage-selection-overlay";
 const SELECTION_MARKER_ATTR = "data-keeppage-selection-root";
+const MIN_COVER_IMAGE_WIDTH = 240;
+const MIN_COVER_IMAGE_HEIGHT = 135;
+const MIN_COVER_IMAGE_AREA = 48_000;
 const PREFERRED_SELECTION_TAGS = new Set([
   "ARTICLE",
   "ASIDE",
@@ -307,17 +310,24 @@ function readCoverImageUrl(root: ParentNode | HTMLElement) {
         ...Array.from(root.querySelectorAll("img")),
       ]
     : Array.from(document.images);
-  const firstMeaningfulImage = images.find((image) => {
-    const url = resolveCoverCandidateUrl(image);
-    if (!url) {
-      return false;
-    }
-    const width = image.naturalWidth || image.width || image.clientWidth;
-    const height = image.naturalHeight || image.height || image.clientHeight;
-    return width >= 96 && height >= 96;
-  });
+  const firstMeaningfulImage = images.find((image) => isQualifiedCoverImage(image));
 
   return resolveCoverCandidateUrl(firstMeaningfulImage);
+}
+
+function isQualifiedCoverImage(image: HTMLImageElement) {
+  const url = resolveCoverCandidateUrl(image);
+  if (!url) {
+    return false;
+  }
+
+  const width = image.naturalWidth || image.width || image.clientWidth;
+  const height = image.naturalHeight || image.height || image.clientHeight;
+  if (width < MIN_COVER_IMAGE_WIDTH || height < MIN_COVER_IMAGE_HEIGHT) {
+    return false;
+  }
+
+  return width * height >= MIN_COVER_IMAGE_AREA;
 }
 
 function resolveCoverCandidateUrl(image: HTMLImageElement | undefined) {
