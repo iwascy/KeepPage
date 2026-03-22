@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { type ApiConfig } from "./config";
 import { ApiTokenService } from "./lib/api-token-service";
 import { AuthService } from "./lib/auth-service";
+import { CloudArchiveManager } from "./lib/cloud-archive-manager";
 import { isHttpError } from "./lib/http-error";
 import { createRepository } from "./repositories";
 import { registerRoutes } from "./routes";
@@ -96,8 +97,12 @@ export function buildServer(config: ApiConfig) {
     };
   });
 
+  const cloudArchiveManager = config.CLOUD_ARCHIVE_ENABLED
+    ? new CloudArchiveManager(config, repository, objectStorage)
+    : null;
+
   app.register(async (instance) => {
-    await registerRoutes(instance, config, authService, apiTokenService, repository, objectStorage);
+    await registerRoutes(instance, config, authService, apiTokenService, repository, objectStorage, cloudArchiveManager);
   });
 
   return app;

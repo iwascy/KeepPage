@@ -1,4 +1,5 @@
 import type { ApiTokenService } from "../lib/api-token-service";
+import type { CloudArchiveManager } from "../lib/cloud-archive-manager";
 import type { FastifyInstance } from "fastify";
 import type { ApiConfig } from "../config";
 import type { AuthService } from "../lib/auth-service";
@@ -8,6 +9,7 @@ import { registerApiTokenRoutes } from "./api-tokens";
 import { registerAuthRoutes } from "./auth";
 import { registerBookmarkRoutes } from "./bookmarks";
 import { registerCaptureRoutes } from "./captures";
+import { registerCloudArchiveRoutes } from "./cloud-archive";
 import { registerFolderRoutes } from "./folders";
 import { registerHealthRoutes } from "./health";
 import { registerIngestRoutes } from "./ingest";
@@ -22,6 +24,7 @@ export async function registerRoutes(
   apiTokenService: ApiTokenService,
   repository: BookmarkRepository,
   objectStorage: ObjectStorage,
+  cloudArchiveManager: CloudArchiveManager | null,
 ) {
   await registerAuthRoutes(app, authService);
   await registerApiTokenRoutes(app, authService, apiTokenService);
@@ -33,4 +36,7 @@ export async function registerRoutes(
   await registerFolderRoutes(app, authService, repository);
   await registerTagRoutes(app, authService, repository);
   await registerImportRoutes(app, authService, repository);
+  if (cloudArchiveManager) {
+    await registerCloudArchiveRoutes(app, authService, cloudArchiveManager);
+  }
 }

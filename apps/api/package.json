@@ -15,6 +15,7 @@
     "drizzle-orm": "^0.45.1",
     "fastify": "^5.8.2",
     "pg": "^8.16.3",
+    "puppeteer": "^24.40.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

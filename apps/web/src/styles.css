@@ -748,6 +748,12 @@ select {
   }
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ── Global Buttons ── */
 
 button {

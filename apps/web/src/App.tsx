@@ -15,6 +15,7 @@ import type {
   AuthUser,
   Bookmark,
   BookmarkListView,
+  CloudArchiveStatus,
   Folder,
   QualityGrade,
   QualityReport,
@@ -29,6 +30,7 @@ import {
   createTag,
   createArchiveObjectUrl,
   fetchApiTokens,
+  fetchCloudArchiveTask,
   deleteBookmark,
   deleteFolder,
   deleteTag,
@@ -40,6 +42,7 @@ import {
   loginAccount,
   revokeApiToken,
   registerAccount,
+  submitCloudArchive,
   updateBookmarkMetadata,
   updateFolder,
   updateTag,
@@ -760,6 +763,7 @@ function AppShell({
   onOpenApiTokens,
   onOpenImportNew,
   onOpenImportHistory,
+  onOpenCloudArchive,
   onLogout,
   contextMenuFolderId,
   onFolderContextMenu,
@@ -786,6 +790,7 @@ function AppShell({
   onOpenApiTokens: () => void;
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
+  onOpenCloudArchive: () => void;
   onLogout: () => void;
   contextMenuFolderId: string | null;
   onFolderContextMenu: (folder: Folder, event: ReactMouseEvent<HTMLElement>) => void;
@@ -944,6 +949,16 @@ function AppShell({
                   vpn_key
                 </span>
                 <span>API Keys</span>
+              </button>
+              <button
+                className="home-settings-item"
+                type="button"
+                onClick={() => { setSidebarView("main"); onOpenCloudArchive(); }}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  cloud_download
+                </span>
+                <span>云端存档</span>
               </button>
               <button
                 className="home-settings-item"
@@ -2400,6 +2415,234 @@ function ManagerDialog({
   );
 }
 
+type CloudArchiveDialogState =
+  | { step: "closed" }
+  | { step: "form" }
+  | { step: "progress"; taskId: string; status: CloudArchiveStatus; errorMessage?: string }
+  | { step: "done"; bookmarkId: string };
+
+function cloudArchiveStatusLabel(status: CloudArchiveStatus) {
+  switch (status) {
+    case "queued":
+      return "排队中...";
+    case "fetching":
+      return "正在抓取网页...";
+    case "processing":
+      return "处理存档...";
+    case "completed":
+      return "存档完成";
+    case "failed":
+      return "存档失败";
+    default:
+      return "处理中...";
+  }
+}
+
+function CloudArchiveDialog({
+  state,
+  url,
+  title,
+  folderId,
+  folders,
+  tags,
+  selectedTagIds,
+  busy,
+  error,
+  onUrlChange,
+  onTitleChange,
+  onFolderChange,
+  onTagToggle,
+  onSubmit,
+  onRetry,
+  onClose,
+  onOpenBookmark,
+}: {
+  state: CloudArchiveDialogState;
+  url: string;
+  title: string;
+  folderId: string;
+  folders: Folder[];
+  tags: Tag[];
+  selectedTagIds: string[];
+  busy: boolean;
+  error: string | null;
+  onUrlChange: (value: string) => void;
+  onTitleChange: (value: string) => void;
+  onFolderChange: (value: string) => void;
+  onTagToggle: (tagId: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onRetry: () => void;
+  onClose: () => void;
+  onOpenBookmark: (bookmarkId: string) => void;
+}) {
+  if (state.step === "closed") {
+    return null;
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      className="manager-dialog-backdrop is-create-folder"
+      onClick={() => {
+        if (!busy) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        aria-labelledby="cloud-archive-title"
+        aria-modal="true"
+        className="create-folder-dialog"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="create-folder-header">
+          <h2 id="cloud-archive-title" className="create-folder-heading">云端存档</h2>
+          <p className="create-folder-description">
+            {state.step === "form"
+              ? "输入网页 URL，服务端将自动抓取并生成存档。"
+              : state.step === "progress"
+                ? cloudArchiveStatusLabel(state.status)
+                : "存档已完成。"}
+          </p>
+          <button
+            className="create-folder-close"
+            type="button"
+            aria-label="关闭"
+            onClick={onClose}
+            disabled={busy}
+          >
+            <DialogCloseIcon />
+          </button>
+        </div>
+
+        {state.step === "form" ? (
+          <form className="create-folder-body" onSubmit={onSubmit}>
+            {error ? <p className="manager-dialog-error">{error}</p> : null}
+            <label className="create-folder-field">
+              <span className="create-folder-label">URL</span>
+              <input
+                className="create-folder-input"
+                type="url"
+                value={url}
+                onChange={(event) => onUrlChange(event.target.value)}
+                placeholder="https://example.com/article"
+                required
+                autoFocus
+              />
+            </label>
+            <label className="create-folder-field">
+              <span className="create-folder-label">标题（可选）</span>
+              <input
+                className="create-folder-input"
+                type="text"
+                value={title}
+                onChange={(event) => onTitleChange(event.target.value)}
+                placeholder="留空则自动从页面提取"
+              />
+            </label>
+            {folders.length > 0 ? (
+              <label className="create-folder-field">
+                <span className="create-folder-label">文件夹</span>
+                <select
+                  className="create-folder-input"
+                  value={folderId}
+                  onChange={(event) => onFolderChange(event.target.value)}
+                >
+                  <option value="">不指定</option>
+                  {folders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>{folder.path}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {tags.length > 0 ? (
+              <div className="create-folder-field">
+                <span className="create-folder-label">标签</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "4px" }}>
+                  {tags.map((tag) => (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      className={selectedTagIds.includes(tag.id) ? "tag-chip is-active" : "tag-chip"}
+                      onClick={() => onTagToggle(tag.id)}
+                      style={{
+                        padding: "2px 10px",
+                        borderRadius: "12px",
+                        border: selectedTagIds.includes(tag.id) ? "1px solid var(--accent)" : "1px solid var(--border)",
+                        background: selectedTagIds.includes(tag.id) ? "var(--accent-bg, rgba(99,102,241,0.1))" : "transparent",
+                        fontSize: "13px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {tag.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="manager-dialog-actions">
+              <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
+                取消
+              </button>
+              <button className="primary-button" type="submit" disabled={busy || !url.trim()}>
+                {busy ? "提交中..." : "开始存档"}
+              </button>
+            </div>
+          </form>
+        ) : state.step === "progress" ? (
+          <div className="create-folder-body" style={{ textAlign: "center", padding: "24px 0" }}>
+            {state.status === "failed" ? (
+              <>
+                <p style={{ color: "var(--danger, #ef4444)", marginBottom: "8px" }}>
+                  {state.errorMessage ?? "存档失败，请稍后重试。"}
+                </p>
+                <div className="manager-dialog-actions">
+                  <button className="secondary-button" type="button" onClick={onClose}>
+                    关闭
+                  </button>
+                  <button className="primary-button" type="button" onClick={onRetry}>
+                    重试
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{
+                  width: "32px",
+                  height: "32px",
+                  margin: "0 auto 12px",
+                  border: "3px solid var(--border)",
+                  borderTopColor: "var(--accent, #6366f1)",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }} />
+                <p>{cloudArchiveStatusLabel(state.status)}</p>
+              </>
+            )}
+          </div>
+        ) : state.step === "done" ? (
+          <div className="create-folder-body" style={{ textAlign: "center", padding: "24px 0" }}>
+            <p style={{ marginBottom: "16px" }}>网页已成功存档！</p>
+            <div className="manager-dialog-actions">
+              <button className="secondary-button" type="button" onClick={onClose}>
+                关闭
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => onOpenBookmark(state.bookmarkId)}
+              >
+                查看书签
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ContextMenu({
   state,
   groups,
@@ -2950,6 +3193,14 @@ export function App({
   const [metadataSaving, setMetadataSaving] = useState(false);
   const [metadataFeedback, setMetadataFeedback] = useState<InlineFeedback | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: "closed" });
+  const [cloudArchiveDialog, setCloudArchiveDialog] = useState<CloudArchiveDialogState>({ step: "closed" });
+  const [cloudArchiveUrl, setCloudArchiveUrl] = useState("");
+  const [cloudArchiveTitle, setCloudArchiveTitle] = useState("");
+  const [cloudArchiveFolderId, setCloudArchiveFolderId] = useState("");
+  const [cloudArchiveTagIds, setCloudArchiveTagIds] = useState<string[]>([]);
+  const [cloudArchiveBusy, setCloudArchiveBusy] = useState(false);
+  const [cloudArchiveError, setCloudArchiveError] = useState<string | null>(null);
+  const cloudArchiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const deferredSearch = useDeferredValue(searchInput);
@@ -3046,6 +3297,107 @@ export function App({
 
   function closeContextMenu() {
     setContextMenu({ kind: "closed" });
+  }
+
+  function openCloudArchive() {
+    setCloudArchiveUrl("");
+    setCloudArchiveTitle("");
+    setCloudArchiveFolderId("");
+    setCloudArchiveTagIds([]);
+    setCloudArchiveBusy(false);
+    setCloudArchiveError(null);
+    setCloudArchiveDialog({ step: "form" });
+  }
+
+  function closeCloudArchive() {
+    if (cloudArchiveTimerRef.current) {
+      clearInterval(cloudArchiveTimerRef.current);
+      cloudArchiveTimerRef.current = null;
+    }
+    setCloudArchiveDialog({ step: "closed" });
+  }
+
+  function startCloudArchivePolling(taskId: string) {
+    if (cloudArchiveTimerRef.current) {
+      clearInterval(cloudArchiveTimerRef.current);
+    }
+    cloudArchiveTimerRef.current = setInterval(async () => {
+      if (!authToken) {
+        return;
+      }
+      try {
+        const task = await fetchCloudArchiveTask(taskId, authToken);
+        if (!task) {
+          return;
+        }
+        if (task.status === "completed") {
+          if (cloudArchiveTimerRef.current) {
+            clearInterval(cloudArchiveTimerRef.current);
+            cloudArchiveTimerRef.current = null;
+          }
+          setCloudArchiveDialog({
+            step: "done",
+            bookmarkId: task.bookmarkId ?? "",
+          });
+          if (authToken) {
+            void refreshBookmarksList(authToken);
+          }
+        } else if (task.status === "failed") {
+          if (cloudArchiveTimerRef.current) {
+            clearInterval(cloudArchiveTimerRef.current);
+            cloudArchiveTimerRef.current = null;
+          }
+          setCloudArchiveDialog({
+            step: "progress",
+            taskId,
+            status: "failed",
+            errorMessage: task.errorMessage,
+          });
+        } else {
+          setCloudArchiveDialog({
+            step: "progress",
+            taskId,
+            status: task.status,
+          });
+        }
+      } catch {
+        // Polling errors are silently ignored; next tick will retry.
+      }
+    }, 2000);
+  }
+
+  async function handleCloudArchiveSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!authToken || !cloudArchiveUrl.trim()) {
+      return;
+    }
+    setCloudArchiveBusy(true);
+    setCloudArchiveError(null);
+    try {
+      const result = await submitCloudArchive({
+        url: cloudArchiveUrl.trim(),
+        title: cloudArchiveTitle.trim() || undefined,
+        folderId: cloudArchiveFolderId || undefined,
+        tagIds: cloudArchiveTagIds.length > 0 ? cloudArchiveTagIds : undefined,
+      }, authToken);
+      setCloudArchiveDialog({
+        step: "progress",
+        taskId: result.taskId,
+        status: result.status,
+      });
+      startCloudArchivePolling(result.taskId);
+    } catch (error) {
+      if (handleProtectedApiError(error)) {
+        return;
+      }
+      setCloudArchiveError(toErrorMessage(error));
+    } finally {
+      setCloudArchiveBusy(false);
+    }
+  }
+
+  function handleCloudArchiveRetry() {
+    setCloudArchiveDialog({ step: "form" });
   }
 
   function openManagerDialog(nextState: ManagerDialogState) {
@@ -4199,6 +4551,7 @@ export function App({
         onOpenApiTokens={goToApiTokens}
         onOpenImportNew={goToImportNew}
         onOpenImportHistory={goToImportList}
+        onOpenCloudArchive={openCloudArchive}
         onLogout={() => logout()}
         contextMenuFolderId={activeFolderContextId}
         onFolderContextMenu={openFolderContextMenu}
@@ -4331,6 +4684,34 @@ export function App({
         onNameChange={setManagerDialogName}
         onPathChange={setManagerDialogPath}
         onColorChange={setManagerDialogColor}
+      />
+      <CloudArchiveDialog
+        state={cloudArchiveDialog}
+        url={cloudArchiveUrl}
+        title={cloudArchiveTitle}
+        folderId={cloudArchiveFolderId}
+        folders={folders}
+        tags={tags}
+        selectedTagIds={cloudArchiveTagIds}
+        busy={cloudArchiveBusy}
+        error={cloudArchiveError}
+        onUrlChange={setCloudArchiveUrl}
+        onTitleChange={setCloudArchiveTitle}
+        onFolderChange={setCloudArchiveFolderId}
+        onTagToggle={(tagId) => {
+          setCloudArchiveTagIds((current) => (
+            current.includes(tagId)
+              ? current.filter((item) => item !== tagId)
+              : [...current, tagId]
+          ));
+        }}
+        onSubmit={(event) => void handleCloudArchiveSubmit(event)}
+        onRetry={handleCloudArchiveRetry}
+        onClose={closeCloudArchive}
+        onOpenBookmark={(bookmarkId) => {
+          closeCloudArchive();
+          openBookmark(bookmarkId);
+        }}
       />
       {contextMenu.kind !== "closed" ? (
         <ContextMenu state={contextMenu} groups={contextMenuGroups} onClose={closeContextMenu} />
