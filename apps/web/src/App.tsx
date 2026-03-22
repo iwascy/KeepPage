@@ -470,71 +470,9 @@ function isManagerDialogOpen(state: ManagerDialogState) {
 
 function DialogCloseIcon() {
   return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path
-        d="m5.75 5.75 8.5 8.5m0-8.5-8.5 8.5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.65"
-      />
-    </svg>
-  );
-}
-
-function LinkIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M6.25 9.75 4.5 11.5a2.12 2.12 0 0 1-3-3l2.25-2.25a2.12 2.12 0 0 1 3 0"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-      <path
-        d="m9.75 6.25 1.75-1.75a2.12 2.12 0 1 1 3 3l-2.25 2.25a2.12 2.12 0 0 1-3 0"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-      <path
-        d="m5.75 10.25 4.5-4.5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <circle
-        cx="8"
-        cy="8"
-        r="5.5"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-      <path
-        d="M8 4.8v3.45l2.2 1.35"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.3"
-      />
-    </svg>
+    <span className="material-symbols-outlined" aria-hidden="true">
+      close
+    </span>
   );
 }
 
@@ -637,7 +575,6 @@ function HomeBookmarkCard({
                 <div className="home-bookmark-cover-shade" aria-hidden="true" />
               </>
             ) : null}
-            <span className="home-bookmark-chip home-bookmark-chip-cover">{folderLabel}</span>
             {!hasCoverImage ? (
               <div className="home-bookmark-paper">
                 <div className="home-bookmark-paper-lines">
@@ -647,6 +584,13 @@ function HomeBookmarkCard({
                 </div>
               </div>
             ) : null}
+            <div className="home-bookmark-cover-overlay" aria-hidden="true">
+              <div className="home-bookmark-cover-overlay-meta">
+                <span className="home-bookmark-overlay-badge">{folderLabel}</span>
+                <span className="home-bookmark-overlay-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+              </div>
+              <strong>{bookmark.title}</strong>
+            </div>
           </div>
         ) : null}
         <div className="home-bookmark-body">

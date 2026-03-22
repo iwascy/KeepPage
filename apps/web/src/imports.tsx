@@ -209,7 +209,11 @@ export function ImportNewPanel({
   return (
     <section className="import-shell">
       <header className="import-header">
-        <h2>新建导入</h2>
+        <div className="import-header-copy">
+          <p className="eyebrow">Bulk Import</p>
+          <h2>新建导入</h2>
+          <p>粘贴链接、浏览器书签导出文件或批量文本，先预检再按你的策略写入 KeepPage。</p>
+        </div>
         <button className="secondary-button" type="button" onClick={onOpenHistory}>
           导入历史
         </button>
@@ -416,7 +420,11 @@ export function ImportHistoryPanel({
   return (
     <section className="import-shell">
       <header className="import-header">
-        <h2>导入历史</h2>
+        <div className="import-header-copy">
+          <p className="eyebrow">Import Activity</p>
+          <h2>导入历史</h2>
+          <p>查看每个导入批次的解析状态、成功率和后续归档结果。</p>
+        </div>
         <button className="primary-button" type="button" onClick={onOpenNew}>
           新建导入
         </button>
@@ -539,7 +547,14 @@ export function ImportDetailPanel({
   return (
     <section className="import-shell">
       <header className="import-header">
-        <h2>{task.name}</h2>
+        <div className="import-header-copy">
+          <p className="eyebrow">Import Detail</p>
+          <h2>{task.name}</h2>
+          <p>
+            当前状态为 {importTaskStatusLabel(task.status)}，来源类型是 {importSourceLabel(task.sourceType)}，
+            执行模式为 {importModeLabel(task.mode)}。
+          </p>
+        </div>
         <button className="secondary-button" type="button" onClick={onOpenHistory}>
           返回历史
         </button>

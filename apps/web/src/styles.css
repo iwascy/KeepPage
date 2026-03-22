@@ -3,30 +3,34 @@
 
 /* Global Material Symbols configuration for refined look */
 .material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   font-size: 20px;
   display: inline-block;
+  line-height: 1;
 }
 
 :root {
-  --bg: #f7f8fb;
-  --bg-deep: #f3f5f8;
+  --bg: #f9f9fb;
+  --bg-deep: #f2f4f6;
   --surface: rgba(255, 255, 255, 0.78);
   --surface-soft: #eff2f5;
-  --text: #1f252a;
-  --muted: #67717a;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f2f4f6;
+  --surface-container: #ebeef2;
+  --text: #2d3338;
+  --muted: #596065;
   --soft: #93a0ab;
-  --line: rgba(45, 51, 56, 0.1);
-  --accent: #575757;
-  --accent-deep: #444444;
+  --line: rgba(172, 179, 184, 0.2);
+  --accent: #5e5e5e;
+  --accent-deep: #525252;
   --good: #12664f;
   --mid: #8a5900;
   --low: #932a2a;
-  --shadow: 0 22px 44px rgba(45, 51, 56, 0.08);
-  --shadow-soft: 0 18px 34px rgba(45, 51, 56, 0.04);
-  --radius-card: 26px;
+  --shadow: 0 24px 48px rgba(45, 51, 56, 0.08);
+  --shadow-soft: 0 20px 40px rgba(45, 51, 56, 0.05);
+  --radius-card: 32px;
   --radius-button: 999px;
-  --radius-input: 18px;
+  --radius-input: 20px;
 }
 
 * {
@@ -45,8 +49,9 @@ body {
   font-family: "Inter", ui-sans-serif, sans-serif;
   color: var(--text);
   background:
-    radial-gradient(circle at 12% 6%, rgba(226, 232, 240, 0.6), transparent 24%),
-    radial-gradient(circle at 86% 9%, rgba(224, 228, 238, 0.7), transparent 22%),
+    radial-gradient(circle at 12% 6%, rgba(216, 211, 244, 0.34), transparent 24%),
+    radial-gradient(circle at 88% 12%, rgba(226, 226, 233, 0.55), transparent 22%),
+    radial-gradient(circle at 78% 76%, rgba(221, 227, 233, 0.42), transparent 24%),
     linear-gradient(180deg, #fbfbfd 0%, var(--bg-deep) 100%);
 }
 
@@ -173,6 +178,10 @@ select {
 .create-folder-dialog-close svg {
   width: 20px;
   height: 20px;
+}
+
+.create-folder-dialog-close .material-symbols-outlined {
+  font-size: 20px;
 }
 
 .create-folder-dialog-form {
@@ -776,6 +785,12 @@ button {
   transform: translateY(-1px);
 }
 
+.primary-button:active:not(:disabled),
+.secondary-button:active:not(:disabled),
+.ghost-button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
 .primary-button {
   border: 0;
   background: linear-gradient(135deg, var(--accent), var(--accent-deep));
@@ -951,6 +966,10 @@ button {
   opacity: 0.72;
 }
 
+.home-brand-home:active {
+  transform: scale(0.97);
+}
+
 .home-brand-home:focus-visible {
   outline: none;
   opacity: 0.72;
@@ -1068,6 +1087,10 @@ button {
   background: rgba(255, 255, 255, 0.4);
 }
 
+.home-quick-nav-item:active {
+  transform: scale(0.95);
+}
+
 .home-quick-nav-item.is-active {
   background: rgba(255, 255, 255, 0.8);
   color: #18181b;
@@ -1151,6 +1174,10 @@ button {
   background: rgba(255, 255, 255, 0.4);
 }
 
+.home-section-action:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
 .home-section-action:focus-visible {
   outline: none;
   color: #27272a;
@@ -1206,6 +1233,10 @@ button {
 .home-folder-main:hover {
   color: #27272a;
   background: rgba(255, 255, 255, 0.4);
+}
+
+.home-folder-main:active {
+  transform: scale(0.97);
 }
 
 .home-folder-main.is-active {
@@ -1277,6 +1308,10 @@ button {
   color: #27272a;
 }
 
+.home-folder-toggle:active {
+  transform: scale(0.92);
+}
+
 .home-folder-toggle.is-expanded {
   transform: rotate(90deg);
 }
@@ -1304,6 +1339,10 @@ button {
   border-color: rgba(94, 94, 94, 0.4);
 }
 
+.home-tag-chip:active {
+  transform: scale(0.95);
+}
+
 .home-tag-chip.is-active {
   background: rgba(255, 255, 255, 0.85);
   border-color: rgba(94, 94, 94, 0.28);
@@ -1325,20 +1364,21 @@ button {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.625rem 0;
-  border-radius: 0.75rem;
-  background: #5e5e5e;
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-button);
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
   color: #f8f8f8;
   font-weight: 700;
   font-size: 0.875rem;
   border: none;
   cursor: pointer;
-  box-shadow: 0 10px 15px rgba(94, 94, 94, 0.1);
+  box-shadow: 0 16px 30px rgba(94, 94, 94, 0.18);
   transition: all 0.15s ease;
 }
 
 .home-add-new-btn:hover {
-  background: #525252;
+  box-shadow: 0 22px 38px rgba(94, 94, 94, 0.24);
 }
 
 .home-add-new-btn:active {
@@ -1414,6 +1454,10 @@ button {
   color: #52525b;
 }
 
+.home-settings-btn:active {
+  transform: scale(0.92);
+}
+
 .home-settings-panel {
   display: flex;
   flex-direction: column;
@@ -1438,6 +1482,10 @@ button {
 
 .home-settings-back:hover {
   opacity: 0.7;
+}
+
+.home-settings-back:active {
+  transform: scale(0.97);
 }
 
 .home-settings-list {
@@ -1468,6 +1516,10 @@ button {
 .home-settings-item:hover {
   background: rgba(255, 255, 255, 0.5);
   transform: translateY(1px);
+}
+
+.home-settings-item:active {
+  transform: scale(0.96);
 }
 
 .home-settings-item.is-active {
@@ -2261,17 +2313,33 @@ button {
 }
 
 .home-bookmark-card {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 34px;
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 18px 38px rgba(45, 51, 56, 0.05);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 249, 252, 0.68)),
+    rgba(255, 255, 255, 0.58);
+  box-shadow:
+    0 20px 40px rgba(45, 51, 56, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
   transition: transform 220ms ease, box-shadow 220ms ease, background 220ms ease;
   overflow: hidden;
 }
 
 .home-bookmark-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow);
-  background: rgba(255, 255, 255, 0.94);
+  transform: translateY(-4px) scale(1.01);
+  box-shadow:
+    0 28px 52px rgba(45, 51, 56, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.78)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.home-bookmark-card:active {
+  transform: scale(0.985);
 }
 
 .home-bookmark-hitarea {
@@ -2287,13 +2355,18 @@ button {
   cursor: pointer;
 }
 
+.home-bookmark-hitarea:active {
+  transform: scale(0.995);
+}
+
 .home-bookmark-hitarea.is-skeleton {
   cursor: default;
 }
 
 .home-bookmark-cover {
   position: relative;
-  height: 12.8rem;
+  aspect-ratio: 4 / 3;
+  height: auto;
   overflow: hidden;
 }
 
@@ -2336,12 +2409,14 @@ button {
   height: 100%;
   display: block;
   object-fit: cover;
+  transition: transform 700ms ease;
 }
 
 .home-bookmark-cover-shade {
   background:
     linear-gradient(180deg, rgba(27, 35, 42, 0.12), transparent 34%),
     linear-gradient(0deg, rgba(27, 35, 42, 0.08), transparent 42%);
+  transition: opacity 220ms ease;
 }
 
 .home-bookmark-paper {
@@ -2355,6 +2430,7 @@ button {
   box-shadow: 0 18px 34px rgba(74, 58, 47, 0.22);
   transform: rotate(-2deg);
   z-index: 1;
+  transition: transform 320ms ease, box-shadow 320ms ease;
 }
 
 .home-bookmark-cover.is-mist .home-bookmark-paper,
@@ -2437,6 +2513,74 @@ button {
   z-index: 2;
   background: rgba(255, 255, 255, 0.84);
   backdrop-filter: blur(12px);
+}
+
+.home-bookmark-cover-overlay {
+  position: absolute;
+  inset: auto 1rem 1rem;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.home-bookmark-cover-overlay-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.home-bookmark-overlay-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-button);
+  background: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  backdrop-filter: blur(16px);
+}
+
+.home-bookmark-overlay-time {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.home-bookmark-cover-overlay strong {
+  max-width: 18rem;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
+}
+
+.home-bookmark-card:hover .home-bookmark-cover-overlay {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.home-bookmark-card:hover .home-bookmark-cover-media {
+  transform: scale(1.05);
+}
+
+.home-bookmark-card:hover .home-bookmark-cover-shade {
+  opacity: 0.88;
+}
+
+.home-bookmark-card:hover .home-bookmark-paper {
+  transform: rotate(-1deg) scale(1.03);
+  box-shadow: 0 22px 38px rgba(74, 58, 47, 0.24);
 }
 
 .home-bookmark-chip-inline {
@@ -3573,21 +3717,44 @@ button {
 .import-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.8rem;
+}
+
+.import-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
 }
 
 .import-header h2 {
   margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: -0.03em;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  line-height: 0.96;
+  letter-spacing: -0.06em;
+}
+
+.import-header-copy p:last-child {
+  max-width: 44rem;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
 }
 
 .import-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.42);
   border-radius: var(--radius-card);
-  background: rgba(255, 255, 255, 0.72);
-  padding: 1.15rem;
-  box-shadow: var(--shadow-soft);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(247, 249, 252, 0.7)),
+    rgba(255, 255, 255, 0.6);
+  padding: 1.25rem;
+  box-shadow:
+    0 20px 40px rgba(45, 51, 56, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
 }
 
 .import-form {
@@ -3616,9 +3783,9 @@ button {
 
 .source-card {
   border: 0;
-  border-radius: 18px;
-  background: rgba(239, 242, 245, 0.96);
-  padding: 0.75rem 0.85rem;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.66);
+  padding: 0.95rem 1rem;
   text-align: left;
   cursor: pointer;
   font: inherit;
@@ -3631,6 +3798,11 @@ button {
 .source-card:hover {
   transform: translateY(-1px);
   color: var(--text);
+  box-shadow: 0 16px 30px rgba(45, 51, 56, 0.08);
+}
+
+.source-card:active {
+  transform: scale(0.95);
 }
 
 .source-card.is-active {
@@ -3673,6 +3845,10 @@ button {
   overflow: hidden;
 }
 
+.upload-button:active {
+  transform: scale(0.95);
+}
+
 .upload-button input {
   position: absolute;
   inset: 0;
@@ -3692,8 +3868,8 @@ button {
 /* ── Import Advanced Config (collapsible) ── */
 
 .import-advanced {
-  border-radius: 18px;
-  background: rgba(239, 242, 245, 0.6);
+  border-radius: 24px;
+  background: rgba(239, 242, 245, 0.64);
   overflow: hidden;
 }
 
@@ -3704,10 +3880,19 @@ button {
   font-size: 0.82rem;
   color: var(--muted);
   list-style: none;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
 .import-advanced summary::-webkit-details-marker {
   display: none;
+}
+
+.import-advanced summary:hover {
+  color: var(--text);
+}
+
+.import-advanced summary:active {
+  transform: scale(0.98);
 }
 
 .import-advanced-body {
@@ -3726,9 +3911,12 @@ button {
 }
 
 .metric {
-  border-radius: 18px;
-  background: rgba(239, 242, 245, 0.8);
-  padding: 0.7rem 0.85rem;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 0.95rem 1rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    0 12px 24px rgba(45, 51, 56, 0.05);
 }
 
 .metric p {
@@ -3750,6 +3938,8 @@ button {
 
 .import-table-wrap {
   overflow-x: auto;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.36);
 }
 
 .import-table {
@@ -3767,6 +3957,10 @@ button {
 
 .import-table tbody tr:nth-child(even) {
   background: rgba(239, 242, 245, 0.32);
+}
+
+.import-table tbody tr {
+  transition: background 160ms ease, transform 160ms ease;
 }
 
 .import-table th {
@@ -3787,11 +3981,15 @@ button {
 
 .row-clickable {
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background 120ms ease, transform 120ms ease;
 }
 
 .row-clickable:hover {
-  background: rgba(239, 242, 245, 0.6);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.row-clickable:active {
+  transform: scale(0.995);
 }
 
 .task-status {
