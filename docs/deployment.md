@@ -44,6 +44,9 @@ npm install
 ```
 
 > 注意：当前 API 的 `start` 命令依赖 `tsx`，而 `tsx` 位于 `devDependencies`。这意味着当前版本的后端部署不能直接只装生产依赖。
+>
+> CI / Jenkins 场景下，仓库根目录的 `.puppeteerrc.cjs` 会默认跳过 Puppeteer 的浏览器下载，避免 `npm install` 因网络下载 Chromium 超时。
+> 如果部署环境需要启用云端归档，运行时仍需自行提供 Chrome / Chromium，或设置 `PUPPETEER_EXECUTABLE_PATH` 指向可执行文件。
 
 ### 当前版本的部署限制
 

@@ -16,15 +16,24 @@ export async function fetchPageWithPuppeteer(
   timeoutMs: number,
 ): Promise<CloudArchiveFetchResult> {
   const puppeteer = await import("puppeteer");
-  const browser = await puppeteer.default.launch({
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-    ],
-  });
+  let browser;
+
+  try {
+    browser = await puppeteer.default.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
+    });
+  } catch (error) {
+    throw new Error(
+      "Failed to launch Puppeteer. Install Chrome/Chromium for the runtime environment, or set PUPPETEER_EXECUTABLE_PATH when browser download is skipped in CI.",
+      { cause: error },
+    );
+  }
 
   try {
     const page = await browser.newPage();
