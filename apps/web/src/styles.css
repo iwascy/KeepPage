@@ -4357,3 +4357,237 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Selection Mode ── */
+
+.selection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1.2rem;
+  margin-bottom: 1rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 249, 252, 0.82)),
+    rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.selection-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.selection-toolbar-check-all {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-button);
+  transition: background 150ms ease;
+}
+
+.selection-toolbar-check-all:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.selection-toolbar-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--soft);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+}
+
+.selection-toolbar-checkbox.is-checked {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+
+.selection-toolbar-count {
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.selection-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.selection-toolbar-btn {
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-button);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+  white-space: nowrap;
+}
+
+.selection-toolbar-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.selection-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.selection-toolbar-btn.is-danger {
+  color: var(--low);
+}
+
+.selection-toolbar-btn.is-danger:hover:not(:disabled) {
+  background: rgba(147, 42, 42, 0.08);
+}
+
+.selection-toolbar-dropdown-wrapper {
+  position: relative;
+}
+
+.selection-toolbar-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 0.35rem;
+  z-index: 30;
+}
+
+.selection-toolbar-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 0.8rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+}
+
+.selection-toolbar-dropdown-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.selection-toolbar-dropdown-empty {
+  display: block;
+  padding: 0.6rem 0.65rem;
+  font-size: 0.78rem;
+  color: var(--soft);
+}
+
+.selection-toolbar-tag-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.selection-toolbar-exit {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-button);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+  white-space: nowrap;
+  margin-left: 0.3rem;
+}
+
+.selection-toolbar-exit:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
+}
+
+.selection-toolbar-exit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Bookmark card in selection mode */
+
+.home-bookmark-card.is-selection-mode {
+  cursor: pointer;
+}
+
+.home-bookmark-card.is-selection-mode:hover {
+  transform: translateY(-2px) scale(1.005);
+}
+
+.home-bookmark-card.is-selected {
+  border-color: var(--accent-deep);
+  box-shadow:
+    0 0 0 2px var(--accent-deep),
+    0 20px 40px rgba(45, 51, 56, 0.08);
+}
+
+.home-bookmark-checkbox {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.2);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  transition: all 150ms ease;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.home-bookmark-checkbox.is-checked {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}

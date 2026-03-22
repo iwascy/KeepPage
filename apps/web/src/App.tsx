@@ -105,6 +105,7 @@ type InlineFeedback = {
 type ManagerDialogState =
   | { kind: "closed" }
   | { kind: "delete-bookmark"; bookmark: Bookmark }
+  | { kind: "delete-bookmarks-batch"; bookmarkIds: string[]; count: number }
   | { kind: "create-folder"; parent?: Folder }
   | { kind: "edit-folder"; folder: Folder }
   | { kind: "delete-folder"; folder: Folder }
@@ -631,11 +632,17 @@ function HomeBookmarkCard({
   onOpen,
   onContextMenu,
   isContextOpen,
+  selectionMode,
+  isSelected,
+  onToggleSelect,
 }: {
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
   onContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   isContextOpen: boolean;
+  selectionMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: (bookmarkId: string) => void;
 }) {
   const [coverImageFailed, setCoverImageFailed] = useState(false);
 
@@ -649,18 +656,34 @@ function HomeBookmarkCard({
   const folderLabel = bookmark.folder?.name ?? "未归类";
   const coverTone = homeCoverTone(bookmark.domain);
 
+  const cardClasses = [
+    "home-bookmark-card",
+    hasPreview ? "has-preview" : "",
+    isContextOpen ? "is-context-open" : "",
+    selectionMode ? "is-selection-mode" : "",
+    isSelected ? "is-selected" : "",
+  ].filter(Boolean).join(" ");
+
   return (
     <article
-      className={`home-bookmark-card${hasPreview ? " has-preview" : ""}${isContextOpen ? " is-context-open" : ""}`}
+      className={cardClasses}
       onContextMenuCapture={(event) => onContextMenu(bookmark, event)}
       onContextMenu={(event) => onContextMenu(bookmark, event)}
     >
+      {selectionMode ? (
+        <span
+          className={`home-bookmark-checkbox${isSelected ? " is-checked" : ""}`}
+          aria-hidden="true"
+        >
+          {isSelected ? "✓" : ""}
+        </span>
+      ) : null}
       <button
         className="home-bookmark-hitarea"
         type="button"
         onContextMenuCapture={(event) => onContextMenu(bookmark, event)}
-        onClick={() => onOpen(bookmark.id)}
-        aria-label={`打开归档：${bookmark.title}`}
+        onClick={() => selectionMode ? onToggleSelect(bookmark.id) : onOpen(bookmark.id)}
+        aria-label={selectionMode ? `选择书签：${bookmark.title}` : `打开归档：${bookmark.title}`}
       >
         {hasPreview ? (
           <div className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : ""}`}>
@@ -1225,6 +1248,9 @@ function HomePage({
   onOpenBookmark,
   contextMenuBookmarkId,
   onBookmarkContextMenu,
+  selectionMode,
+  selectedIds,
+  onToggleSelect,
 }: {
   items: Bookmark[];
   bookmarkView: BookmarkListView;
@@ -1235,6 +1261,9 @@ function HomePage({
   onOpenBookmark: (bookmarkId: string) => void;
   contextMenuBookmarkId: string | null;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
+  selectionMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (bookmarkId: string) => void;
 }) {
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
@@ -1291,6 +1320,9 @@ function HomePage({
               onOpen={onOpenBookmark}
               onContextMenu={onBookmarkContextMenu}
               isContextOpen={contextMenuBookmarkId === bookmark.id}
+              selectionMode={selectionMode}
+              isSelected={selectedIds.has(bookmark.id)}
+              onToggleSelect={onToggleSelect}
             />
           ))}
         </section>
@@ -1303,6 +1335,170 @@ function HomePage({
         <span>KeepPage</span>
       </footer>
     </>
+  );
+}
+
+function SelectionToolbar({
+  selectedCount,
+  totalCount,
+  busy,
+  folders,
+  tags,
+  batchDropdown,
+  onBatchDropdownChange,
+  onSelectAll,
+  onDeselectAll,
+  onBatchFavorite,
+  onBatchMoveTo,
+  onBatchSetTags,
+  onBatchDelete,
+  onExit,
+}: {
+  selectedCount: number;
+  totalCount: number;
+  busy: boolean;
+  folders: Folder[];
+  tags: Tag[];
+  batchDropdown: "closed" | "folder" | "tag";
+  onBatchDropdownChange: (v: "closed" | "folder" | "tag") => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+  onBatchFavorite: (isFavorite: boolean) => void;
+  onBatchMoveTo: (folderId: string | null) => void;
+  onBatchSetTags: (tagIds: string[]) => void;
+  onBatchDelete: () => void;
+  onExit: () => void;
+}) {
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (batchDropdown === "closed") return;
+    const handleClickOutside = (event: globalThis.MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        onBatchDropdownChange("closed");
+      }
+    };
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, [batchDropdown]);
+
+  const allSelected = selectedCount === totalCount && totalCount > 0;
+  const hasSelection = selectedCount > 0;
+
+  return (
+    <div className="selection-toolbar">
+      <div className="selection-toolbar-left">
+        <button
+          type="button"
+          className="selection-toolbar-check-all"
+          onClick={allSelected ? onDeselectAll : onSelectAll}
+          disabled={busy}
+        >
+          <span className={`selection-toolbar-checkbox${allSelected ? " is-checked" : ""}`}>
+            {allSelected ? "✓" : ""}
+          </span>
+          {allSelected ? "取消全选" : "全选"}
+        </button>
+        <span className="selection-toolbar-count">
+          已选 {selectedCount} / {totalCount}
+        </span>
+      </div>
+      <div className="selection-toolbar-actions" ref={dropdownRef}>
+        <button
+          type="button"
+          className="selection-toolbar-btn"
+          disabled={!hasSelection || busy}
+          onClick={() => onBatchFavorite(true)}
+          title="加入收藏"
+        >
+          收藏
+        </button>
+        <button
+          type="button"
+          className="selection-toolbar-btn"
+          disabled={!hasSelection || busy}
+          onClick={() => onBatchFavorite(false)}
+          title="取消收藏"
+        >
+          取消收藏
+        </button>
+        <div className="selection-toolbar-dropdown-wrapper">
+          <button
+            type="button"
+            className="selection-toolbar-btn"
+            disabled={!hasSelection || busy}
+            onClick={() => onBatchDropdownChange(batchDropdown === "folder" ? "closed" : "folder")}
+          >
+            移动到
+          </button>
+          {batchDropdown === "folder" ? (
+            <div className="selection-toolbar-dropdown">
+              <button
+                type="button"
+                className="selection-toolbar-dropdown-item"
+                onClick={() => { onBatchMoveTo(null); onBatchDropdownChange("closed"); }}
+              >
+                未归类
+              </button>
+              {folders.map((folder) => (
+                <button
+                  key={folder.id}
+                  type="button"
+                  className="selection-toolbar-dropdown-item"
+                  onClick={() => { onBatchMoveTo(folder.id); onBatchDropdownChange("closed"); }}
+                >
+                  {folder.path}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="selection-toolbar-dropdown-wrapper">
+          <button
+            type="button"
+            className="selection-toolbar-btn"
+            disabled={!hasSelection || busy}
+            onClick={() => onBatchDropdownChange(batchDropdown === "tag" ? "closed" : "tag")}
+          >
+            标签
+          </button>
+          {batchDropdown === "tag" ? (
+            <div className="selection-toolbar-dropdown">
+              {tags.length === 0 ? (
+                <span className="selection-toolbar-dropdown-empty">暂无标签</span>
+              ) : null}
+              {tags.map((tag) => (
+                <button
+                  key={tag.id}
+                  type="button"
+                  className="selection-toolbar-dropdown-item"
+                  onClick={() => { onBatchSetTags([tag.id]); onBatchDropdownChange("closed"); }}
+                >
+                  {tag.color ? <span className="selection-toolbar-tag-dot" style={{ background: tag.color }} /> : null}
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="selection-toolbar-btn is-danger"
+          disabled={!hasSelection || busy}
+          onClick={onBatchDelete}
+        >
+          删除
+        </button>
+      </div>
+      <button
+        type="button"
+        className="selection-toolbar-exit"
+        onClick={onExit}
+        disabled={busy}
+      >
+        退出选择
+      </button>
+    </div>
   );
 }
 
@@ -2157,8 +2353,9 @@ function ManagerDialog({
     );
   }
 
-  const isDeleteDialog = state.kind === "delete-bookmark" || state.kind === "delete-folder" || state.kind === "delete-tag";
+  const isDeleteDialog = state.kind === "delete-bookmark" || state.kind === "delete-bookmarks-batch" || state.kind === "delete-folder" || state.kind === "delete-tag";
   const isBookmarkDialog = state.kind === "delete-bookmark";
+  const isBatchDeleteDialog = state.kind === "delete-bookmarks-batch";
   const bookmarkDeleteTarget = state.kind === "delete-bookmark" ? state.bookmark : null;
   const bookmarkDeleteFaviconSrc = bookmarkDeleteTarget
     ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(bookmarkDeleteTarget.domain)}&sz=64`
@@ -2182,6 +2379,11 @@ function ManagerDialog({
     title = "删除这条书签？";
     description = "它会从归档列表中移除，关联的版本记录也会一起删除。";
     submitLabel = "删除";
+  } else if (state.kind === "delete-bookmarks-batch") {
+    eyebrow = "Batch Delete";
+    title = `确认删除 ${state.count} 个书签？`;
+    description = "所选书签将从归档列表中移除，关联的版本记录也会一起删除。此操作不可撤销。";
+    submitLabel = `删除 ${state.count} 个`;
   } else if (state.kind === "delete-folder") {
     eyebrow = "Delete Folder";
     title = "确认删除这个收藏夹";
@@ -2202,7 +2404,7 @@ function ManagerDialog({
   return (
     <div
       aria-hidden="true"
-      className={isBookmarkDialog ? "manager-dialog-backdrop is-bookmark-delete" : "manager-dialog-backdrop"}
+      className={isBookmarkDialog ? "manager-dialog-backdrop is-bookmark-delete" : isBatchDeleteDialog ? "manager-dialog-backdrop" : "manager-dialog-backdrop"}
       onClick={() => {
         if (!busy) {
           onClose();
@@ -2216,7 +2418,22 @@ function ManagerDialog({
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        {isBookmarkDialog && bookmarkDeleteTarget ? (
+        {isBatchDeleteDialog ? (
+          <>
+            <p className="eyebrow">{eyebrow}</p>
+            <h2 id="manager-dialog-title">{title}</h2>
+            <p className="manager-dialog-description">{description}</p>
+            {error ? <p className="manager-dialog-error">{error}</p> : null}
+            <div className="manager-dialog-footer">
+              <button className="manager-dialog-cancel" type="button" onClick={onClose} disabled={busy}>
+                取消
+              </button>
+              <button className="manager-dialog-submit is-danger" type="button" onClick={onConfirmDelete} disabled={busy}>
+                {busy ? "删除中..." : submitLabel}
+              </button>
+            </div>
+          </>
+        ) : isBookmarkDialog && bookmarkDeleteTarget ? (
           <>
             <div className="bookmark-delete-dialog-shell">
               <div className="bookmark-delete-dialog-header">
@@ -3193,6 +3410,10 @@ export function App({
   const [metadataSaving, setMetadataSaving] = useState(false);
   const [metadataFeedback, setMetadataFeedback] = useState<InlineFeedback | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: "closed" });
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const [batchDropdown, setBatchDropdown] = useState<"closed" | "folder" | "tag">("closed");
   const [cloudArchiveDialog, setCloudArchiveDialog] = useState<CloudArchiveDialogState>({ step: "closed" });
   const [cloudArchiveUrl, setCloudArchiveUrl] = useState("");
   const [cloudArchiveTitle, setCloudArchiveTitle] = useState("");
@@ -3297,6 +3518,43 @@ export function App({
 
   function closeContextMenu() {
     setContextMenu({ kind: "closed" });
+  }
+
+  function enterSelectionMode(bookmarkId?: string) {
+    setSelectionMode(true);
+    setBatchDropdown("closed");
+    if (bookmarkId) {
+      setSelectedIds(new Set([bookmarkId]));
+    } else {
+      setSelectedIds(new Set());
+    }
+    closeContextMenu();
+  }
+
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    setBatchDropdown("closed");
+  }
+
+  function toggleSelected(bookmarkId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bookmarkId)) {
+        next.delete(bookmarkId);
+      } else {
+        next.add(bookmarkId);
+      }
+      return next;
+    });
+  }
+
+  function selectAllBookmarks() {
+    setSelectedIds(new Set(items.map((b) => b.id)));
+  }
+
+  function deselectAllBookmarks() {
+    setSelectedIds(new Set());
   }
 
   function openCloudArchive() {
@@ -3755,6 +4013,21 @@ export function App({
     };
   }, [isManagerDialogVisible, managerBusy]);
 
+  useEffect(() => {
+    if (!selectionMode) {
+      return;
+    }
+    const handleSelectionKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !selectionBusy) {
+        exitSelectionMode();
+      }
+    };
+    window.addEventListener("keydown", handleSelectionKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleSelectionKeyDown);
+    };
+  }, [selectionMode, selectionBusy]);
+
   const selectedVersion = useMemo(() => {
     if (!detail || route.page !== "detail") {
       return null;
@@ -3963,6 +4236,145 @@ export function App({
       }
       return `已删除书签：${bookmark.title}`;
     });
+  }
+
+  async function handleBatchDelete(ids: Set<string>) {
+    if (ids.size === 0) return;
+    setSelectionBusy(true);
+    setManagerFeedback(null);
+    try {
+      if (isDemoMode) {
+        let workspace = demoState;
+        for (const id of ids) {
+          workspace = deleteDemoBookmark(workspace, id);
+        }
+        setDemoState(workspace);
+      } else {
+        const results = await Promise.allSettled(
+          [...ids].map((id) => deleteBookmark(id, authToken!)),
+        );
+        const failed = results.filter((r) => r.status === "rejected").length;
+        if (failed > 0) {
+          setManagerFeedback({
+            kind: "error",
+            message: `批量删除完成，但有 ${failed} 条失败。`,
+          });
+          await refreshBookmarksList(authToken!);
+          exitSelectionMode();
+          return;
+        }
+        await refreshBookmarksList(authToken!);
+      }
+      setManagerFeedback({
+        kind: "success",
+        message: `已删除 ${ids.size} 个书签。`,
+      });
+      exitSelectionMode();
+    } catch (error) {
+      if (handleProtectedApiError(error)) return;
+      setManagerFeedback({ kind: "error", message: toErrorMessage(error) });
+    } finally {
+      setSelectionBusy(false);
+    }
+  }
+
+  async function handleBatchToggleFavorite(ids: Set<string>, isFavorite: boolean) {
+    if (ids.size === 0) return;
+    setSelectionBusy(true);
+    setManagerFeedback(null);
+    try {
+      if (isDemoMode) {
+        let workspace = demoState;
+        for (const id of ids) {
+          const result = updateDemoBookmarkMetadata(workspace, id, { isFavorite });
+          workspace = result.workspace;
+        }
+        setDemoState(workspace);
+      } else {
+        await Promise.allSettled(
+          [...ids].map((id) => updateBookmarkMetadata(id, { isFavorite }, authToken!)),
+        );
+        await refreshBookmarksList(authToken!);
+      }
+      setManagerFeedback({
+        kind: "success",
+        message: isFavorite
+          ? `已将 ${ids.size} 个书签加入收藏。`
+          : `已取消 ${ids.size} 个书签的收藏。`,
+      });
+      exitSelectionMode();
+    } catch (error) {
+      if (handleProtectedApiError(error)) return;
+      setManagerFeedback({ kind: "error", message: toErrorMessage(error) });
+    } finally {
+      setSelectionBusy(false);
+    }
+  }
+
+  async function handleBatchMoveTo(ids: Set<string>, folderId: string | null) {
+    if (ids.size === 0) return;
+    setSelectionBusy(true);
+    setManagerFeedback(null);
+    try {
+      if (isDemoMode) {
+        let workspace = demoState;
+        for (const id of ids) {
+          const result = updateDemoBookmarkMetadata(workspace, id, { folderId });
+          workspace = result.workspace;
+        }
+        setDemoState(workspace);
+      } else {
+        await Promise.allSettled(
+          [...ids].map((id) => updateBookmarkMetadata(id, { folderId }, authToken!)),
+        );
+        await refreshBookmarksList(authToken!);
+      }
+      const folderName = folderId
+        ? (folders.find((f) => f.id === folderId)?.name ?? "指定收藏夹")
+        : "未归类";
+      setManagerFeedback({
+        kind: "success",
+        message: `已将 ${ids.size} 个书签移动到「${folderName}」。`,
+      });
+      exitSelectionMode();
+    } catch (error) {
+      if (handleProtectedApiError(error)) return;
+      setManagerFeedback({ kind: "error", message: toErrorMessage(error) });
+    } finally {
+      setSelectionBusy(false);
+    }
+  }
+
+  async function handleBatchSetTags(ids: Set<string>, tagIds: string[]) {
+    if (ids.size === 0) return;
+    setSelectionBusy(true);
+    setManagerFeedback(null);
+    try {
+      if (isDemoMode) {
+        let workspace = demoState;
+        for (const id of ids) {
+          const result = updateDemoBookmarkMetadata(workspace, id, { tagIds });
+          workspace = result.workspace;
+        }
+        setDemoState(workspace);
+      } else {
+        await Promise.allSettled(
+          [...ids].map((id) => updateBookmarkMetadata(id, { tagIds }, authToken!)),
+        );
+        await refreshBookmarksList(authToken!);
+      }
+      const tagName = tags.find((t) => t.id === tagIds[0])?.name ?? "标签";
+      setManagerFeedback({
+        kind: "success",
+        message: `已为 ${ids.size} 个书签设置标签「${tagName}」。`,
+      });
+      exitSelectionMode();
+    } catch (error) {
+      if (handleProtectedApiError(error)) return;
+      setManagerFeedback({ kind: "error", message: toErrorMessage(error) });
+    } finally {
+      setSelectionBusy(false);
+    }
   }
 
   async function handleCreateFolder(name: string, parent?: Folder) {
@@ -4219,6 +4631,11 @@ export function App({
         closeManagerDialog();
         return;
       }
+      if (managerDialog.kind === "delete-bookmarks-batch") {
+        await handleBatchDelete(new Set(managerDialog.bookmarkIds));
+        closeManagerDialog();
+        return;
+      }
       if (managerDialog.kind === "delete-folder") {
         await handleDeleteFolder(managerDialog.folder);
         closeManagerDialog();
@@ -4407,6 +4824,16 @@ export function App({
             },
           ],
         },
+        {
+          items: [
+            {
+              id: "select-bookmark",
+              label: "选择",
+              icon: "SL",
+              onSelect: () => enterSelectionMode(bookmark.id),
+            },
+          ],
+        },
       ];
     }
 
@@ -4558,23 +4985,46 @@ export function App({
         logoutLabel={logoutLabel}
       >
         {route.page === "list" ? (
-          <HomePage
-            items={items}
-            bookmarkView={bookmarkView}
-            loadState={loadState}
-            listError={listError}
-            hasActiveFilters={Boolean(
-              searchInput.trim()
-              || bookmarkView !== "all"
-              || qualityFilter !== "all"
-              || selectedFolderId
-              || selectedTagId,
-            )}
-            managerFeedback={managerFeedback}
-            onOpenBookmark={openBookmark}
-            contextMenuBookmarkId={activeBookmarkContextId}
-            onBookmarkContextMenu={openBookmarkContextMenu}
-          />
+          <>
+            {selectionMode ? (
+              <SelectionToolbar
+                selectedCount={selectedIds.size}
+                totalCount={items.length}
+                busy={selectionBusy}
+                folders={folders}
+                tags={tags}
+                batchDropdown={batchDropdown}
+                onBatchDropdownChange={setBatchDropdown}
+                onSelectAll={selectAllBookmarks}
+                onDeselectAll={deselectAllBookmarks}
+                onBatchFavorite={(fav) => void handleBatchToggleFavorite(selectedIds, fav)}
+                onBatchMoveTo={(folderId) => void handleBatchMoveTo(selectedIds, folderId)}
+                onBatchSetTags={(tagIds) => void handleBatchSetTags(selectedIds, tagIds)}
+                onBatchDelete={() => openManagerDialog({ kind: "delete-bookmarks-batch", bookmarkIds: [...selectedIds], count: selectedIds.size })}
+                onExit={exitSelectionMode}
+              />
+            ) : null}
+            <HomePage
+              items={items}
+              bookmarkView={bookmarkView}
+              loadState={loadState}
+              listError={listError}
+              hasActiveFilters={Boolean(
+                searchInput.trim()
+                || bookmarkView !== "all"
+                || qualityFilter !== "all"
+                || selectedFolderId
+                || selectedTagId,
+              )}
+              managerFeedback={managerFeedback}
+              onOpenBookmark={openBookmark}
+              contextMenuBookmarkId={activeBookmarkContextId}
+              onBookmarkContextMenu={openBookmarkContextMenu}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelected}
+            />
+          </>
         ) : route.page === "detail" && (detailLoadState === "loading" || isPending) ? (
         <section className="loading">正在加载归档详情...</section>
       ) : route.page === "detail" && detailLoadState === "error" ? (
