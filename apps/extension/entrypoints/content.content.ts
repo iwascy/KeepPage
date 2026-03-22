@@ -17,6 +17,7 @@ import {
   captureProfileSchema,
 } from "../src/lib/domain-runtime";
 import { createLogger, logToConsole } from "../src/lib/logger";
+import { optimizeSiteArchiveHtml } from "../src/lib/site-capture";
 import { extractReaderArchiveHtml } from "../src/lib/site-archive";
 
 type SingleFilePageData = {
@@ -242,10 +243,23 @@ async function captureArchiveHtml(profile: CaptureProfile) {
   });
 
   const buildSuccessResult = (archiveHtml: string, usedSingleFile: boolean) => {
+    const optimizedArchive = optimizeSiteArchiveHtml({
+      archiveHtml,
+      sourceUrl: location.href,
+    });
+    const finalizedArchiveHtml = optimizedArchive.archiveHtml;
+    if (optimizedArchive.optimized) {
+      logger.info("Applied site-specific archive optimization.", {
+        rule: optimizedArchive.rule,
+        beforeSize: archiveHtml.length,
+        afterSize: finalizedArchiveHtml.length,
+      });
+    }
+
     let readerHtml: string | undefined;
     try {
       readerHtml = extractReaderArchiveHtml({
-        archiveHtml,
+        archiveHtml: finalizedArchiveHtml,
         sourceUrl: location.href,
         liveDocument: document,
       }) ?? undefined;
@@ -258,14 +272,14 @@ async function captureArchiveHtml(profile: CaptureProfile) {
 
     if (readerHtml) {
       logger.info("Reader archive extracted.", {
-        archiveSize: archiveHtml.length,
+        archiveSize: finalizedArchiveHtml.length,
         readerSize: readerHtml.length,
       });
     }
 
     return {
       ok: true as const,
-      archiveHtml,
+      archiveHtml: finalizedArchiveHtml,
       readerHtml,
       usedSingleFile,
     };
