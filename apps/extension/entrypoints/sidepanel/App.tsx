@@ -178,6 +178,8 @@ export function App() {
     ? "重新抓取"
     : canResumeSync && selectedTask?.profile === captureProfile
     ? "继续同步"
+    : selectedTask?.source.captureScope === "selection"
+    ? "需回页面重选"
     : "按当前 Profile 重抓";
   const primaryActionLabel = useMemo(() => {
     if (!authUser) {
@@ -267,19 +269,41 @@ export function App() {
     }
   }
 
-  async function handlePrimaryAction() {
+  async function ensureReadyForCaptureAction() {
     if (!authUser) {
       setAuthState("idle");
       setAuthMessage("请先完成登录，登录成功后就可以开始使用扩展。");
       await openExtensionAuthPage("capture-button");
-      return;
+      return false;
     }
     if (isPrivateView && !isVaultEnabled) {
       setError("请先启用私密库，再进行私密保存。");
-      return;
+      return false;
     }
     if (isPrivateView && !isVaultUnlocked) {
       setError("私密库当前已锁定，请先解锁。");
+      return false;
+    }
+    return true;
+  }
+
+  async function startSelectionCaptureAction() {
+    if (!await ensureReadyForCaptureAction()) {
+      return;
+    }
+    setError(null);
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPE.StartSelectionCapture,
+      profile: captureProfile,
+      saveMode,
+    });
+    if (!response?.ok) {
+      setError(response?.error ?? "启动选区保存失败。");
+    }
+  }
+
+  async function handlePrimaryAction() {
+    if (!await ensureReadyForCaptureAction()) {
       return;
     }
 
@@ -755,14 +779,24 @@ export function App() {
               ))}
             </select>
           </label>
-          <button
-            className={`capture-btn ${isPrivateView ? "capture-btn-private" : ""}`}
-            disabled={state === "capturing"}
-            onClick={handlePrimaryAction}
-            type="button"
-          >
-            {primaryActionLabel}
-          </button>
+          <div className="capture-actions">
+            <div className="capture-action-row">
+              <button className="ghost-btn" onClick={startSelectionCaptureAction} type="button">
+                选择区域保存
+              </button>
+              <button
+                className={`capture-btn ${isPrivateView ? "capture-btn-private" : ""}`}
+                disabled={state === "capturing"}
+                onClick={handlePrimaryAction}
+                type="button"
+              >
+                {primaryActionLabel}
+              </button>
+            </div>
+            <p className="capture-helper">
+              只想存正文或局部区域时，点左侧按钮后回到页面点击目标内容。
+            </p>
+          </div>
         </div>
       </header>
 
@@ -1022,6 +1056,7 @@ export function App() {
           {tasks.map((task) => {
             const active = task.id === selectedTaskId;
             const lockedTask = isPrivateLockedView && task.isPrivate;
+            const isSelectionTask = task.source.captureScope === "selection";
             return (
               <button
                 className={`task-card ${active ? "active" : ""} ${task.isPrivate ? "task-card-private" : ""}`}
@@ -1030,7 +1065,12 @@ export function App() {
                 type="button"
               >
                 <p className="task-title">{lockedTask ? "私密条目（已锁定）" : task.source.title}</p>
-                <p className="task-url">{lockedTask ? "已锁定" : task.source.domain}</p>
+                <p className="task-url">
+                  {lockedTask ? "已锁定" : `${task.source.domain}${isSelectionTask ? " · 选中区域" : ""}`}
+                </p>
+                {!lockedTask && isSelectionTask && task.source.selectionText ? (
+                  <p className="task-selection">{task.source.selectionText}</p>
+                ) : null}
                 <div className="task-meta">
                   <span className={`status status-${task.status}`}>{task.status}</span>
                   {lockedTask ? (
@@ -1076,7 +1116,11 @@ export function App() {
               <div className="preview-toolbar">
                 <h2>{selectedTask.source.title}</h2>
                 <div className="actions">
-                  <button onClick={retryCurrentTask} type="button">
+                  <button
+                    disabled={selectedTask.source.captureScope === "selection" && !canResumeSync}
+                    onClick={retryCurrentTask}
+                    type="button"
+                  >
                     {retryLabel}
                   </button>
                   <button onClick={openPreviewInNewTab} type="button">
@@ -1090,10 +1134,14 @@ export function App() {
                 </div>
               </div>
               <p className="muted">{selectedTask.source.url}</p>
+              {selectedTask.source.captureScope === "selection" && selectedTask.source.selectionText ? (
+                <p className="selection-summary">选区摘要：{selectedTask.source.selectionText}</p>
+              ) : null}
               <div className="task-facts">
                 {selectedTask.owner ? <span>账号：{selectedTask.owner.email}</span> : null}
                 <span>状态：{selectedTask.status}</span>
                 <span>Profile：{selectedTask.profile}</span>
+                <span>范围：{selectedTask.source.captureScope === "selection" ? "选中区域" : "整页"}</span>
                 {selectedTask.isPrivate ? <span>私密模式：本机私密</span> : null}
                 {selectedTask.syncState ? <span>同步：{selectedTask.syncState}</span> : null}
                 {selectedTask.bookmarkId && <span>Bookmark：{selectedTask.bookmarkId}</span>}

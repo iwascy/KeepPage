@@ -1,7 +1,9 @@
 import type {
   CapturePageSignals,
   CaptureProfile,
+  CaptureScope,
   CaptureSource,
+  SaveMode,
 } from "@keeppage/domain";
 import { defineContentScript } from "wxt/utils/define-content-script";
 import {
@@ -11,10 +13,13 @@ import {
   type CaptureArchiveHtmlResponse,
   type CollectLiveSignalsResponse,
   type ShowInPageToastResponse,
+  type StartSelectionCaptureResponse,
 } from "../src/lib/messages";
 import {
   capturePageSignalsSchema,
   captureProfileSchema,
+  captureScopeSchema,
+  saveModeSchema,
 } from "../src/lib/domain-runtime";
 import { createLogger, logToConsole } from "../src/lib/logger";
 import { extractReaderArchiveHtml } from "../src/lib/site-archive";
@@ -34,6 +39,18 @@ type SingleFileGlobal = {
   };
 };
 
+type ArchiveCaptureResult =
+  | {
+      ok: true;
+      archiveHtml: string;
+      readerHtml?: string;
+      usedSingleFile: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 type ToastElements = {
   host: HTMLDivElement;
   toast: HTMLDivElement;
@@ -41,10 +58,54 @@ type ToastElements = {
   message: HTMLParagraphElement;
 };
 
+type SelectionOverlayElements = {
+  host: HTMLDivElement;
+  frame: HTMLDivElement;
+  label: HTMLDivElement;
+  helper: HTMLDivElement;
+};
+
+type ActiveSelection = {
+  root: HTMLElement;
+  descriptor: string;
+  textPreview: string;
+};
+
+type SelectionSession = {
+  profile: CaptureProfile;
+  saveMode: SaveMode;
+  hoveredElement: HTMLElement | null;
+  overlay: SelectionOverlayElements;
+  detach: () => void;
+};
+
 const TOAST_HOST_ID = "keeppage-in-page-toast";
+const SELECTION_OVERLAY_HOST_ID = "keeppage-selection-overlay";
+const SELECTION_MARKER_ATTR = "data-keeppage-selection-root";
+const PREFERRED_SELECTION_TAGS = new Set([
+  "ARTICLE",
+  "ASIDE",
+  "BLOCKQUOTE",
+  "DIV",
+  "FIGURE",
+  "IMG",
+  "LI",
+  "MAIN",
+  "P",
+  "PRE",
+  "SECTION",
+  "TABLE",
+  "UL",
+  "OL",
+  "VIDEO",
+]);
+
 let toastElements: ToastElements | null = null;
 let toastDismissTimer: number | null = null;
 let toastRemovalTimer: number | null = null;
+let selectionOverlayElements: SelectionOverlayElements | null = null;
+let selectionSession: SelectionSession | null = null;
+let activeSelection: ActiveSelection | null = null;
 
 export default defineContentScript({
   matches: ["<all_urls>"],
@@ -67,19 +128,24 @@ export default defineContentScript({
 
       void (async () => {
         if (message.type === MESSAGE_TYPE.CollectLiveSignals) {
+          const captureScope = captureScopeSchema.parse(message.captureScope ?? "page");
           logger.info("Collecting live signals.", {
             url: location.href,
+            captureScope,
           });
+          const sourcePatch = collectSourcePatch(captureScope);
+          const liveSignals = collectLiveSignals(captureScope);
           logger.debug("Collecting source patch and DOM-based live signals.", {
-            canonicalUrl: readCanonicalUrl(),
-            referrer: document.referrer || undefined,
+            captureScope,
+            canonicalUrl: sourcePatch.canonicalUrl,
+            referrer: sourcePatch.referrer,
             viewportWidth: window.innerWidth,
             viewportHeight: window.innerHeight,
           });
           const response: CollectLiveSignalsResponse = {
             ok: true,
-            sourcePatch: collectSourcePatch(),
-            liveSignals: collectLiveSignals(),
+            sourcePatch,
+            liveSignals,
           };
           logger.info("Live signals collected.", response.liveSignals);
           sendResponse(response);
@@ -87,11 +153,13 @@ export default defineContentScript({
         }
         if (message.type === MESSAGE_TYPE.CaptureArchiveHtml) {
           const profile = captureProfileSchema.parse(message.profile);
+          const captureScope = captureScopeSchema.parse(message.captureScope ?? "page");
           logger.info("Capturing archive HTML.", {
             url: location.href,
             profile,
+            captureScope,
           });
-          const capture = await captureArchiveHtml(profile);
+          const capture = await captureArchiveHtml(profile, captureScope);
           const response: CaptureArchiveHtmlResponse = capture.ok
             ? {
                 ok: true,
@@ -105,14 +173,34 @@ export default defineContentScript({
               };
           if (capture.ok) {
             logger.info("Archive HTML captured.", {
+              captureScope,
               usedSingleFile: capture.usedSingleFile,
               archiveSize: capture.archiveHtml.length,
             });
           } else {
             logger.warn("Archive HTML capture failed.", {
+              captureScope,
               error: capture.error,
             });
           }
+          sendResponse(response);
+          return;
+        }
+        if (message.type === MESSAGE_TYPE.StartSelectionCapture) {
+          const profile = captureProfileSchema.parse(message.profile ?? "standard");
+          const saveMode = saveModeSchema.parse(message.saveMode ?? "standard");
+          logger.info("Starting interactive selection capture.", {
+            url: location.href,
+            profile,
+            saveMode,
+          });
+          startSelectionCapture({
+            profile,
+            saveMode,
+          });
+          const response: StartSelectionCaptureResponse = {
+            ok: true,
+          };
           sendResponse(response);
           return;
         }
@@ -140,12 +228,17 @@ export default defineContentScript({
   },
 });
 
-function collectSourcePatch(): Partial<CaptureSource> {
+function collectSourcePatch(captureScope: CaptureScope): Partial<CaptureSource> {
+  const selection = captureScope === "selection"
+    ? requireActiveSelection()
+    : null;
+  const coverImageRoot = selection?.root ?? document.body ?? document.documentElement;
   return {
     canonicalUrl: readCanonicalUrl(),
-    coverImageUrl: readCoverImageUrl(),
+    coverImageUrl: readCoverImageUrl(coverImageRoot),
     referrer: document.referrer || undefined,
-    selectionText: window.getSelection()?.toString() || undefined,
+    selectionText: selection?.textPreview || window.getSelection()?.toString() || undefined,
+    captureScope,
     viewport: {
       width: window.innerWidth,
       height: window.innerHeight,
@@ -154,7 +247,23 @@ function collectSourcePatch(): Partial<CaptureSource> {
   };
 }
 
-function collectLiveSignals(): CapturePageSignals {
+function collectLiveSignals(captureScope: CaptureScope): CapturePageSignals {
+  if (captureScope === "selection") {
+    const selectionRoot = requireActiveSelection().root;
+    const rect = selectionRoot.getBoundingClientRect();
+    return capturePageSignalsSchema.parse({
+      textLength: normalizeText(selectionRoot.innerText || selectionRoot.textContent || "").length,
+      imageCount: countScopedMatches(selectionRoot, "img"),
+      iframeCount: countScopedMatches(selectionRoot, "iframe"),
+      scrollHeight: Math.max(selectionRoot.scrollHeight, Math.round(rect.height)),
+      renderHeight: Math.round(rect.height),
+      hasCanvas: hasScopedMatch(selectionRoot, "canvas"),
+      hasVideo: hasScopedMatch(selectionRoot, "video"),
+      previewable: true,
+      screenshotGenerated: false,
+    });
+  }
+
   return capturePageSignalsSchema.parse({
     textLength: normalizeText(document.body?.innerText ?? "").length,
     imageCount: document.images.length,
@@ -163,6 +272,7 @@ function collectLiveSignals(): CapturePageSignals {
       document.documentElement.scrollHeight,
       document.body?.scrollHeight ?? 0,
     ),
+    renderHeight: window.innerHeight,
     hasCanvas: document.querySelector("canvas") !== null,
     hasVideo: document.querySelector("video") !== null,
     previewable: true,
@@ -174,8 +284,29 @@ function normalizeText(text: string) {
   return text.replaceAll(/\s+/g, " ").trim();
 }
 
-function readCoverImageUrl() {
-  const firstMeaningfulImage = Array.from(document.images).find((image) => {
+function truncateText(text: string, limit: number) {
+  if (text.length <= limit) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, limit - 3)).trim()}...`;
+}
+
+function countScopedMatches(root: HTMLElement, selector: string) {
+  return root.querySelectorAll(selector).length + (root.matches(selector) ? 1 : 0);
+}
+
+function hasScopedMatch(root: HTMLElement, selector: string) {
+  return root.matches(selector) || root.querySelector(selector) !== null;
+}
+
+function readCoverImageUrl(root: ParentNode | HTMLElement) {
+  const images = root instanceof HTMLElement
+    ? [
+        ...(root.matches("img") ? [root as HTMLImageElement] : []),
+        ...Array.from(root.querySelectorAll("img")),
+      ]
+    : Array.from(document.images);
+  const firstMeaningfulImage = images.find((image) => {
     const url = resolveCoverCandidateUrl(image);
     if (!url) {
       return false;
@@ -232,16 +363,20 @@ function readCanonicalUrl() {
   return canonicalElement?.href || location.href;
 }
 
-async function captureArchiveHtml(profile: CaptureProfile) {
+async function captureArchiveHtml(
+  profile: CaptureProfile,
+  captureScope: CaptureScope,
+): Promise<ArchiveCaptureResult> {
   const logger = createLogger("content");
   const singlefile = (globalThis as SingleFileGlobal).singlefile;
   const options = profileToSingleFileOptions(profile);
   logger.debug("Resolved SingleFile capture options.", {
     profile,
+    captureScope,
     options,
   });
 
-  const buildSuccessResult = (archiveHtml: string, usedSingleFile: boolean) => {
+  const buildSuccessResult = (archiveHtml: string, usedSingleFile: boolean): ArchiveCaptureResult => {
     let readerHtml: string | undefined;
     try {
       readerHtml = extractReaderArchiveHtml({
@@ -264,28 +399,28 @@ async function captureArchiveHtml(profile: CaptureProfile) {
     }
 
     return {
-      ok: true as const,
+      ok: true,
       archiveHtml,
       readerHtml,
       usedSingleFile,
     };
   };
 
-  // Official integration slot:
-  // Once SingleFile MV3 core bundles are wired in document_start hooks,
-  // this call will produce canonical archive HTML directly.
+  if (captureScope === "selection") {
+    return captureSelectedArchiveHtml({
+      logger,
+      options,
+      singlefile,
+      buildSuccessResult,
+    });
+  }
+
   if (singlefile?.getPageData) {
     try {
       const pageData = await singlefile.getPageData(options);
-      if (typeof pageData?.content === "string") {
-        logger.info("SingleFile returned string content.", {
-          size: pageData.content.length,
-        });
-        return buildSuccessResult(pageData.content, true);
-      }
-      if (Array.isArray(pageData?.content)) {
-        const html = new TextDecoder().decode(Uint8Array.from(pageData.content));
-        logger.info("SingleFile returned byte-array content.", {
+      const html = decodeSingleFilePageData(pageData);
+      if (html) {
+        logger.info("SingleFile returned archive content.", {
           size: html.length,
         });
         return buildSuccessResult(html, true);
@@ -296,7 +431,7 @@ async function captureArchiveHtml(profile: CaptureProfile) {
         error: message,
       });
       return {
-        ok: false as const,
+        ok: false,
         error: `singlefile.getPageData failed: ${message}`,
       };
     }
@@ -304,6 +439,151 @@ async function captureArchiveHtml(profile: CaptureProfile) {
 
   logger.warn("SingleFile API unavailable, using DOM serialization fallback.");
   return buildSuccessResult(serializeDocumentForFallback(), false);
+}
+
+async function captureSelectedArchiveHtml(input: {
+  logger: ReturnType<typeof createLogger>;
+  options: Record<string, unknown>;
+  singlefile: SingleFileGlobal["singlefile"];
+  buildSuccessResult: (archiveHtml: string, usedSingleFile: boolean) => ArchiveCaptureResult;
+}): Promise<ArchiveCaptureResult> {
+  const selection = requireActiveSelection();
+  const marker = `keeppage-selection-${crypto.randomUUID()}`;
+  selection.root.setAttribute(SELECTION_MARKER_ATTR, marker);
+
+  try {
+    if (input.singlefile?.getPageData) {
+      try {
+        const pageData = await input.singlefile.getPageData(input.options);
+        const fullArchiveHtml = decodeSingleFilePageData(pageData);
+        if (fullArchiveHtml) {
+          const selectedArchiveHtml = extractSelectionArchiveFromHtml(fullArchiveHtml, marker);
+          if (selectedArchiveHtml) {
+            input.logger.info("SingleFile selection archive extracted.", {
+              size: selectedArchiveHtml.length,
+              descriptor: selection.descriptor,
+            });
+            return input.buildSuccessResult(selectedArchiveHtml, true);
+          }
+          input.logger.warn("Selection marker was not found in archived HTML, using fallback.", {
+            descriptor: selection.descriptor,
+          });
+        }
+      } catch (error) {
+        input.logger.warn("SingleFile selection capture failed, using fallback.", {
+          error: error instanceof Error ? error.message : String(error),
+          descriptor: selection.descriptor,
+        });
+      }
+    } else {
+      input.logger.warn("SingleFile API unavailable for selection capture, using fallback.");
+    }
+
+    return input.buildSuccessResult(serializeSelectionForFallback(selection.root), false);
+  } finally {
+    selection.root.removeAttribute(SELECTION_MARKER_ATTR);
+    clearActiveSelection();
+  }
+}
+
+function decodeSingleFilePageData(pageData: SingleFilePageData | undefined) {
+  if (typeof pageData?.content === "string") {
+    return pageData.content;
+  }
+  if (Array.isArray(pageData?.content)) {
+    return new TextDecoder().decode(Uint8Array.from(pageData.content));
+  }
+  return null;
+}
+
+function extractSelectionArchiveFromHtml(archiveHtml: string, marker: string) {
+  const archivedDocument = new DOMParser().parseFromString(archiveHtml, "text/html");
+  const selectionRoot = archivedDocument.querySelector<HTMLElement>(
+    `[${SELECTION_MARKER_ATTR}="${marker}"]`,
+  );
+  if (!selectionRoot) {
+    return null;
+  }
+  selectionRoot.removeAttribute(SELECTION_MARKER_ATTR);
+  return buildStandaloneSelectionDocument(
+    archivedDocument.documentElement,
+    archivedDocument.head,
+    archivedDocument.body,
+    selectionRoot,
+  );
+}
+
+function serializeSelectionForFallback(selectionRoot: HTMLElement) {
+  const htmlElement = document.documentElement.cloneNode(false) as HTMLElement;
+  const headElement = (document.head ?? document.createElement("head")).cloneNode(true) as HTMLHeadElement;
+  const bodyElement = (document.body ?? document.createElement("body")).cloneNode(false) as HTMLBodyElement;
+  headElement.querySelectorAll("script, noscript, template").forEach((node) => node.remove());
+  return buildStandaloneSelectionDocument(
+    htmlElement,
+    headElement,
+    bodyElement,
+    selectionRoot,
+  );
+}
+
+function buildStandaloneSelectionDocument(
+  htmlElement: Element,
+  headElement: Element | null,
+  bodyElement: Element | null,
+  selectionRoot: HTMLElement,
+) {
+  const branch = buildPrunedSelectionBranch(selectionRoot);
+  const headHtml = headElement?.innerHTML.trim() || '<meta charset="UTF-8" />';
+  const htmlAttributes = serializeElementAttributes(htmlElement);
+  const bodyAttributes = serializeElementAttributes(bodyElement);
+  return `<!DOCTYPE html>
+<html${htmlAttributes}>
+  <head>
+${indentHtml(headHtml, 4)}
+  </head>
+  <body${bodyAttributes}>
+${indentHtml(branch.outerHTML, 4)}
+  </body>
+</html>`;
+}
+
+function buildPrunedSelectionBranch(selectionRoot: HTMLElement) {
+  let branch = selectionRoot.cloneNode(true) as HTMLElement;
+  branch.removeAttribute(SELECTION_MARKER_ATTR);
+  let current = selectionRoot.parentElement;
+  while (current && current.tagName !== "BODY") {
+    const ancestorClone = current.cloneNode(false) as HTMLElement;
+    ancestorClone.append(branch);
+    branch = ancestorClone;
+    current = current.parentElement;
+  }
+  return branch;
+}
+
+function serializeElementAttributes(element: Element | null | undefined) {
+  if (!element) {
+    return "";
+  }
+  const entries = Array.from(element.attributes)
+    .filter((attribute) => attribute.name !== SELECTION_MARKER_ATTR)
+    .map((attribute) => `${attribute.name}="${escapeHtmlAttribute(attribute.value)}"`);
+  return entries.length > 0 ? ` ${entries.join(" ")}` : "";
+}
+
+function indentHtml(content: string, size: number) {
+  const indent = " ".repeat(size);
+  return content
+    .split("\n")
+    .map((line) => `${indent}${line}`)
+    .join("\n");
+}
+
+function escapeHtmlAttribute(text: string) {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function serializeDocumentForFallback() {
@@ -358,6 +638,275 @@ function profileToSingleFileOptions(profile: CaptureProfile) {
     loadDeferredImages: true,
     loadDeferredImagesMaxIdleTime: 1000,
   };
+}
+
+function startSelectionCapture(input: { profile: CaptureProfile; saveMode: SaveMode }) {
+  stopSelectionCapture();
+  clearActiveSelection();
+  const overlay = ensureSelectionOverlay();
+  overlay.host.hidden = false;
+  overlay.helper.textContent = "点击页面内容开始保存，按 Esc 取消";
+
+  const session: SelectionSession = {
+    ...input,
+    hoveredElement: null,
+    overlay,
+    detach: () => {},
+  };
+
+  const handlePointerMove = (event: PointerEvent) => {
+    setSelectionHoverTarget(resolveSelectableElement(document.elementFromPoint(
+      event.clientX,
+      event.clientY,
+    )));
+  };
+
+  const handlePointerDown = (event: PointerEvent) => {
+    const target = resolveSelectableElement(event.target);
+    if (!target) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    void confirmSelectionCapture(target);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+    event.preventDefault();
+    stopSelectionCapture();
+    showInPageToast({
+      title: "已取消选区保存",
+      message: "需要时可以重新点击“选择区域保存”。",
+    });
+  };
+
+  const handleViewportChange = () => {
+    refreshSelectionOverlay();
+  };
+
+  document.addEventListener("pointermove", handlePointerMove, true);
+  document.addEventListener("pointerdown", handlePointerDown, true);
+  document.addEventListener("keydown", handleKeyDown, true);
+  window.addEventListener("scroll", handleViewportChange, true);
+  window.addEventListener("resize", handleViewportChange);
+
+  session.detach = () => {
+    document.removeEventListener("pointermove", handlePointerMove, true);
+    document.removeEventListener("pointerdown", handlePointerDown, true);
+    document.removeEventListener("keydown", handleKeyDown, true);
+    window.removeEventListener("scroll", handleViewportChange, true);
+    window.removeEventListener("resize", handleViewportChange);
+  };
+
+  selectionSession = session;
+  const initialTarget = resolveSelectableElement(
+    document.elementFromPoint(
+      Math.round(window.innerWidth / 2),
+      Math.round(Math.min(window.innerHeight - 32, Math.max(80, window.innerHeight * 0.3))),
+    ),
+  );
+  setSelectionHoverTarget(initialTarget);
+}
+
+async function confirmSelectionCapture(target: HTMLElement) {
+  const session = selectionSession;
+  if (!session) {
+    return;
+  }
+
+  const selection: ActiveSelection = {
+    root: target,
+    descriptor: describeElement(target),
+    textPreview: buildSelectionTextPreview(target),
+  };
+  activeSelection = selection;
+  stopSelectionCapture();
+  showInPageToast({
+    title: "已选中保存区域",
+    message: selection.textPreview
+      ? `正在保存：${truncateText(selection.textPreview, 40)}`
+      : "正在生成该区域的归档。",
+  });
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPE.TriggerCaptureActiveTab,
+      profile: session.profile,
+      saveMode: session.saveMode,
+      captureScope: "selection",
+    });
+    if (!response?.ok) {
+      clearActiveSelection();
+      showInPageToast({
+        title: "选区保存启动失败",
+        message: response?.error ?? "请稍后重试。",
+      });
+    }
+  } catch (error) {
+    clearActiveSelection();
+    showInPageToast({
+      title: "选区保存启动失败",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function stopSelectionCapture() {
+  if (!selectionSession) {
+    hideSelectionOverlay();
+    return;
+  }
+  selectionSession.detach();
+  selectionSession = null;
+  hideSelectionOverlay();
+}
+
+function setSelectionHoverTarget(target: HTMLElement | null) {
+  if (!selectionSession) {
+    return;
+  }
+  selectionSession.hoveredElement = target;
+  refreshSelectionOverlay();
+}
+
+function refreshSelectionOverlay() {
+  const session = selectionSession;
+  if (!session) {
+    hideSelectionOverlay();
+    return;
+  }
+
+  const target = session.hoveredElement;
+  if (!target || !target.isConnected) {
+    session.overlay.frame.dataset.visible = "false";
+    session.overlay.label.dataset.visible = "false";
+    return;
+  }
+
+  const rect = target.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) {
+    session.overlay.frame.dataset.visible = "false";
+    session.overlay.label.dataset.visible = "false";
+    return;
+  }
+
+  session.overlay.frame.dataset.visible = "true";
+  session.overlay.label.dataset.visible = "true";
+  session.overlay.frame.style.left = `${Math.round(rect.left)}px`;
+  session.overlay.frame.style.top = `${Math.round(rect.top)}px`;
+  session.overlay.frame.style.width = `${Math.round(rect.width)}px`;
+  session.overlay.frame.style.height = `${Math.round(rect.height)}px`;
+
+  const labelText = `${describeElement(target)}${buildSelectionTextPreview(target) ? ` · ${truncateText(buildSelectionTextPreview(target), 34)}` : ""}`;
+  session.overlay.label.textContent = labelText;
+  session.overlay.label.style.left = `${Math.round(clamp(rect.left, 12, window.innerWidth - 220))}px`;
+  session.overlay.label.style.top = `${Math.round(
+    rect.top > 48 ? rect.top - 42 : Math.min(window.innerHeight - 44, rect.bottom + 10),
+  )}px`;
+}
+
+function hideSelectionOverlay() {
+  if (!selectionOverlayElements) {
+    return;
+  }
+  selectionOverlayElements.host.hidden = true;
+  selectionOverlayElements.frame.dataset.visible = "false";
+  selectionOverlayElements.label.dataset.visible = "false";
+}
+
+function resolveSelectableElement(target: EventTarget | Element | null) {
+  let element = target instanceof Element ? target : null;
+  let fallback: HTMLElement | null = null;
+
+  while (element) {
+    if (!(element instanceof HTMLElement)) {
+      element = element.parentElement;
+      continue;
+    }
+    if (element.id === TOAST_HOST_ID || element.id === SELECTION_OVERLAY_HOST_ID) {
+      return null;
+    }
+    if (isIgnoredSelectionElement(element)) {
+      element = element.parentElement;
+      continue;
+    }
+    if (!isVisibleSelectionElement(element)) {
+      element = element.parentElement;
+      continue;
+    }
+    if (!fallback) {
+      fallback = element;
+    }
+    if (PREFERRED_SELECTION_TAGS.has(element.tagName)) {
+      return element;
+    }
+    element = element.parentElement;
+  }
+
+  return fallback;
+}
+
+function isIgnoredSelectionElement(element: HTMLElement) {
+  return [
+    "BODY",
+    "HEAD",
+    "HTML",
+    "IFRAME",
+    "LINK",
+    "META",
+    "NOSCRIPT",
+    "SCRIPT",
+    "STYLE",
+    "TEMPLATE",
+  ].includes(element.tagName);
+}
+
+function isVisibleSelectionElement(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  return rect.width >= 18 && rect.height >= 18;
+}
+
+function describeElement(element: HTMLElement) {
+  const tag = element.tagName.toLowerCase();
+  const id = element.id ? `#${truncateText(element.id, 18)}` : "";
+  const classes = Array.from(element.classList)
+    .slice(0, 2)
+    .map((token) => `.${truncateText(token, 14)}`)
+    .join("");
+  return `${tag}${id}${classes}`;
+}
+
+function buildSelectionTextPreview(element: HTMLElement) {
+  const directText = normalizeText(element.innerText || element.textContent || "");
+  if (directText) {
+    return truncateText(directText, 120);
+  }
+  const altText = normalizeText(
+    element.getAttribute("aria-label")
+      || element.getAttribute("title")
+      || (element instanceof HTMLImageElement ? element.alt : ""),
+  );
+  return truncateText(altText, 120);
+}
+
+function requireActiveSelection() {
+  if (!activeSelection?.root?.isConnected) {
+    activeSelection = null;
+    throw new Error("没有找到已选中的页面区域，请重新选择后再保存。");
+  }
+  return activeSelection;
+}
+
+function clearActiveSelection() {
+  activeSelection = null;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function showInPageToast(input: { title: string; message?: string }) {
@@ -513,4 +1062,117 @@ function ensureToastElements() {
     message,
   };
   return toastElements;
+}
+
+function ensureSelectionOverlay() {
+  if (selectionOverlayElements && document.contains(selectionOverlayElements.host)) {
+    return selectionOverlayElements;
+  }
+
+  const host = document.createElement("div");
+  host.id = SELECTION_OVERLAY_HOST_ID;
+  host.hidden = true;
+
+  const shadowRoot = host.attachShadow({ mode: "open" });
+  const style = document.createElement("style");
+  style.textContent = `
+    :host {
+      all: initial;
+    }
+
+    .viewport {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483646;
+      pointer-events: none;
+      font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    .frame {
+      position: fixed;
+      border-radius: 18px;
+      border: 2px solid rgba(15, 118, 110, 0.95);
+      background: rgba(45, 212, 191, 0.12);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.3),
+        0 18px 48px rgba(15, 23, 42, 0.2);
+      opacity: 0;
+      transition:
+        left 80ms ease,
+        top 80ms ease,
+        width 80ms ease,
+        height 80ms ease,
+        opacity 80ms ease;
+    }
+
+    .frame[data-visible="true"] {
+      opacity: 1;
+    }
+
+    .label {
+      position: fixed;
+      max-width: min(60vw, 420px);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.94);
+      color: #f8fafc;
+      font-size: 12px;
+      line-height: 1.35;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.2);
+      opacity: 0;
+      transition:
+        left 80ms ease,
+        top 80ms ease,
+        opacity 80ms ease;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .label[data-visible="true"] {
+      opacity: 1;
+    }
+
+    .helper {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.92);
+      color: rgba(248, 250, 252, 0.96);
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: nowrap;
+    }
+  `;
+
+  const viewport = document.createElement("div");
+  viewport.className = "viewport";
+
+  const frame = document.createElement("div");
+  frame.className = "frame";
+  frame.dataset.visible = "false";
+
+  const label = document.createElement("div");
+  label.className = "label";
+  label.dataset.visible = "false";
+
+  const helper = document.createElement("div");
+  helper.className = "helper";
+  helper.textContent = "点击页面内容开始保存，按 Esc 取消";
+
+  viewport.append(frame, label, helper);
+  shadowRoot.append(style, viewport);
+  (document.body ?? document.documentElement).append(host);
+
+  selectionOverlayElements = {
+    host,
+    frame,
+    label,
+    helper,
+  };
+  return selectionOverlayElements;
 }

@@ -5,6 +5,7 @@ import type {
   CaptureInitResponse,
   CapturePageSignals,
   CaptureProfile,
+  CaptureScope,
   CaptureSource,
   CaptureStatus,
   CaptureTask,
@@ -55,6 +56,10 @@ const captureProfileValues = [
   "dynamic",
   "lightweight",
 ] as const satisfies readonly CaptureProfile[];
+const captureScopeValues = [
+  "page",
+  "selection",
+] as const satisfies readonly CaptureScope[];
 
 const qualityGradeValues = ["high", "medium", "low"] as const satisfies readonly QualityGrade[];
 const saveModeValues = ["standard", "private"] as const satisfies readonly SaveMode[];
@@ -90,6 +95,7 @@ const validStatusTransitions: Record<CaptureStatus, CaptureStatus[]> = {
 
 export const captureStatusSchema = createSchema(parseCaptureStatus);
 export const captureProfileSchema = createSchema(parseCaptureProfile);
+export const captureScopeSchema = createSchema(parseCaptureScope);
 export const qualityGradeSchema = createSchema(parseQualityGrade);
 export const saveModeSchema = createSchema(parseSaveMode);
 export const privateModeSchema = createSchema(parsePrivateMode);
@@ -293,6 +299,10 @@ function parseCaptureProfile(input: unknown): CaptureProfile {
   return parseEnum(input, captureProfileValues, "capture profile");
 }
 
+function parseCaptureScope(input: unknown): CaptureScope {
+  return parseEnum(input, captureScopeValues, "capture scope");
+}
+
 function parseQualityGrade(input: unknown): QualityGrade {
   return parseEnum(input, qualityGradeValues, "quality grade");
 }
@@ -359,6 +369,7 @@ function parseCaptureSource(input: unknown): CaptureSource {
     coverImageUrl: expectOptionalUrlString(record.coverImageUrl, "capture source coverImageUrl"),
     referrer: expectOptionalString(record.referrer, "capture source referrer"),
     selectionText: expectOptionalString(record.selectionText, "capture source selectionText"),
+    captureScope: parseCaptureScope(record.captureScope ?? "page"),
     viewport: {
       width: expectInt(viewport.width, "capture source viewport width", { min: 1 }),
       height: expectInt(viewport.height, "capture source viewport height", { min: 1 }),
