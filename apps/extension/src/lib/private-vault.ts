@@ -270,6 +270,7 @@ function buildLockedTask(shell: PrivateCaptureTaskShell): CaptureTask {
       title: REDACTED_TITLE,
       canonicalUrl: REDACTED_URL,
       domain: REDACTED_DOMAIN,
+      captureScope: "page",
       viewport: {
         width: 1,
         height: 1,

@@ -3,6 +3,7 @@ import type {
   CaptureTaskOwner,
   CapturePageSignals,
   CaptureProfile,
+  CaptureScope,
   CaptureSource,
   CaptureTask,
 } from "@keeppage/domain";
@@ -52,6 +53,7 @@ const logger = createLogger("capture");
 export async function captureActiveTab(
   profile: CaptureProfile = DEFAULT_PROFILE,
   saveMode: SaveMode = "standard",
+  captureScope: CaptureScope = "page",
 ) {
   const owner = await requireCurrentTaskOwner();
   if (saveMode === "private") {
@@ -68,9 +70,10 @@ export async function captureActiveTab(
     tabId: activeTab.id,
     url: activeTab.url,
     profile,
+    captureScope,
     ownerUserId: owner.userId,
   });
-  return captureTab(activeTab.id, profile, owner, saveMode);
+  return captureTab(activeTab.id, profile, owner, saveMode, captureScope);
 }
 
 export async function retryTask(
@@ -110,6 +113,9 @@ export async function retryTask(
   ) {
     return syncTask(task);
   }
+  if (task.source.captureScope === "selection") {
+    throw new Error("选区存档暂不支持重新抓取，请回到原网页重新选择后再保存。");
+  }
   return captureSourceUrl(task.source.url, retryProfile, task.isPrivate ? "private" : "standard");
 }
 
@@ -148,12 +154,13 @@ async function captureTab(
   profile: CaptureProfile,
   owner: CaptureTaskOwner,
   saveMode: SaveMode,
+  captureScope: CaptureScope,
   options: {
     captureScreenshot?: boolean;
   } = {},
 ) {
   const tab = await chrome.tabs.get(tabId);
-  const source = buildInitialSource(tab);
+  const source = buildInitialSource(tab, captureScope);
   const now = new Date().toISOString();
   const task: CaptureTask = {
     id: createCaptureId(),
@@ -217,6 +224,7 @@ async function captureTab(
       tabId,
       {
         type: MESSAGE_TYPE.CollectLiveSignals,
+        captureScope,
       },
     );
     if (!liveResult.ok || !liveResult.liveSignals) {
@@ -254,6 +262,7 @@ async function captureTab(
     >(tabId, {
       type: MESSAGE_TYPE.CaptureArchiveHtml,
       profile,
+      captureScope,
     });
     await logCapture(saveMode, "info", tabId, "Archive capture finished.", {
       taskId: task.id,
@@ -418,7 +427,7 @@ async function captureSourceUrl(
       retryTabId: retryTab.id,
       url,
     });
-    return await captureTab(retryTab.id, profile, owner, saveMode, {
+    return await captureTab(retryTab.id, profile, owner, saveMode, "page", {
       captureScreenshot: false,
     });
   } finally {
@@ -481,7 +490,13 @@ async function showInPageSuccessToast(tabId: number | undefined, task: CaptureTa
   try {
     await sendMessageToTab<ShowInPageToastRequest, ShowInPageToastResponse>(tabId, {
       type: MESSAGE_TYPE.ShowInPageToast,
-      title: task.isPrivate ? "已私密保存到 KeepPage" : "已保存到 KeepPage",
+      title: task.isPrivate
+        ? task.source.captureScope === "selection"
+          ? "已私密保存选中区域"
+          : "已私密保存到 KeepPage"
+        : task.source.captureScope === "selection"
+        ? "已保存选中区域到 KeepPage"
+        : "已保存到 KeepPage",
       message: buildTaskSyncedMessage(task),
       tone: "success",
     });
@@ -531,7 +546,7 @@ function assertTaskOwnership(task: CaptureTask, owner: CaptureTaskOwner) {
   }
 }
 
-function buildInitialSource(tab: chrome.tabs.Tab): CaptureSource {
+function buildInitialSource(tab: chrome.tabs.Tab, captureScope: CaptureScope): CaptureSource {
   const url = tab.url ?? "about:blank";
   const parsed = safeUrl(url);
   return {
@@ -540,6 +555,7 @@ function buildInitialSource(tab: chrome.tabs.Tab): CaptureSource {
     canonicalUrl: url,
     domain: parsed.hostname || "unknown",
     faviconUrl: tab.favIconUrl,
+    captureScope,
     viewport: {
       width: 1280,
       height: 720,

@@ -10,10 +10,15 @@ import {
   isBackgroundRequest,
   type ListTasksResponse,
 } from "../src/lib/messages";
+import {
+  getRefreshRequiredMessage,
+  isStaleExtensionContextError,
+} from "../src/lib/extension-errors";
 import { createLogger } from "../src/lib/logger";
 import { getFetchChunkSize } from "../src/lib/singlefile-fetch";
 import {
   captureProfileSchema,
+  captureScopeSchema,
   privateAutoLockSchema,
   saveModeSchema,
 } from "../src/lib/domain-runtime";
@@ -134,6 +139,35 @@ export default defineBackground(() => {
         sendResponse(response);
         return;
       }
+      if (message.type === MESSAGE_TYPE.StartSelectionCapture) {
+        const saveMode = saveModeSchema.parse(message.saveMode ?? "standard");
+        if (!await ensureAuthenticated("selection-capture")) {
+          sendResponse({ ok: false, error: "请先登录 KeepPage。" });
+          return;
+        }
+        const profile = captureProfileSchema.parse(message.profile ?? "standard");
+        const [tab] = await chrome.tabs.query({
+          active: true,
+          lastFocusedWindow: true,
+        });
+        if (!tab?.id) {
+          sendResponse({ ok: false, error: "当前没有可操作的标签页。" });
+          return;
+        }
+        logger.info("Starting interactive selection capture.", {
+          profile,
+          saveMode,
+          tabId: tab.id,
+          url: tab.url,
+        });
+        const response = await sendMessageToTab(tab.id, {
+          type: MESSAGE_TYPE.StartSelectionCapture,
+          profile,
+          saveMode,
+        });
+        sendResponse(response);
+        return;
+      }
       if (message.type === MESSAGE_TYPE.TriggerCaptureActiveTab) {
         const saveMode = saveModeSchema.parse(message.saveMode ?? "standard");
         if (!await ensureAuthenticated("sidepanel-capture")) {
@@ -141,8 +175,9 @@ export default defineBackground(() => {
           return;
         }
         const profile = captureProfileSchema.parse(message.profile ?? "standard");
-        logger.info("Triggering active-tab capture.", { profile, saveMode });
-        const task = await captureActiveTab(profile, saveMode);
+        const captureScope = captureScopeSchema.parse(message.captureScope ?? "page");
+        logger.info("Triggering active-tab capture.", { profile, saveMode, captureScope });
+        const task = await captureActiveTab(profile, saveMode, captureScope);
         sendResponse({ ok: true, task });
         return;
       }
@@ -474,7 +509,12 @@ function sendMessageToTab(
   return new Promise<unknown>((resolve, reject) => {
     chrome.tabs.sendMessage(tabId, message, options, (response) => {
       if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+        const error = new Error(chrome.runtime.lastError.message);
+        if (isStaleExtensionContextError(error)) {
+          reject(new Error(getRefreshRequiredMessage()));
+          return;
+        }
+        reject(error);
         return;
       }
       resolve(response);

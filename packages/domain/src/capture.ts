@@ -24,17 +24,23 @@ export const captureProfileValues = [
   "dynamic",
   "lightweight",
 ] as const;
+export const captureScopeValues = [
+  "page",
+  "selection",
+] as const;
 
 export const qualityGradeValues = ["high", "medium", "low"] as const;
 export const bookmarkListViewValues = ["all", "recent", "favorites"] as const;
 
 export const captureStatusSchema = z.enum(captureStatusValues);
 export const captureProfileSchema = z.enum(captureProfileValues);
+export const captureScopeSchema = z.enum(captureScopeValues);
 export const qualityGradeSchema = z.enum(qualityGradeValues);
 export const bookmarkListViewSchema = z.enum(bookmarkListViewValues);
 
 export type CaptureStatus = z.infer<typeof captureStatusSchema>;
 export type CaptureProfile = z.infer<typeof captureProfileSchema>;
+export type CaptureScope = z.infer<typeof captureScopeSchema>;
 export type QualityGrade = z.infer<typeof qualityGradeSchema>;
 export type BookmarkListView = z.infer<typeof bookmarkListViewSchema>;
 
@@ -47,6 +53,7 @@ export const captureSourceSchema = z.object({
   coverImageUrl: z.url().optional(),
   referrer: z.string().optional(),
   selectionText: z.string().optional(),
+  captureScope: captureScopeSchema.default("page"),
   viewport: z.object({
     width: z.number().int().positive(),
     height: z.number().int().positive(),

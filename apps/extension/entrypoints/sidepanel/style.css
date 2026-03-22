@@ -172,6 +172,29 @@ body {
   gap: 10px;
 }
 
+.capture-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.capture-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.capture-helper {
+  margin: 0;
+  max-width: 280px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+}
+
 .compact-field,
 .field-inline {
   display: flex;
@@ -481,6 +504,13 @@ body {
   font-size: 12px;
 }
 
+.task-selection {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .task-meta {
   display: flex;
   justify-content: space-between;
@@ -553,6 +583,13 @@ body {
   box-shadow: 0 10px 24px rgba(45, 51, 56, 0.05);
 }
 
+.actions button:disabled,
+.ghost-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .task-facts {
   display: flex;
   flex-wrap: wrap;
@@ -565,6 +602,13 @@ body {
   border-radius: 999px;
   padding: 4px 8px;
   background: var(--surface-strong);
+}
+
+.selection-summary {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .quality-box {
@@ -739,6 +783,19 @@ body {
   .settings-actions,
   .actions {
     flex-wrap: wrap;
+  }
+
+  .capture-actions {
+    align-items: stretch;
+  }
+
+  .capture-action-row {
+    justify-content: stretch;
+  }
+
+  .capture-helper {
+    max-width: none;
+    text-align: left;
   }
 
   .account-form {

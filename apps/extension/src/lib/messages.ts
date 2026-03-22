@@ -1,6 +1,7 @@
 import type {
   CapturePageSignals,
   CaptureProfile,
+  CaptureScope,
   CaptureSource,
   CaptureTask,
   PrivateAutoLock,
@@ -13,6 +14,7 @@ export const MESSAGE_TYPE = {
   CaptureArchiveHtml: "keeppage/capture-archive-html",
   ShowInPageToast: "keeppage/show-in-page-toast",
   ListTasks: "keeppage/list-tasks",
+  StartSelectionCapture: "keeppage/start-selection-capture",
   TriggerCaptureActiveTab: "keeppage/trigger-capture-active-tab",
   RetryTask: "keeppage/retry-task",
   OpenTaskPreview: "keeppage/open-task-preview",
@@ -26,6 +28,7 @@ export const MESSAGE_TYPE = {
 
 export interface CollectLiveSignalsRequest {
   type: typeof MESSAGE_TYPE.CollectLiveSignals;
+  captureScope?: CaptureScope;
 }
 
 export interface CollectLiveSignalsResponse {
@@ -38,6 +41,7 @@ export interface CollectLiveSignalsResponse {
 export interface CaptureArchiveHtmlRequest {
   type: typeof MESSAGE_TYPE.CaptureArchiveHtml;
   profile: CaptureProfile;
+  captureScope?: CaptureScope;
 }
 
 export interface CaptureArchiveHtmlResponse {
@@ -70,10 +74,22 @@ export interface ListTasksResponse {
   tasks: CaptureTask[];
 }
 
+export interface StartSelectionCaptureRequest {
+  type: typeof MESSAGE_TYPE.StartSelectionCapture;
+  profile?: CaptureProfile;
+  saveMode?: SaveMode;
+}
+
+export interface StartSelectionCaptureResponse {
+  ok: boolean;
+  error?: string;
+}
+
 export interface TriggerCaptureActiveTabRequest {
   type: typeof MESSAGE_TYPE.TriggerCaptureActiveTab;
   profile?: CaptureProfile;
   saveMode?: SaveMode;
+  captureScope?: CaptureScope;
 }
 
 export interface RetryTaskRequest {
@@ -130,9 +146,11 @@ export interface DebugLogEvent {
 export type ContentRequest =
   | CollectLiveSignalsRequest
   | CaptureArchiveHtmlRequest
+  | StartSelectionCaptureRequest
   | ShowInPageToastRequest;
 export type BackgroundRequest =
   | ListTasksRequest
+  | StartSelectionCaptureRequest
   | TriggerCaptureActiveTabRequest
   | RetryTaskRequest
   | OpenTaskPreviewRequest
@@ -149,6 +167,7 @@ export function isContentRequest(message: unknown): message is ContentRequest {
   return (
     maybe.type === MESSAGE_TYPE.CollectLiveSignals ||
     maybe.type === MESSAGE_TYPE.CaptureArchiveHtml ||
+    maybe.type === MESSAGE_TYPE.StartSelectionCapture ||
     maybe.type === MESSAGE_TYPE.ShowInPageToast
   );
 }
@@ -168,6 +187,7 @@ export function isBackgroundRequest(message: unknown): message is BackgroundRequ
   const maybe = message as { type?: string };
   return (
     maybe.type === MESSAGE_TYPE.ListTasks ||
+    maybe.type === MESSAGE_TYPE.StartSelectionCapture ||
     maybe.type === MESSAGE_TYPE.TriggerCaptureActiveTab ||
     maybe.type === MESSAGE_TYPE.RetryTask ||
     maybe.type === MESSAGE_TYPE.OpenTaskPreview ||
