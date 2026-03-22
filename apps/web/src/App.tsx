@@ -116,7 +116,8 @@ type ManagerDialogState =
 type ContextMenuState =
   | { kind: "closed" }
   | { kind: "bookmark"; bookmark: Bookmark; x: number; y: number }
-  | { kind: "folder"; folder: Folder; x: number; y: number };
+  | { kind: "folder"; folder: Folder; x: number; y: number }
+  | { kind: "tag"; tag: Tag; x: number; y: number };
 
 type ContextMenuItem = {
   id: string;
@@ -790,6 +791,8 @@ function AppShell({
   onLogout,
   contextMenuFolderId,
   onFolderContextMenu,
+  contextMenuTagId,
+  onTagContextMenu,
   children,
   logoutLabel = "退出登录",
 }: {
@@ -817,6 +820,8 @@ function AppShell({
   onLogout: () => void;
   contextMenuFolderId: string | null;
   onFolderContextMenu: (folder: Folder, event: ReactMouseEvent<HTMLElement>) => void;
+  contextMenuTagId: string | null;
+  onTagContextMenu: (tag: Tag, event: ReactMouseEvent<HTMLElement>) => void;
   children: ReactNode;
   logoutLabel?: string;
 }) {
@@ -1177,10 +1182,15 @@ function AppShell({
                 <div className="home-tag-list">
                   {tags.map((tag) => {
                     const active = selectedTagId === tag.id;
+                    const contextOpen = contextMenuTagId === tag.id;
                     return (
                       <button
                         key={tag.id}
-                        className={active ? "home-tag-chip is-active" : "home-tag-chip"}
+                        className={[
+                          "home-tag-chip",
+                          active ? "is-active" : "",
+                          contextOpen ? "is-context-open" : "",
+                        ].filter(Boolean).join(" ")}
                         type="button"
                       onClick={() => {
                         const nextTagId = active ? "" : tag.id;
@@ -1188,6 +1198,7 @@ function AppShell({
                         onSelectBookmarkView("all");
                         onSelectTag(nextTagId);
                       }}
+                      onContextMenu={(event) => onTagContextMenu(tag, event)}
                       >
                         {tag.name}
                       </button>
@@ -2930,7 +2941,7 @@ function ContextMenu({
         ref={menuRef}
         className="context-menu"
         role="menu"
-        aria-label={state.kind === "bookmark" ? `${state.bookmark.title} 的右键菜单` : `${state.folder.name} 的右键菜单`}
+        aria-label={state.kind === "bookmark" ? `${state.bookmark.title} 的右键菜单` : state.kind === "folder" ? `${state.folder.name} 的右键菜单` : `${state.tag.name} 的右键菜单`}
         style={{
           left: `${position.left}px`,
           top: `${position.top}px`,
@@ -3430,6 +3441,7 @@ export function App({
   const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
   const activeBookmarkContextId = contextMenu.kind === "bookmark" ? contextMenu.bookmark.id : null;
   const activeFolderContextId = contextMenu.kind === "folder" ? contextMenu.folder.id : null;
+  const activeTagContextId = contextMenu.kind === "tag" ? contextMenu.tag.id : null;
 
   const importAdapter = useMemo<ImportPanelAdapter | undefined>(() => {
     if (!isDemoMode) {
@@ -3680,6 +3692,17 @@ export function App({
     setContextMenu({
       kind: "folder",
       folder,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  function openTagContextMenu(tag: Tag, event: ReactMouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      kind: "tag",
+      tag,
       x: event.clientX,
       y: event.clientY,
     });
@@ -4837,6 +4860,45 @@ export function App({
       ];
     }
 
+    if (contextMenu.kind === "tag") {
+      const tag = contextMenu.tag;
+      return [
+        {
+          label: "标签",
+          items: [
+            {
+              id: "filter-tag",
+              label: selectedTagId === tag.id ? "取消筛选" : "筛选这个标签",
+              icon: "FL",
+              onSelect: () => {
+                setBookmarkView("all");
+                setSelectedTagId((current) => current === tag.id ? "" : tag.id);
+              },
+            },
+            {
+              id: "rename-tag",
+              label: "重命名标签",
+              icon: "RN",
+              disabled: managerBusy,
+              onSelect: () => openManagerDialog({ kind: "edit-tag", tag }),
+            },
+          ],
+        },
+        {
+          items: [
+            {
+              id: "delete-tag",
+              label: "删除标签",
+              icon: "DL",
+              danger: true,
+              disabled: managerBusy,
+              onSelect: () => openManagerDialog({ kind: "delete-tag", tag }),
+            },
+          ],
+        },
+      ];
+    }
+
     const folder = contextMenu.folder;
     return [
       {
@@ -4880,7 +4942,7 @@ export function App({
         ],
       },
     ];
-  }, [contextMenu, managerBusy, selectedFolderId, route, authToken, demoState, isDemoMode, bookmarkView]);
+  }, [contextMenu, managerBusy, selectedFolderId, selectedTagId, route, authToken, demoState, isDemoMode, bookmarkView]);
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -4982,6 +5044,8 @@ export function App({
         onLogout={() => logout()}
         contextMenuFolderId={activeFolderContextId}
         onFolderContextMenu={openFolderContextMenu}
+        contextMenuTagId={activeTagContextId}
+        onTagContextMenu={openTagContextMenu}
         logoutLabel={logoutLabel}
       >
         {route.page === "list" ? (
