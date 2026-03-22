@@ -35,7 +35,7 @@ export async function registerRoutes(
   await registerBookmarkRoutes(app, authService, repository, objectStorage);
   await registerFolderRoutes(app, authService, repository);
   await registerTagRoutes(app, authService, repository);
-  await registerImportRoutes(app, authService, repository);
+  await registerImportRoutes(app, authService, repository, cloudArchiveManager);
   if (cloudArchiveManager) {
     await registerCloudArchiveRoutes(app, authService, cloudArchiveManager);
   }

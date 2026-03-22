@@ -1338,7 +1338,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
           itemRows.push(this.toImportItemInsert(userId, taskId, item, {
             status: "created_bookmark",
             dedupeResult: "created_bookmark",
-            reason: input.options.mode === "links_only" ? "已完成轻导入。" : "已完成轻导入，批量归档将在后续版本接入。",
+            reason: input.options.mode === "links_only" ? "已完成轻导入。" : "已完成轻导入，云端存档已排队。",
             bookmarkId,
             hasArchive: false,
             createdAt: now,

@@ -853,7 +853,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
         items.push(this.createImportTaskItem(taskId, item, {
           status: "created_bookmark",
           dedupeResult: "created_bookmark",
-          reason: input.options.mode === "links_only" ? "已完成轻导入。" : "已完成轻导入，批量归档将在后续版本接入。",
+          reason: input.options.mode === "links_only" ? "已完成轻导入。" : "已完成轻导入，云端存档已排队。",
           bookmarkId: bookmark.id,
           hasArchive: false,
           createdAt: itemNow,

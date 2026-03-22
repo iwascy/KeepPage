@@ -6,6 +6,7 @@ import {
 } from "@keeppage/domain";
 import type { FastifyInstance } from "fastify";
 import type { AuthService } from "../lib/auth-service";
+import type { CloudArchiveManager } from "../lib/cloud-archive-manager";
 import { HttpError } from "../lib/http-error";
 import {
   buildImportPreview,
@@ -19,6 +20,7 @@ export async function registerImportRoutes(
   app: FastifyInstance,
   authService: AuthService,
   repository: BookmarkRepository,
+  cloudArchiveManager: CloudArchiveManager | null,
 ) {
   app.post("/imports/preview", async (request, reply) => {
     const user = await authService.requireUser(request);
@@ -66,6 +68,22 @@ export async function registerImportRoutes(
       preview,
       items,
     });
+
+    if (
+      cloudArchiveManager &&
+      normalized.options.mode !== "links_only"
+    ) {
+      for (const item of detail.items) {
+        if (
+          item.status === "created_bookmark" &&
+          item.url &&
+          item.bookmarkId
+        ) {
+          cloudArchiveManager.submit(user.id, { url: item.url });
+        }
+      }
+    }
+
     return reply.send({
       taskId: detail.task.id,
       ...importTaskDetailResponseSchema.parse(detail),
