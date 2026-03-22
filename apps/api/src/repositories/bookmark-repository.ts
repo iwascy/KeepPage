@@ -1,4 +1,6 @@
 import type {
+  ApiToken,
+  ApiTokenScope,
   AuthUser,
   Bookmark,
   BookmarkListView,
@@ -10,6 +12,8 @@ import type {
   Folder,
   FolderCreateRequest,
   FolderUpdateRequest,
+  IngestBookmarkRequest,
+  IngestBookmarkStatus,
   ImportExecutionOptions,
   ImportPreviewResponse,
   ImportSource,
@@ -86,6 +90,26 @@ export type UserAuthRecord = {
   passwordHash: string;
 };
 
+export type ApiTokenAuthRecord = ApiToken & {
+  userId: string;
+  tokenHash: string;
+};
+
+export type CreateApiTokenInput = {
+  id: string;
+  name: string;
+  tokenPreview: string;
+  tokenHash: string;
+  scopes: ApiTokenScope[];
+  expiresAt?: string;
+};
+
+export type IngestBookmarkResult = {
+  bookmark: Bookmark;
+  status: IngestBookmarkStatus;
+  deduplicated: boolean;
+};
+
 export interface BookmarkRepository {
   readonly kind: "memory" | "postgres";
   createUser(input: {
@@ -95,8 +119,14 @@ export interface BookmarkRepository {
   }): Promise<AuthUser>;
   findUserByEmail(email: string): Promise<UserAuthRecord | null>;
   getUserById(userId: string): Promise<AuthUser | null>;
+  createApiToken(userId: string, input: CreateApiTokenInput): Promise<ApiToken>;
+  listApiTokens(userId: string): Promise<ApiToken[]>;
+  getApiTokenAuthRecord(tokenId: string): Promise<ApiTokenAuthRecord | null>;
+  revokeApiToken(userId: string, tokenId: string): Promise<boolean>;
+  touchApiToken(tokenId: string, usedAt: string): Promise<void>;
   initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult>;
   completeCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult>;
+  ingestBookmark(userId: string, input: IngestBookmarkRequest): Promise<IngestBookmarkResult>;
   searchBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse>;
   getBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null>;
   deleteBookmark(userId: string, bookmarkId: string): Promise<boolean>;

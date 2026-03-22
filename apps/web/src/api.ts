@@ -1,4 +1,7 @@
 import {
+  apiTokenCreateRequestSchema,
+  apiTokenCreateResponseSchema,
+  apiTokenListResponseSchema,
   authSessionSchema,
   authUserSchema,
   bookmarkDetailResponseSchema,
@@ -11,6 +14,9 @@ import {
   folderSchema,
   tagListResponseSchema,
   tagSchema,
+  type ApiToken,
+  type ApiTokenCreateRequest,
+  type ApiTokenCreateResponse,
   type AuthLoginRequest,
   type AuthRegisterRequest,
   type AuthSession,
@@ -169,6 +175,8 @@ export type ImportTaskDetailResult = {
   task: ImportTaskSummary;
   items: ImportTaskItem[];
 };
+
+export type ApiTokenItem = ApiToken;
 
 type RequestOptions = {
   method?: string;
@@ -365,6 +373,29 @@ export async function loginAccount(input: AuthLoginRequest): Promise<AuthSession
 
 export async function fetchCurrentUser(token: string): Promise<AuthUser> {
   return requestJson("/auth/me", authUserSchema, {
+    token,
+  });
+}
+
+export async function fetchApiTokens(token: string): Promise<ApiTokenItem[]> {
+  const payload = await requestJson("/api-tokens", apiTokenListResponseSchema, {
+    token,
+  });
+  return payload.items;
+}
+
+export async function createApiToken(input: ApiTokenCreateRequest, token: string): Promise<ApiTokenCreateResponse> {
+  const payload = apiTokenCreateRequestSchema.parse(input);
+  return requestJson("/api-tokens", apiTokenCreateResponseSchema, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export async function revokeApiToken(tokenId: string, token: string) {
+  await requestVoid(`/api-tokens/${encodeURIComponent(tokenId)}`, {
+    method: "DELETE",
     token,
   });
 }

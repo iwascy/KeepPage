@@ -14,8 +14,12 @@ npm run start -w @keeppage/api
 ## 已实现路由
 
 - `GET /health`
+- `GET /api-tokens`
+- `POST /api-tokens`
+- `DELETE /api-tokens/:tokenId`
 - `POST /captures/init`
 - `POST /captures/complete`
+- `POST /ingest/bookmarks`
 - `PUT /uploads/:encodedObjectKey`
 - `GET /objects/:encodedObjectKey`
 - `GET /bookmarks?q=&quality=&domain=&limit=&offset=`
@@ -25,8 +29,64 @@ npm run start -w @keeppage/api
 
 - `captureInitRequestSchema`
 - `captureCompleteRequestSchema`
+- `apiTokenCreateRequestSchema`
+- `ingestBookmarkRequestSchema`
 - `bookmarkSearchResponseSchema`
 - `bookmarkDetailResponseSchema`
+
+## API Key 书签写入
+
+现在支持用户为自己的账户创建 API Key，然后通过一个轻量写入接口直接保存 URL 到书签库中。
+
+### 1. 创建 API Key
+
+先用当前登录态 Bearer token 调用：
+
+```bash
+curl -X POST http://127.0.0.1:8787/api-tokens \
+  -H 'Authorization: Bearer <session-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "raycast-ingest",
+    "scopes": ["bookmark:create"]
+  }'
+```
+
+返回结果里会包含一次性明文 `token`，请立即保存。服务端只存哈希，不会再次返回完整 token。
+
+### 2. 用 API Key 写入书签
+
+```bash
+curl -X POST http://127.0.0.1:8787/ingest/bookmarks \
+  -H 'Authorization: Bearer <api-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://example.com/article",
+    "title": "示例文章",
+    "note": "来自自动化流程",
+    "tags": ["收集箱", "自动导入"],
+    "folderPath": "Inbox/Automation",
+    "dedupeStrategy": "merge"
+  }'
+```
+
+也可以改用自定义 header：
+
+```bash
+curl -X POST http://127.0.0.1:8787/ingest/bookmarks \
+  -H 'X-KeepPage-Api-Key: <api-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://example.com/article"
+  }'
+```
+
+### 3. 当前 ingest 语义
+
+- 当前是轻量写入：只创建/合并书签记录，不会主动抓取网页正文归档。
+- 去重维度是 `userId + normalizedUrlHash`。
+- `dedupeStrategy=merge` 会更新标题、备注、文件夹，并把新标签并入已有标签。
+- `dedupeStrategy=skip` 命中已存在链接时会直接返回已有书签。
 
 ## 当前存储模型
 

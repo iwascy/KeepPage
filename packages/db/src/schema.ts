@@ -41,6 +41,28 @@ export const users = pgTable("users", {
   userEmailIdx: uniqueIndex("users_email_idx").on(table.email),
 }));
 
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    tokenPreview: varchar("token_preview", { length: 80 }).notNull(),
+    tokenHash: varchar("token_hash", { length: 128 }).notNull(),
+    scopesJson: jsonb("scopes_json").default([]).notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    apiTokensUserCreatedIdx: index("api_tokens_user_created_idx").on(table.userId, table.createdAt),
+    apiTokensHashIdx: uniqueIndex("api_tokens_hash_idx").on(table.tokenHash),
+  }),
+);
+
 export const devices = pgTable("devices", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")

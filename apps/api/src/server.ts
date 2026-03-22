@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import { type ApiConfig } from "./config";
+import { ApiTokenService } from "./lib/api-token-service";
 import { AuthService } from "./lib/auth-service";
 import { isHttpError } from "./lib/http-error";
 import { createRepository } from "./repositories";
@@ -29,6 +30,9 @@ export function buildServer(config: ApiConfig) {
   const repository = createRepository(config, objectStorage);
   const authService = new AuthService({
     config,
+    repository,
+  });
+  const apiTokenService = new ApiTokenService({
     repository,
   });
 
@@ -93,7 +97,7 @@ export function buildServer(config: ApiConfig) {
   });
 
   app.register(async (instance) => {
-    await registerRoutes(instance, config, authService, repository, objectStorage);
+    await registerRoutes(instance, config, authService, apiTokenService, repository, objectStorage);
   });
 
   return app;
@@ -130,6 +134,7 @@ function sanitizeHeaders(headers: Record<string, unknown>) {
       lowerKey.includes("authorization") ||
       lowerKey.includes("cookie") ||
       lowerKey.includes("token") ||
+      lowerKey.includes("api-key") ||
       lowerKey.includes("secret")
     ) {
       return [key, "[REDACTED]"];
@@ -179,6 +184,7 @@ function summarizePayload(value: unknown): unknown {
     if (
       lowerKey.includes("password") ||
       lowerKey.includes("token") ||
+      lowerKey.includes("api-key") ||
       lowerKey.includes("secret") ||
       lowerKey.includes("authorization")
     ) {

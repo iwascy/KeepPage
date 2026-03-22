@@ -1,5 +1,8 @@
 import {
+  apiTokenScopeSchema,
   authUserSchema,
+  type ApiToken,
+  type ApiTokenScope,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
   bookmarkVersionSchema,
@@ -16,6 +19,7 @@ import {
   type Folder,
   type FolderCreateRequest,
   type FolderUpdateRequest,
+  type IngestBookmarkRequest,
   type ImportExecutionOptions,
   type ImportTask,
   type ImportTaskDetailResponse,
@@ -25,6 +29,7 @@ import {
   type TagUpdateRequest,
 } from "@keeppage/domain";
 import {
+  apiTokens,
   bookmarks,
   bookmarkTags,
   bookmarkVersions,
@@ -53,10 +58,13 @@ import { HttpError } from "../lib/http-error";
 import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
 import type { ObjectStorage } from "../storage/object-storage";
 import type {
+  ApiTokenAuthRecord,
   BookmarkRepository,
   BookmarkSearchQuery,
+  CreateApiTokenInput,
   CreateImportTaskInput,
   CompleteCaptureResult,
+  IngestBookmarkResult,
   ImportBookmarkMatch,
   InitCaptureResult,
   UserAuthRecord,
@@ -145,6 +153,132 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .limit(1);
     const row = rows[0];
     return row ? this.mapUserRow(row) : null;
+  }
+
+  async createApiToken(userId: string, input: CreateApiTokenInput): Promise<ApiToken> {
+    const rows = await this.db
+      .insert(apiTokens)
+      .values({
+        id: input.id,
+        userId,
+        name: input.name,
+        tokenPreview: input.tokenPreview,
+        tokenHash: input.tokenHash,
+        scopesJson: deduplicateScopes(input.scopes),
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+      })
+      .returning({
+        id: apiTokens.id,
+        name: apiTokens.name,
+        tokenPreview: apiTokens.tokenPreview,
+        scopesJson: apiTokens.scopesJson,
+        lastUsedAt: apiTokens.lastUsedAt,
+        expiresAt: apiTokens.expiresAt,
+        revokedAt: apiTokens.revokedAt,
+        createdAt: apiTokens.createdAt,
+      });
+
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Failed to create API token.");
+    }
+    return this.mapApiTokenRow(row);
+  }
+
+  async listApiTokens(userId: string): Promise<ApiToken[]> {
+    const rows = await this.db
+      .select({
+        id: apiTokens.id,
+        name: apiTokens.name,
+        tokenPreview: apiTokens.tokenPreview,
+        scopesJson: apiTokens.scopesJson,
+        lastUsedAt: apiTokens.lastUsedAt,
+        expiresAt: apiTokens.expiresAt,
+        revokedAt: apiTokens.revokedAt,
+        createdAt: apiTokens.createdAt,
+      })
+      .from(apiTokens)
+      .where(eq(apiTokens.userId, userId))
+      .orderBy(desc(apiTokens.createdAt));
+
+    return rows.map((row) => this.mapApiTokenRow(row));
+  }
+
+  async getApiTokenAuthRecord(tokenId: string): Promise<ApiTokenAuthRecord | null> {
+    const rows = await this.db
+      .select({
+        id: apiTokens.id,
+        userId: apiTokens.userId,
+        name: apiTokens.name,
+        tokenPreview: apiTokens.tokenPreview,
+        tokenHash: apiTokens.tokenHash,
+        scopesJson: apiTokens.scopesJson,
+        lastUsedAt: apiTokens.lastUsedAt,
+        expiresAt: apiTokens.expiresAt,
+        revokedAt: apiTokens.revokedAt,
+        createdAt: apiTokens.createdAt,
+      })
+      .from(apiTokens)
+      .where(eq(apiTokens.id, tokenId))
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      ...this.mapApiTokenRow(row),
+      userId: row.userId,
+      tokenHash: row.tokenHash,
+    };
+  }
+
+  async revokeApiToken(userId: string, tokenId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({
+        id: apiTokens.id,
+        revokedAt: apiTokens.revokedAt,
+      })
+      .from(apiTokens)
+      .where(
+        and(
+          eq(apiTokens.id, tokenId),
+          eq(apiTokens.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) {
+      return false;
+    }
+    if (row.revokedAt) {
+      return true;
+    }
+
+    await this.db
+      .update(apiTokens)
+      .set({
+        revokedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(apiTokens.id, tokenId),
+          eq(apiTokens.userId, userId),
+        ),
+      );
+
+    return true;
+  }
+
+  async touchApiToken(tokenId: string, usedAt: string): Promise<void> {
+    await this.db
+      .update(apiTokens)
+      .set({
+        lastUsedAt: new Date(usedAt),
+      })
+      .where(eq(apiTokens.id, tokenId));
   }
 
   async initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
@@ -482,6 +616,126 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       bookmark,
       versionId: transactionResult.versionId,
       createdNewVersion: transactionResult.createdNewVersion,
+      deduplicated: transactionResult.deduplicated,
+    };
+  }
+
+  async ingestBookmark(userId: string, input: IngestBookmarkRequest): Promise<IngestBookmarkResult> {
+    const normalizedUrl = normalizeSourceUrl(input.url);
+    const normalizedUrlHash = hashNormalizedUrl(normalizedUrl);
+    const now = new Date();
+
+    const transactionResult = await this.db.transaction(async (tx) => {
+      const existingRows = await tx
+        .select({
+          id: bookmarks.id,
+        })
+        .from(bookmarks)
+        .where(
+          and(
+            eq(bookmarks.userId, userId),
+            eq(bookmarks.normalizedUrlHash, normalizedUrlHash),
+          ),
+        )
+        .orderBy(desc(bookmarks.updatedAt))
+        .limit(1);
+
+      const existingBookmarkId = existingRows[0]?.id;
+      if (existingBookmarkId) {
+        if (input.dedupeStrategy === "skip") {
+          return {
+            bookmarkId: existingBookmarkId,
+            status: "skipped" as const,
+            deduplicated: true,
+          };
+        }
+
+        const patch: Partial<typeof bookmarks.$inferInsert> = {
+          updatedAt: now,
+        };
+        const title = input.title?.trim();
+        if (title) {
+          patch.title = title;
+        }
+        if (input.note !== undefined) {
+          patch.note = input.note;
+        }
+        if (input.folderPath?.trim()) {
+          patch.folderId = await this.ensureFolderPathId(tx, userId, input.folderPath, now);
+        }
+
+        await tx
+          .update(bookmarks)
+          .set(patch)
+          .where(
+            and(
+              eq(bookmarks.userId, userId),
+              eq(bookmarks.id, existingBookmarkId),
+            ),
+          );
+
+        const tagIds = await this.ensureTagIdsByName(tx, userId, input.tags ?? [], now);
+        if (tagIds.length > 0) {
+          await tx
+            .insert(bookmarkTags)
+            .values(tagIds.map((tagId) => ({
+              bookmarkId: existingBookmarkId,
+              tagId,
+              createdAt: now,
+            })))
+            .onConflictDoNothing();
+        }
+
+        return {
+          bookmarkId: existingBookmarkId,
+          status: "merged" as const,
+          deduplicated: true,
+        };
+      }
+
+      const bookmarkId = crypto.randomUUID();
+      const folderId = input.folderPath?.trim()
+        ? await this.ensureFolderPathId(tx, userId, input.folderPath, now)
+        : null;
+      await tx.insert(bookmarks).values({
+        id: bookmarkId,
+        userId,
+        sourceUrl: normalizedUrl,
+        canonicalUrl: null,
+        normalizedUrlHash,
+        title: this.resolveIngestTitle(input.title, normalizedUrl),
+        domain: new URL(normalizedUrl).hostname,
+        latestVersionId: null,
+        folderId,
+        note: input.note ?? "",
+        isFavorite: false,
+        isPinnedOffline: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const tagIds = await this.ensureTagIdsByName(tx, userId, input.tags ?? [], now);
+      if (tagIds.length > 0) {
+        await tx.insert(bookmarkTags).values(
+          tagIds.map((tagId) => ({
+            bookmarkId,
+            tagId,
+            createdAt: now,
+          })),
+        );
+      }
+
+      return {
+        bookmarkId,
+        status: "created" as const,
+        deduplicated: false,
+      };
+    });
+
+    const bookmark = await this.loadBookmark(transactionResult.bookmarkId, userId);
+    return {
+      bookmark,
+      status: transactionResult.status,
       deduplicated: transactionResult.deduplicated,
     };
   }
@@ -1511,6 +1765,102 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .onConflictDoNothing();
   }
 
+  private async ensureFolderPathId(
+    tx: any,
+    userId: string,
+    folderPath: string,
+    now: Date,
+  ) {
+    const segments = folderPath.split("/").map((segment) => segment.trim()).filter(Boolean);
+    if (segments.length === 0) {
+      return null;
+    }
+
+    let currentPath = "";
+    let parentId: string | null = null;
+    let currentId: string | null = null;
+
+    for (const segment of segments) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+      const existingRows = await tx
+        .select({
+          id: folders.id,
+        })
+        .from(folders)
+        .where(
+          and(
+            eq(folders.userId, userId),
+            eq(folders.path, currentPath),
+          ),
+        )
+        .limit(1);
+
+      if (existingRows[0]?.id) {
+        currentId = existingRows[0].id;
+        parentId = currentId;
+        continue;
+      }
+
+      currentId = crypto.randomUUID();
+      await tx.insert(folders).values({
+        id: currentId,
+        userId,
+        name: segment,
+        path: currentPath,
+        parentId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      parentId = currentId;
+    }
+
+    return currentId;
+  }
+
+  private async ensureTagIdsByName(
+    tx: any,
+    userId: string,
+    tagNames: string[],
+    now: Date,
+  ) {
+    const names = [...new Set(tagNames.map((tagName) => tagName.trim()).filter(Boolean))];
+    if (names.length === 0) {
+      return [];
+    }
+
+    const rows: string[] = [];
+    for (const name of names) {
+      const existingRows = await tx
+        .select({
+          id: tags.id,
+        })
+        .from(tags)
+        .where(
+          and(
+            eq(tags.userId, userId),
+            eq(tags.name, name),
+          ),
+        )
+        .limit(1);
+
+      if (existingRows[0]?.id) {
+        rows.push(existingRows[0].id);
+        continue;
+      }
+
+      const tagId = crypto.randomUUID();
+      await tx.insert(tags).values({
+        id: tagId,
+        userId,
+        name,
+        createdAt: now,
+      });
+      rows.push(tagId);
+    }
+
+    return rows;
+  }
+
   private async ensureFolderId(
     tx: any,
     userId: string,
@@ -1723,6 +2073,30 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     } satisfies ImportTaskItem;
   }
 
+  private mapApiTokenRow(
+    row: {
+      id: string;
+      name: string;
+      tokenPreview: string;
+      scopesJson: unknown;
+      lastUsedAt: Date | null;
+      expiresAt: Date | null;
+      revokedAt: Date | null;
+      createdAt: Date;
+    },
+  ) {
+    return {
+      id: row.id,
+      name: row.name,
+      tokenPreview: row.tokenPreview,
+      scopes: this.readApiTokenScopes(row.scopesJson),
+      lastUsedAt: row.lastUsedAt?.toISOString(),
+      expiresAt: row.expiresAt?.toISOString(),
+      revokedAt: row.revokedAt?.toISOString(),
+      createdAt: row.createdAt.toISOString(),
+    } satisfies ApiToken;
+  }
+
   private mapBookmarkRow(
     row: {
       id: string;
@@ -1787,12 +2161,21 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     return parsed.data.coverImageUrl;
   }
 
+  private readApiTokenScopes(value: unknown) {
+    return apiTokenScopeSchema.array().parse(value);
+  }
+
   private readQuality(sourceMeta: unknown) {
     const parsed = qualityReportSchema.safeParse(sourceMeta);
     if (!parsed.success) {
       return undefined;
     }
     return parsed.data;
+  }
+
+  private resolveIngestTitle(inputTitle: string | undefined, normalizedUrl: string) {
+    const title = inputTitle?.trim();
+    return title || normalizedUrl;
   }
 
   private async loadAllFolders(userId: string): Promise<Folder[]> {
@@ -1944,4 +2327,8 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     }
     return readerObjectKey;
   }
+}
+
+function deduplicateScopes(scopes: ApiTokenScope[]) {
+  return [...new Set(scopes)];
 }

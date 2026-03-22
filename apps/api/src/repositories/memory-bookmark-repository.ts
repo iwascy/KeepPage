@@ -1,4 +1,6 @@
 import {
+  type ApiToken,
+  type ApiTokenScope,
   createBookmarkId,
   createImportTaskId,
   createImportTaskItemId,
@@ -12,6 +14,7 @@ import {
   type Folder,
   type FolderCreateRequest,
   type FolderUpdateRequest,
+  type IngestBookmarkRequest,
   importTaskDetailResponseSchema,
   importTaskSchema,
   type ImportExecutionOptions,
@@ -26,10 +29,13 @@ import { HttpError } from "../lib/http-error";
 import { hashNormalizedUrl, normalizeSourceUrl } from "../lib/url";
 import type { ObjectStorage } from "../storage/object-storage";
 import type {
+  ApiTokenAuthRecord,
   BookmarkRepository,
   BookmarkSearchQuery,
+  CreateApiTokenInput,
   CreateImportTaskInput,
   CompleteCaptureResult,
+  IngestBookmarkResult,
   ImportBookmarkMatch,
   InitCaptureResult,
   PreparedImportItem,
@@ -42,6 +48,7 @@ type PendingCapture = {
 };
 
 type StoredUser = UserAuthRecord;
+type StoredApiToken = ApiTokenAuthRecord;
 
 type UserBookmarkState = {
   bookmarks: Map<string, Bookmark>;
@@ -64,6 +71,8 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   private readonly usersById = new Map<string, StoredUser>();
   private readonly userIdsByEmail = new Map<string, string>();
   private readonly stateByUserId = new Map<string, UserBookmarkState>();
+  private readonly apiTokensById = new Map<string, StoredApiToken>();
+  private readonly apiTokenIdsByUserId = new Map<string, Set<string>>();
   private readonly objectStorage: ObjectStorage;
 
   constructor(options: InMemoryBookmarkRepositoryOptions) {
@@ -100,6 +109,73 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
   async getUserById(userId: string): Promise<AuthUser | null> {
     return this.usersById.get(userId)?.user ?? null;
+  }
+
+  async createApiToken(userId: string, input: CreateApiTokenInput): Promise<ApiToken> {
+    const scopes = deduplicateScopes(input.scopes);
+    const token: StoredApiToken = {
+      id: input.id,
+      userId,
+      name: input.name,
+      tokenPreview: input.tokenPreview,
+      tokenHash: input.tokenHash,
+      scopes,
+      lastUsedAt: undefined,
+      expiresAt: input.expiresAt,
+      revokedAt: undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.apiTokensById.set(token.id, token);
+    const tokenIds = this.apiTokenIdsByUserId.get(userId) ?? new Set<string>();
+    tokenIds.add(token.id);
+    this.apiTokenIdsByUserId.set(userId, tokenIds);
+    return this.toPublicApiToken(token);
+  }
+
+  async listApiTokens(userId: string): Promise<ApiToken[]> {
+    const tokenIds = this.apiTokenIdsByUserId.get(userId);
+    if (!tokenIds) {
+      return [];
+    }
+
+    return [...tokenIds]
+      .map((tokenId) => this.apiTokensById.get(tokenId))
+      .filter((token): token is StoredApiToken => Boolean(token))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map((token) => this.toPublicApiToken(token));
+  }
+
+  async getApiTokenAuthRecord(tokenId: string): Promise<ApiTokenAuthRecord | null> {
+    const token = this.apiTokensById.get(tokenId);
+    if (!token) {
+      return null;
+    }
+    return {
+      ...token,
+      scopes: [...token.scopes],
+    };
+  }
+
+  async revokeApiToken(userId: string, tokenId: string): Promise<boolean> {
+    const token = this.apiTokensById.get(tokenId);
+    if (!token || token.userId !== userId) {
+      return false;
+    }
+    if (!token.revokedAt) {
+      token.revokedAt = new Date().toISOString();
+      this.apiTokensById.set(token.id, token);
+    }
+    return true;
+  }
+
+  async touchApiToken(tokenId: string, usedAt: string): Promise<void> {
+    const token = this.apiTokensById.get(tokenId);
+    if (!token) {
+      return;
+    }
+    token.lastUsedAt = usedAt;
+    this.apiTokensById.set(token.id, token);
   }
 
   async initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
@@ -252,6 +328,79 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       bookmark,
       versionId: version.id,
       createdNewVersion: true,
+      deduplicated: false,
+    };
+  }
+
+  async ingestBookmark(userId: string, input: IngestBookmarkRequest): Promise<IngestBookmarkResult> {
+    const state = this.ensureUserState(userId);
+    const normalizedUrl = normalizeSourceUrl(input.url);
+    const normalizedUrlHash = hashNormalizedUrl(normalizedUrl);
+    const existing = this.findBookmarkByNormalizedHash(state, normalizedUrlHash);
+
+    if (existing) {
+      if (input.dedupeStrategy === "skip") {
+        return {
+          bookmark: existing,
+          status: "skipped",
+          deduplicated: true,
+        };
+      }
+
+      const now = new Date().toISOString();
+      const title = input.title?.trim();
+      if (title) {
+        existing.title = title;
+      }
+      if (input.note !== undefined) {
+        existing.note = input.note;
+      }
+      if (input.folderPath?.trim()) {
+        const folder = this.ensureFolderPath(state, input.folderPath);
+        existing.folder = folder ? { ...folder } : undefined;
+      }
+      if (input.tags?.length) {
+        const mergedTags = new Map(existing.tags.map((tag) => [tag.id, tag]));
+        for (const tag of this.ensureTagsByName(state, input.tags)) {
+          mergedTags.set(tag.id, tag);
+        }
+        existing.tags = [...mergedTags.values()].sort((left, right) => left.name.localeCompare(right.name));
+      }
+      existing.updatedAt = now;
+      state.bookmarks.set(existing.id, existing);
+      return {
+        bookmark: existing,
+        status: "merged",
+        deduplicated: true,
+      };
+    }
+
+    const now = new Date().toISOString();
+    const folder = input.folderPath?.trim()
+      ? this.ensureFolderPath(state, input.folderPath)
+      : undefined;
+    const bookmark: Bookmark = {
+      id: createBookmarkId(),
+      sourceUrl: normalizedUrl,
+      canonicalUrl: undefined,
+      title: this.resolveIngestTitle(input.title, normalizedUrl),
+      domain: new URL(normalizedUrl).hostname,
+      note: input.note ?? "",
+      isFavorite: false,
+      tags: this.ensureTagsByName(state, input.tags ?? []),
+      folder: folder ? { ...folder } : undefined,
+      latestVersionId: undefined,
+      versionCount: 0,
+      latestQuality: undefined,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    state.bookmarks.set(bookmark.id, bookmark);
+    state.versionsByBookmark.set(bookmark.id, []);
+    return {
+      bookmark,
+      status: "created",
       deduplicated: false,
     };
   }
@@ -1076,6 +1225,48 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     return parent;
   }
 
+  private ensureTagsByName(state: UserBookmarkState, names: string[]) {
+    const deduplicated = [...new Set(
+      names
+        .map((name) => name.trim())
+        .filter(Boolean),
+    )];
+
+    return deduplicated
+      .map((tagName) => {
+        const existing = [...state.tags.values()].find((tag) => tag.name === tagName);
+        if (existing) {
+          return { ...existing };
+        }
+
+        const created: Tag = {
+          id: crypto.randomUUID(),
+          name: tagName,
+        };
+        state.tags.set(created.id, created);
+        return { ...created };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  private resolveIngestTitle(inputTitle: string | undefined, normalizedUrl: string) {
+    const title = inputTitle?.trim();
+    return title || normalizedUrl;
+  }
+
+  private toPublicApiToken(token: StoredApiToken): ApiToken {
+    return {
+      id: token.id,
+      name: token.name,
+      tokenPreview: token.tokenPreview,
+      scopes: [...token.scopes],
+      lastUsedAt: token.lastUsedAt,
+      expiresAt: token.expiresAt,
+      revokedAt: token.revokedAt,
+      createdAt: token.createdAt,
+    };
+  }
+
   private createImportTaskItem(
     taskId: string,
     item: PreparedImportItem,
@@ -1130,4 +1321,8 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     version.readerHtmlObjectKey = readerObjectKey;
     state.versionsByObjectKey.set(readerObjectKey, version);
   }
+}
+
+function deduplicateScopes(scopes: ApiTokenScope[]) {
+  return [...new Set(scopes)];
 }

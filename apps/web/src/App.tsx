@@ -11,6 +11,7 @@ import {
   useTransition,
 } from "react";
 import type {
+  ApiToken,
   AuthUser,
   Bookmark,
   BookmarkListView,
@@ -21,11 +22,13 @@ import type {
 } from "@keeppage/domain";
 import {
   ApiError,
+  createApiToken,
   type BookmarkDetailResult,
   type BookmarkViewerVersion,
   createFolder,
   createTag,
   createArchiveObjectUrl,
+  fetchApiTokens,
   deleteBookmark,
   deleteFolder,
   deleteTag,
@@ -35,6 +38,7 @@ import {
   fetchFolders,
   fetchTags,
   loginAccount,
+  revokeApiToken,
   registerAccount,
   updateBookmarkMetadata,
   updateFolder,
@@ -76,7 +80,8 @@ type ViewRoute =
   | { page: "detail"; bookmarkId: string; versionId?: string }
   | { page: "imports-new" }
   | { page: "imports-list" }
-  | { page: "imports-detail"; taskId: string };
+  | { page: "imports-detail"; taskId: string }
+  | { page: "settings-api-tokens" };
 
 type SessionState =
   | { status: "booting"; token: null; user: null; error: string | null }
@@ -249,6 +254,52 @@ function formatFileSize(input?: number) {
   return `${input} B`;
 }
 
+function formatDateTimeInputValue(input?: string) {
+  if (!input) {
+    return "";
+  }
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function createDemoApiTokens(): ApiToken[] {
+  const now = Date.now();
+  return [
+    {
+      id: "demo-token-active",
+      name: "Raycast Inbox",
+      tokenPreview: "kp_demo-rayc.3f28ab",
+      scopes: ["bookmark:create"],
+      lastUsedAt: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
+      expiresAt: undefined,
+      revokedAt: undefined,
+      createdAt: new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      id: "demo-token-revoked",
+      name: "Zapier Legacy",
+      tokenPreview: "kp_demo-zapi.8b91c4",
+      scopes: ["bookmark:create"],
+      lastUsedAt: new Date(now - 12 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: undefined,
+      revokedAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: new Date(now - 24 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  ];
+}
+
+function isApiTokenExpired(token: ApiToken) {
+  return Boolean(token.expiresAt && new Date(token.expiresAt).getTime() <= Date.now());
+}
+
+function isApiTokenActive(token: ApiToken) {
+  return !token.revokedAt && !isApiTokenExpired(token);
+}
+
 async function copyTextToClipboard(value: string) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(value);
@@ -309,6 +360,9 @@ function parseRoute(hash: string): ViewRoute {
   if (path === "/imports") {
     return { page: "imports-list" };
   }
+  if (path === "/settings/api-tokens") {
+    return { page: "settings-api-tokens" };
+  }
   if (path.startsWith("/imports/")) {
     const taskId = decodeURIComponent(path.slice("/imports/".length));
     if (!taskId) {
@@ -354,6 +408,10 @@ function goToImportNew() {
 
 function goToImportList() {
   window.location.hash = "#/imports";
+}
+
+function goToApiTokens() {
+  window.location.hash = "#/settings/api-tokens";
 }
 
 function openImportTask(taskId: string) {
@@ -643,6 +701,7 @@ function AppShell({
   items,
   folders,
   tags,
+  routePage,
   bookmarkView,
   selectedFolderId,
   selectedTagId,
@@ -655,6 +714,7 @@ function AppShell({
   onGoHome,
   onCreateRootFolder,
   onCreateTag,
+  onOpenApiTokens,
   onOpenImportNew,
   onOpenImportHistory,
   onLogout,
@@ -667,6 +727,7 @@ function AppShell({
   items: Bookmark[];
   folders: Folder[];
   tags: Tag[];
+  routePage: ViewRoute["page"];
   bookmarkView: BookmarkListView;
   selectedFolderId: string;
   selectedTagId: string;
@@ -679,6 +740,7 @@ function AppShell({
   onGoHome: () => void;
   onCreateRootFolder: () => void;
   onCreateTag: () => void;
+  onOpenApiTokens: () => void;
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
   onLogout: () => void;
@@ -830,6 +892,16 @@ function AppShell({
             </button>
 
             <div className="home-settings-list">
+              <button
+                className={routePage === "settings-api-tokens" ? "home-settings-item is-active" : "home-settings-item"}
+                type="button"
+                onClick={onOpenApiTokens}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  vpn_key
+                </span>
+                <span>API Keys</span>
+              </button>
               <button
                 className="home-settings-item"
                 type="button"
@@ -1211,6 +1283,531 @@ function EmptyState({
       <p>{description ?? "登录后，扩展同步过来的页面会出现在这里。"}</p>
       {action}
     </section>
+  );
+}
+
+function ApiTokensPanel({
+  token,
+  isDemoMode,
+  onApiError,
+  onBack,
+}: {
+  token: string;
+  isDemoMode: boolean;
+  onApiError: (error: unknown) => boolean;
+  onBack: () => void;
+}) {
+  const [loadState, setLoadState] = useState<LoadState>(isDemoMode ? "ready" : "idle");
+  const [items, setItems] = useState<ApiToken[]>(() => (isDemoMode ? createDemoApiTokens() : []));
+  const [demoItems, setDemoItems] = useState<ApiToken[]>(() => createDemoApiTokens());
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<InlineFeedback | null>(null);
+  const [revealedToken, setRevealedToken] = useState<{ name: string; value: string } | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createExpiresAt, setCreateExpiresAt] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<ApiToken | null>(null);
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFeedback(null);
+    if (isDemoMode) {
+      setItems(demoItems);
+      setLoadError(null);
+      setLoadState("ready");
+      return;
+    }
+
+    let cancelled = false;
+    setLoadState("loading");
+    fetchApiTokens(token)
+      .then((nextItems) => {
+        if (cancelled) {
+          return;
+        }
+        setItems(nextItems);
+        setLoadError(null);
+        setLoadState("ready");
+      })
+      .catch((error) => {
+        if (cancelled || onApiError(error)) {
+          return;
+        }
+        setLoadError(toErrorMessage(error));
+        setLoadState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [demoItems, isDemoMode, token]);
+
+  const activeCount = useMemo(
+    () => items.filter((item) => isApiTokenActive(item)).length,
+    [items],
+  );
+  const revokedCount = useMemo(
+    () => items.filter((item) => Boolean(item.revokedAt)).length,
+    [items],
+  );
+  const latestUsedAt = useMemo(() => {
+    const candidates = items
+      .map((item) => item.lastUsedAt)
+      .filter((value): value is string => Boolean(value))
+      .sort((left, right) => new Date(right).getTime() - new Date(left).getTime());
+    return candidates[0];
+  }, [items]);
+
+  function openCreateDialog() {
+    setCreateName("");
+    setCreateExpiresAt("");
+    setCreateError(null);
+    setCreateOpen(true);
+  }
+
+  function closeCreateDialog() {
+    if (createBusy) {
+      return;
+    }
+    setCreateOpen(false);
+    setCreateError(null);
+  }
+
+  async function handleCopyRevealedToken() {
+    if (!revealedToken) {
+      return;
+    }
+    try {
+      await copyTextToClipboard(revealedToken.value);
+      setFeedback({
+        kind: "success",
+        message: `已复制 ${revealedToken.name} 的完整 API Key。`,
+      });
+    } catch (error) {
+      setFeedback({
+        kind: "error",
+        message: toErrorMessage(error),
+      });
+    }
+  }
+
+  async function handleCreateToken(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = createName.trim();
+    if (!trimmedName) {
+      setCreateError("请填写 API Key 名称。");
+      return;
+    }
+
+    let expiresAt: string | undefined;
+    if (createExpiresAt.trim()) {
+      const parsed = new Date(createExpiresAt);
+      if (Number.isNaN(parsed.getTime())) {
+        setCreateError("请输入有效的过期时间。");
+        return;
+      }
+      expiresAt = parsed.toISOString();
+    }
+
+    setCreateBusy(true);
+    setCreateError(null);
+
+    try {
+      if (isDemoMode) {
+        const now = new Date().toISOString();
+        const secret = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+        const demoToken = `kp_${crypto.randomUUID()}.${secret}`;
+        const preview = demoToken.slice(0, 18);
+        const createdItem: ApiToken = {
+          id: crypto.randomUUID(),
+          name: trimmedName,
+          tokenPreview: preview,
+          scopes: ["bookmark:create"],
+          lastUsedAt: undefined,
+          expiresAt,
+          revokedAt: undefined,
+          createdAt: now,
+        };
+        setDemoItems((current) => [createdItem, ...current]);
+        setItems((current) => [createdItem, ...current]);
+        setRevealedToken({
+          name: trimmedName,
+          value: demoToken,
+        });
+      } else {
+        const result = await createApiToken({
+          name: trimmedName,
+          scopes: ["bookmark:create"],
+          expiresAt,
+        }, token);
+        setItems((current) => [result.item, ...current]);
+        setRevealedToken({
+          name: result.item.name,
+          value: result.token,
+        });
+      }
+
+      setCreateOpen(false);
+      setCreateName("");
+      setCreateExpiresAt("");
+      setFeedback({
+        kind: "success",
+        message: `已创建 API Key：${trimmedName}。完整明文只会显示这一次。`,
+      });
+    } catch (error) {
+      if (!isDemoMode && onApiError(error)) {
+        return;
+      }
+      setCreateError(toErrorMessage(error));
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
+  async function handleRevokeToken() {
+    if (!revokeTarget) {
+      return;
+    }
+
+    setRevokeBusy(true);
+    setRevokeError(null);
+    try {
+      const revokedAt = new Date().toISOString();
+      if (isDemoMode) {
+        setDemoItems((current) => current.map((item) => (
+          item.id === revokeTarget.id
+            ? { ...item, revokedAt }
+            : item
+        )));
+        setItems((current) => current.map((item) => (
+          item.id === revokeTarget.id
+            ? { ...item, revokedAt }
+            : item
+        )));
+      } else {
+        await revokeApiToken(revokeTarget.id, token);
+        setItems((current) => current.map((item) => (
+          item.id === revokeTarget.id
+            ? { ...item, revokedAt }
+            : item
+        )));
+      }
+
+      setFeedback({
+        kind: "success",
+        message: `已吊销 API Key：${revokeTarget.name}。`,
+      });
+      setRevokeTarget(null);
+    } catch (error) {
+      if (!isDemoMode && onApiError(error)) {
+        return;
+      }
+      setRevokeError(toErrorMessage(error));
+    } finally {
+      setRevokeBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <section className="api-token-page">
+        <header className="api-token-hero">
+          <div className="api-token-hero-copy">
+            <p className="eyebrow">Settings</p>
+            <h1>API Keys</h1>
+            <p>
+              给 Raycast、快捷指令、Zapier 或你自己的脚本一个受限写入口。
+              目前每个 key 只授予 <code>bookmark:create</code> 权限，适合只传 URL 的自动入库场景。
+            </p>
+          </div>
+
+          <div className="api-token-hero-actions">
+            <button className="secondary-button" type="button" onClick={onBack}>
+              返回书签
+            </button>
+            <button className="primary-button" type="button" onClick={openCreateDialog}>
+              <span className="material-symbols-outlined" aria-hidden="true">
+                add
+              </span>
+              <span>创建 API Key</span>
+            </button>
+          </div>
+
+          <div className="api-token-stat-grid">
+            <article className="api-token-stat-card">
+              <span className="api-token-stat-label">Active Keys</span>
+              <strong>{activeCount}</strong>
+              <small>{items.length} 个 key 中可用的写入入口</small>
+            </article>
+            <article className="api-token-stat-card">
+              <span className="api-token-stat-label">Last Activity</span>
+              <strong>{latestUsedAt ? formatRelativeWhen(latestUsedAt) : "尚未调用"}</strong>
+              <small>{latestUsedAt ? formatWhen(latestUsedAt) : "创建后等待第一次接入请求"}</small>
+            </article>
+            <article className="api-token-stat-card">
+              <span className="api-token-stat-label">Revoked</span>
+              <strong>{revokedCount}</strong>
+              <small>建议定期清理停用的集成入口</small>
+            </article>
+          </div>
+        </header>
+
+        {revealedToken ? (
+          <section className="api-token-reveal-card">
+            <div className="api-token-reveal-copy">
+              <p className="eyebrow">One-Time Reveal</p>
+              <h2>{revealedToken.name}</h2>
+              <p>完整 API Key 只会在创建成功后展示一次。复制后请放进你的密码管理器或自动化平台密钥仓库。</p>
+            </div>
+            <div className="api-token-secret-shell">
+              <code>{revealedToken.value}</code>
+              <div className="api-token-secret-actions">
+                <button className="secondary-button compact-button" type="button" onClick={() => setRevealedToken(null)}>
+                  收起明文
+                </button>
+                <button className="primary-button compact-button" type="button" onClick={() => void handleCopyRevealedToken()}>
+                  复制完整 Key
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {feedback ? (
+          <p className={feedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
+            {feedback.message}
+          </p>
+        ) : null}
+
+        {loadState === "loading" && items.length > 0 ? (
+          <p className="status-banner">正在刷新 API Key 列表...</p>
+        ) : null}
+
+        {loadState === "loading" && items.length === 0 ? (
+          <section className="api-token-list api-token-list-skeleton">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <article className="api-token-card is-skeleton" key={index}>
+                <div className="api-token-skeleton-line is-eyebrow" />
+                <div className="api-token-skeleton-line is-title" />
+                <div className="api-token-skeleton-line" />
+                <div className="api-token-skeleton-row">
+                  <span className="api-token-skeleton-pill" />
+                  <span className="api-token-skeleton-pill" />
+                </div>
+              </article>
+            ))}
+          </section>
+        ) : loadState === "error" ? (
+          <section className="api-token-empty">
+            <h2>API Key 列表加载失败</h2>
+            <p>{loadError ?? "暂时无法读取当前账号的 API Key。"}</p>
+            <button className="primary-button" type="button" onClick={openCreateDialog}>
+              继续创建
+            </button>
+          </section>
+        ) : items.length === 0 ? (
+          <section className="api-token-empty">
+            <h2>还没有 API Key</h2>
+            <p>创建一个只允许写入书签的 key，把外部网址流接进 KeepPage 的收集箱。</p>
+            <button className="primary-button" type="button" onClick={openCreateDialog}>
+              创建第一个 API Key
+            </button>
+          </section>
+        ) : (
+          <section className="api-token-list">
+            {items.map((item) => {
+              const expired = isApiTokenExpired(item);
+              const statusLabel = item.revokedAt
+                ? "已吊销"
+                : expired
+                  ? "已过期"
+                  : "可用";
+              const statusClass = item.revokedAt
+                ? "is-revoked"
+                : expired
+                  ? "is-expired"
+                  : "is-active";
+
+              return (
+                <article className="api-token-card" key={item.id}>
+                  <div className="api-token-card-head">
+                    <div className="api-token-card-copy">
+                      <p className="eyebrow">Bookmark Ingest</p>
+                      <h2>{item.name}</h2>
+                      <code className="api-token-preview">{item.tokenPreview}</code>
+                    </div>
+                    <span className={`api-token-status ${statusClass}`}>{statusLabel}</span>
+                  </div>
+
+                  <div className="api-token-meta-row">
+                    {item.scopes.map((scope) => (
+                      <span className="api-token-scope-chip" key={scope}>
+                        {scope}
+                      </span>
+                    ))}
+                    <span className="api-token-meta-pill">
+                      创建于 {formatWhen(item.createdAt)}
+                    </span>
+                    <span className="api-token-meta-pill">
+                      最近使用 {item.lastUsedAt ? formatRelativeWhen(item.lastUsedAt) : "尚未调用"}
+                    </span>
+                    <span className="api-token-meta-pill">
+                      {item.expiresAt ? `到期于 ${formatWhen(item.expiresAt)}` : "长期有效"}
+                    </span>
+                  </div>
+
+                  <div className="api-token-card-foot">
+                    <p>
+                      接入时使用 `Authorization: Bearer &lt;api-token&gt;` 调用
+                      `POST /ingest/bookmarks`。
+                    </p>
+                    {!item.revokedAt ? (
+                      <button
+                        className="secondary-button compact-button danger-button"
+                        type="button"
+                        onClick={() => {
+                          setRevokeError(null);
+                          setRevokeTarget(item);
+                        }}
+                      >
+                        吊销
+                      </button>
+                    ) : (
+                      <span className="api-token-revoked-note">
+                        于 {formatWhen(item.revokedAt)} 停用
+                      </span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        )}
+      </section>
+
+      {createOpen ? (
+        <div className="manager-dialog-backdrop api-token-dialog-backdrop" aria-hidden="true" onClick={closeCreateDialog}>
+          <div
+            className="api-token-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="api-token-create-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="api-token-dialog-shell">
+              <div className="api-token-dialog-header">
+                <div className="api-token-dialog-heading">
+                  <p className="eyebrow">New Credential</p>
+                  <h2 id="api-token-create-title">Create API Key</h2>
+                  <p>生成一个只允许新增书签的写入 key。创建成功后，完整明文只会展示这一次。</p>
+                </div>
+                <button className="create-folder-dialog-close" type="button" onClick={closeCreateDialog} disabled={createBusy}>
+                  <DialogCloseIcon />
+                </button>
+              </div>
+
+              <form className="api-token-dialog-form" onSubmit={handleCreateToken}>
+                <label className="api-token-field">
+                  <span className="api-token-field-label">Key Name</span>
+                  <input
+                    type="text"
+                    value={createName}
+                    onChange={(event) => setCreateName(event.target.value)}
+                    placeholder="e.g. Raycast Inbox"
+                    autoFocus
+                    maxLength={120}
+                  />
+                </label>
+
+                <label className="api-token-field">
+                  <span className="api-token-field-label">Expiry (Optional)</span>
+                  <input
+                    type="datetime-local"
+                    value={createExpiresAt}
+                    onChange={(event) => setCreateExpiresAt(event.target.value)}
+                  />
+                  <small>留空表示长期有效。当前固定授予 <code>bookmark:create</code> 作用域。</small>
+                </label>
+
+                <div className="api-token-scope-box">
+                  <span className="api-token-scope-chip">bookmark:create</span>
+                  <p>适合从外部工具传入一个 URL，由 KeepPage 负责合并或新建书签记录。</p>
+                </div>
+
+                {createError ? <p className="manager-dialog-error">{createError}</p> : null}
+
+                <div className="api-token-dialog-actions">
+                  <button className="secondary-button" type="button" onClick={closeCreateDialog} disabled={createBusy}>
+                    取消
+                  </button>
+                  <button className="primary-button" type="submit" disabled={createBusy}>
+                    {createBusy ? "Creating..." : "Create Key"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {revokeTarget ? (
+        <div
+          className="manager-dialog-backdrop api-token-dialog-backdrop"
+          aria-hidden="true"
+          onClick={() => { if (!revokeBusy) { setRevokeTarget(null); setRevokeError(null); } }}
+        >
+          <div
+            className="api-token-dialog is-danger"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="api-token-revoke-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="api-token-dialog-shell">
+              <div className="api-token-dialog-header">
+                <div className="api-token-dialog-heading">
+                  <p className="eyebrow">Revoke Access</p>
+                  <h2 id="api-token-revoke-title">吊销 API Key</h2>
+                  <p>吊销后，依赖这个 key 的自动化入口会立即失效，现有 URL 不会继续写入你的书签库。</p>
+                </div>
+                <button
+                  className="create-folder-dialog-close"
+                  type="button"
+                  onClick={() => { if (!revokeBusy) { setRevokeTarget(null); setRevokeError(null); } }}
+                  disabled={revokeBusy}
+                >
+                  <DialogCloseIcon />
+                </button>
+              </div>
+
+              <div className="api-token-revoke-card">
+                <strong>{revokeTarget.name}</strong>
+                <code>{revokeTarget.tokenPreview}</code>
+              </div>
+
+              {revokeError ? <p className="manager-dialog-error">{revokeError}</p> : null}
+
+              <div className="api-token-dialog-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => { if (!revokeBusy) { setRevokeTarget(null); setRevokeError(null); } }}
+                  disabled={revokeBusy}
+                >
+                  取消
+                </button>
+                <button className="primary-button danger-fill" type="button" onClick={() => void handleRevokeToken()} disabled={revokeBusy}>
+                  {revokeBusy ? "Revoking..." : "确认吊销"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -3407,6 +4004,7 @@ export function App({
         items={items}
         folders={folders}
         tags={tags}
+        routePage={route.page}
         bookmarkView={bookmarkView}
         selectedFolderId={selectedFolderId}
         selectedTagId={selectedTagId}
@@ -3419,6 +4017,7 @@ export function App({
         onGoHome={goToList}
         onCreateRootFolder={() => openManagerDialog({ kind: "create-folder" })}
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
+        onOpenApiTokens={goToApiTokens}
         onOpenImportNew={goToImportNew}
         onOpenImportHistory={goToImportList}
         onLogout={() => logout()}
@@ -3529,6 +4128,13 @@ export function App({
           adapter={importAdapter}
           onOpenHistory={goToImportList}
           onOpenBookmark={(bookmarkId) => openBookmark(bookmarkId)}
+        />
+      ) : route.page === "settings-api-tokens" ? (
+        <ApiTokensPanel
+          token={session.token}
+          isDemoMode={isDemoMode}
+          onApiError={handleProtectedApiError}
+          onBack={goToList}
         />
       ) : null}
       </AppShell>
