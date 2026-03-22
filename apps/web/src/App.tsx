@@ -130,6 +130,12 @@ type ContextMenuGroup = {
 };
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
+const API_TOKEN_SECRET_STORAGE_PREFIX = "keeppage.api-token-secrets";
+
+type ApiTokenSecretRecord = {
+  value: string;
+  savedAt: string;
+};
 
 function qualityLabel(grade?: QualityGrade) {
   if (!grade) {
@@ -323,6 +329,99 @@ async function copyTextToClipboard(value: string) {
 
 function buildAppUrl(hash: string) {
   return new URL(hash, window.location.href).toString();
+}
+
+function getApiTokenSecretStorageKey(userId: string) {
+  return `${API_TOKEN_SECRET_STORAGE_PREFIX}:${userId}`;
+}
+
+function readApiTokenSecrets(userId: string): Record<string, ApiTokenSecretRecord> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getApiTokenSecretStorageKey(userId));
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== "object" || parsed === null) {
+      return {};
+    }
+
+    return Object.entries(parsed as Record<string, unknown>).reduce<Record<string, ApiTokenSecretRecord>>((accumulator, [tokenId, value]) => {
+      if (typeof value !== "object" || value === null) {
+        return accumulator;
+      }
+
+      const record = value as {
+        value?: unknown;
+        savedAt?: unknown;
+      };
+      if (typeof record.value !== "string" || !record.value.trim()) {
+        return accumulator;
+      }
+
+      accumulator[tokenId] = {
+        value: record.value.trim(),
+        savedAt: typeof record.savedAt === "string" ? record.savedAt : new Date(0).toISOString(),
+      };
+      return accumulator;
+    }, {});
+  } catch {
+    return {};
+  }
+}
+
+function writeApiTokenSecrets(userId: string, secrets: Record<string, ApiTokenSecretRecord>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    if (Object.keys(secrets).length === 0) {
+      window.localStorage.removeItem(getApiTokenSecretStorageKey(userId));
+      return;
+    }
+    window.localStorage.setItem(getApiTokenSecretStorageKey(userId), JSON.stringify(secrets));
+  } catch {
+    // Ignore storage write failures and keep the UI usable.
+  }
+}
+
+function resolveApiBaseForCurl() {
+  const configuredBase = (import.meta.env.VITE_API_BASE_URL ?? "/api").trim() || "/api";
+  const normalizedBase = configuredBase.replace(/\/$/, "");
+  if (/^https?:\/\//i.test(normalizedBase)) {
+    return normalizedBase;
+  }
+  return new URL(normalizedBase, window.location.origin).toString().replace(/\/$/, "");
+}
+
+function buildBookmarkIngestCurl(
+  apiBaseUrl: string,
+  tokenValue: string,
+  authMode: "authorization" | "x-api-key" = "authorization",
+) {
+  const authHeader = authMode === "authorization"
+    ? `  -H 'Authorization: Bearer ${tokenValue}' \\`
+    : `  -H 'X-KeepPage-Api-Key: ${tokenValue}' \\`;
+
+  return [
+    `curl -X POST '${apiBaseUrl}/ingest/bookmarks' \\`,
+    authHeader,
+    "  -H 'Content-Type: application/json' \\",
+    "  -d '{",
+    '    "url": "https://example.com/article",',
+    '    "title": "KeepPage API Key 测试",',
+    '    "note": "来自 API Key 页面",',
+    '    "tags": ["api-key", "curl"],',
+    '    "folderPath": "Inbox/API",',
+    '    "dedupeStrategy": "merge"',
+    "  }'",
+  ].join("\n");
 }
 
 function clampContextMenuPosition(x: number, y: number, width: number, height: number) {
@@ -1232,21 +1331,27 @@ function EmptyState({
 
 function ApiTokensPanel({
   token,
+  userId,
   isDemoMode,
   onApiError,
   onBack,
 }: {
   token: string;
+  userId: string;
   isDemoMode: boolean;
   onApiError: (error: unknown) => boolean;
   onBack: () => void;
 }) {
+  const storageUserId = isDemoMode ? "demo" : userId;
   const [loadState, setLoadState] = useState<LoadState>(isDemoMode ? "ready" : "idle");
   const [items, setItems] = useState<ApiToken[]>(() => (isDemoMode ? createDemoApiTokens() : []));
   const [demoItems, setDemoItems] = useState<ApiToken[]>(() => createDemoApiTokens());
+  const [storedTokenSecrets, setStoredTokenSecrets] = useState<Record<string, ApiTokenSecretRecord>>(
+    () => readApiTokenSecrets(storageUserId),
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<InlineFeedback | null>(null);
-  const [revealedToken, setRevealedToken] = useState<{ name: string; value: string } | null>(null);
+  const [revealedToken, setRevealedToken] = useState<{ id: string; name: string; value: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createExpiresAt, setCreateExpiresAt] = useState("");
@@ -1255,6 +1360,11 @@ function ApiTokensPanel({
   const [revokeTarget, setRevokeTarget] = useState<ApiToken | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  const apiBaseUrl = useMemo(() => resolveApiBaseForCurl(), []);
+
+  useEffect(() => {
+    setStoredTokenSecrets(readApiTokenSecrets(storageUserId));
+  }, [storageUserId]);
 
   useEffect(() => {
     setFeedback(null);
@@ -1304,6 +1414,20 @@ function ApiTokensPanel({
       .sort((left, right) => new Date(right).getTime() - new Date(left).getTime());
     return candidates[0];
   }, [items]);
+  const locallyStoredCount = useMemo(
+    () => items.filter((item) => Boolean(storedTokenSecrets[item.id]?.value)).length,
+    [items, storedTokenSecrets],
+  );
+
+  function updateStoredTokenSecrets(
+    updater: (current: Record<string, ApiTokenSecretRecord>) => Record<string, ApiTokenSecretRecord>,
+  ) {
+    setStoredTokenSecrets((current) => {
+      const next = updater(current);
+      writeApiTokenSecrets(storageUserId, next);
+      return next;
+    });
+  }
 
   function openCreateDialog() {
     setCreateName("");
@@ -1329,6 +1453,43 @@ function ApiTokensPanel({
       setFeedback({
         kind: "success",
         message: `已复制 ${revealedToken.name} 的完整 API Key。`,
+      });
+    } catch (error) {
+      setFeedback({
+        kind: "error",
+        message: toErrorMessage(error),
+      });
+    }
+  }
+
+  async function handleCopyCurl(
+    itemName: string,
+    tokenValue: string,
+    authMode: "authorization" | "x-api-key",
+  ) {
+    const curlCommand = buildBookmarkIngestCurl(apiBaseUrl, tokenValue, authMode);
+    try {
+      await copyTextToClipboard(curlCommand);
+      setFeedback({
+        kind: "success",
+        message: authMode === "authorization"
+          ? `已复制 ${itemName} 的 Bearer curl 命令。`
+          : `已复制 ${itemName} 的 X-KeepPage-Api-Key curl 命令。`,
+      });
+    } catch (error) {
+      setFeedback({
+        kind: "error",
+        message: toErrorMessage(error),
+      });
+    }
+  }
+
+  async function handleCopyStoredToken(itemName: string, tokenValue: string) {
+    try {
+      await copyTextToClipboard(tokenValue);
+      setFeedback({
+        kind: "success",
+        message: `已复制 ${itemName} 的完整 API Key。`,
       });
     } catch (error) {
       setFeedback({
@@ -1377,7 +1538,15 @@ function ApiTokensPanel({
         };
         setDemoItems((current) => [createdItem, ...current]);
         setItems((current) => [createdItem, ...current]);
+        updateStoredTokenSecrets((current) => ({
+          ...current,
+          [createdItem.id]: {
+            value: demoToken,
+            savedAt: now,
+          },
+        }));
         setRevealedToken({
+          id: createdItem.id,
           name: trimmedName,
           value: demoToken,
         });
@@ -1388,7 +1557,15 @@ function ApiTokensPanel({
           expiresAt,
         }, token);
         setItems((current) => [result.item, ...current]);
+        updateStoredTokenSecrets((current) => ({
+          ...current,
+          [result.item.id]: {
+            value: result.token,
+            savedAt: new Date().toISOString(),
+          },
+        }));
         setRevealedToken({
+          id: result.item.id,
           name: result.item.name,
           value: result.token,
         });
@@ -1399,7 +1576,7 @@ function ApiTokensPanel({
       setCreateExpiresAt("");
       setFeedback({
         kind: "success",
-        message: `已创建 API Key：${trimmedName}。完整明文只会显示这一次。`,
+        message: `已创建 API Key：${trimmedName}。完整明文已保存在当前浏览器，下面可以直接复制 curl 测试。`,
       });
     } catch (error) {
       if (!isDemoMode && onApiError(error)) {
@@ -1438,6 +1615,18 @@ function ApiTokensPanel({
             ? { ...item, revokedAt }
             : item
         )));
+      }
+
+      updateStoredTokenSecrets((current) => {
+        if (!current[revokeTarget.id]) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[revokeTarget.id];
+        return next;
+      });
+      if (revealedToken?.id === revokeTarget.id) {
+        setRevealedToken(null);
       }
 
       setFeedback({
@@ -1496,24 +1685,36 @@ function ApiTokensPanel({
               <strong>{revokedCount}</strong>
               <small>建议定期清理停用的集成入口</small>
             </article>
+            <article className="api-token-stat-card">
+              <span className="api-token-stat-label">Local Plaintext</span>
+              <strong>{locallyStoredCount}</strong>
+              <small>完整 key 仅保存在当前浏览器，方便复制和 curl 调试</small>
+            </article>
           </div>
         </header>
 
         {revealedToken ? (
           <section className="api-token-reveal-card">
             <div className="api-token-reveal-copy">
-              <p className="eyebrow">One-Time Reveal</p>
+              <p className="eyebrow">Ready To Test</p>
               <h2>{revealedToken.name}</h2>
-              <p>完整 API Key 只会在创建成功后展示一次。复制后请放进你的密码管理器或自动化平台密钥仓库。</p>
+              <p>完整 API Key 已保存在当前浏览器本地。服务端仍然只保存哈希，所以换浏览器后不会重新取回明文。</p>
             </div>
             <div className="api-token-secret-shell">
               <code>{revealedToken.value}</code>
               <div className="api-token-secret-actions">
                 <button className="secondary-button compact-button" type="button" onClick={() => setRevealedToken(null)}>
-                  收起明文
+                  关闭提示
                 </button>
                 <button className="primary-button compact-button" type="button" onClick={() => void handleCopyRevealedToken()}>
                   复制完整 Key
+                </button>
+                <button
+                  className="secondary-button compact-button"
+                  type="button"
+                  onClick={() => void handleCopyCurl(revealedToken.name, revealedToken.value, "authorization")}
+                >
+                  复制 Bearer curl
                 </button>
               </div>
             </div>
@@ -1564,6 +1765,7 @@ function ApiTokensPanel({
           <section className="api-token-list">
             {items.map((item) => {
               const expired = isApiTokenExpired(item);
+              const storedTokenValue = storedTokenSecrets[item.id]?.value;
               const statusLabel = item.revokedAt
                 ? "已吊销"
                 : expired
@@ -1603,10 +1805,79 @@ function ApiTokensPanel({
                     </span>
                   </div>
 
+                  <section className="api-token-secret-box">
+                    <div className="api-token-section-head">
+                      <div>
+                        <p className="eyebrow">API Key</p>
+                        <p>
+                          {storedTokenValue
+                            ? "完整明文已保存在当前浏览器，可直接复制到脚本、Raycast 或快捷指令。"
+                            : "当前浏览器没有保存这把 key 的完整明文；服务端不会再次返回明文。"}
+                        </p>
+                      </div>
+                      {storedTokenValue ? (
+                        <button
+                          className="secondary-button compact-button"
+                          type="button"
+                          onClick={() => void handleCopyStoredToken(item.name, storedTokenValue)}
+                        >
+                          复制 Key
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <code className="api-token-code-block">
+                      {storedTokenValue ?? item.tokenPreview}
+                    </code>
+
+                    <p className="api-token-secret-note">
+                      {storedTokenValue
+                        ? "为了方便测试，这个明文只保存在当前浏览器的本地存储里。"
+                        : "如果你需要直接测试，请重新创建一个新的 API Key。"}
+                    </p>
+                  </section>
+
+                  <section className="api-token-usage-box">
+                    <div className="api-token-section-head">
+                      <div>
+                        <p className="eyebrow">Curl Test</p>
+                        <p>默认示例使用 <code>Authorization: Bearer</code>。也支持复制 <code>X-KeepPage-Api-Key</code> 版本。</p>
+                      </div>
+                    </div>
+
+                    <code className="api-token-code-block">
+                      {buildBookmarkIngestCurl(apiBaseUrl, storedTokenValue ?? "<api-token>", "authorization")}
+                    </code>
+
+                    <div className="api-token-usage-actions">
+                      <button
+                        className="secondary-button compact-button"
+                        type="button"
+                        onClick={() => void handleCopyCurl(
+                          item.name,
+                          storedTokenValue ?? "<api-token>",
+                          "authorization",
+                        )}
+                      >
+                        {storedTokenValue ? "复制 Bearer curl" : "复制 curl 模板"}
+                      </button>
+                      <button
+                        className="secondary-button compact-button"
+                        type="button"
+                        onClick={() => void handleCopyCurl(
+                          item.name,
+                          storedTokenValue ?? "<api-token>",
+                          "x-api-key",
+                        )}
+                      >
+                        复制 Header 版本
+                      </button>
+                    </div>
+                  </section>
+
                   <div className="api-token-card-foot">
                     <p>
-                      接入时使用 `Authorization: Bearer &lt;api-token&gt;` 调用
-                      `POST /ingest/bookmarks`。
+                      轻量写入只会创建或合并书签，不会主动抓取网页正文。适合先把 URL 丢进 KeepPage 收集箱。
                     </p>
                     {!item.revokedAt ? (
                       <button
@@ -1646,7 +1917,7 @@ function ApiTokensPanel({
                 <div className="api-token-dialog-heading">
                   <p className="eyebrow">New Credential</p>
                   <h2 id="api-token-create-title">Create API Key</h2>
-                  <p>生成一个只允许新增书签的写入 key。创建成功后，完整明文只会展示这一次。</p>
+                  <p>生成一个只允许新增书签的写入 key。创建成功后，完整明文会保存在当前浏览器，方便你直接复制和测试。</p>
                 </div>
                 <button className="create-folder-dialog-close" type="button" onClick={closeCreateDialog} disabled={createBusy}>
                   <DialogCloseIcon />
@@ -4040,6 +4311,7 @@ export function App({
       ) : route.page === "settings-api-tokens" ? (
         <ApiTokensPanel
           token={session.token}
+          userId={session.user.id}
           isDemoMode={isDemoMode}
           onApiError={handleProtectedApiError}
           onBack={goToList}
