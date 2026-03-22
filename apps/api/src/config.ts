@@ -33,7 +33,16 @@ const configSchema = z.object({
   DEBUG_MODE: booleanFlagSchema,
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).optional(),
   DATABASE_URL: z.string().optional(),
-  CLOUD_ARCHIVE_ENABLED: booleanFlagSchema,
+  CLOUD_ARCHIVE_ENABLED: z.preprocess((value) => {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const n = value.trim().toLowerCase();
+      if (n === "" || n === "0" || n === "false" || n === "no" || n === "off") return false;
+      if (n === "1" || n === "true" || n === "yes" || n === "on") return true;
+    }
+    return value;
+  }, z.boolean().default(true)),
   CLOUD_ARCHIVE_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   CLOUD_ARCHIVE_MAX_CONCURRENT: z.coerce.number().int().positive().default(3),
 });
