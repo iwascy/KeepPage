@@ -2443,6 +2443,7 @@ function DetailPanel({
           : "原始归档不可用，已自动回退到阅读视图。"
       )
     : null;
+  const [notesEditing, setNotesEditing] = useState(false);
 
   return (
     <section className="detail-shell">
@@ -2469,13 +2470,12 @@ function DetailPanel({
       </section>
 
       <aside className="detail-panel">
-        <button className="ghost-button" type="button" onClick={goToList}>
-          ← 返回列表
-        </button>
-
-        {/* Preview Mode Switch */}
-        <div className="detail-preview-mode">
-          <div className="preview-mode-switch" role="tablist" aria-label="归档预览模式">
+        {/* Top bar: back + preview mode */}
+        <div className="detail-top-bar">
+          <button className="detail-back-button" type="button" onClick={goToList}>
+            <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+          </button>
+          <div className="preview-mode-switch preview-mode-switch--compact" role="tablist" aria-label="归档预览模式">
             <button
               className={activePreviewMode === "reader" ? "preview-mode-button is-active" : "preview-mode-button"}
               type="button"
@@ -2495,10 +2495,10 @@ function DetailPanel({
               原始归档
             </button>
           </div>
-          {previewFallbackMessage ? (
-            <p className="preview-mode-note">{previewFallbackMessage}</p>
-          ) : null}
         </div>
+        {previewFallbackMessage ? (
+          <p className="preview-mode-note">{previewFallbackMessage}</p>
+        ) : null}
 
         {/* Header: label + ID */}
         <div className="detail-block">
@@ -2526,7 +2526,7 @@ function DetailPanel({
         {/* Compact Metadata Grid */}
         <div className="detail-meta-grid">
           <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">收藏夹</span>
+            <span className="detail-meta-cell-label">Collection</span>
             <select
               className="detail-meta-cell-value"
               value={metadataFolderId}
@@ -2541,22 +2541,22 @@ function DetailPanel({
             </select>
           </div>
           <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">创建</span>
+            <span className="detail-meta-cell-label">Added</span>
             <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.createdAt)}</span>
           </div>
           <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">体积</span>
+            <span className="detail-meta-cell-label">File Size</span>
             <span className="detail-meta-cell-value">{formatFileSize(displayedArchiveSize)}</span>
           </div>
           <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">更新</span>
+            <span className="detail-meta-cell-label">Last Sync</span>
             <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.updatedAt)}</span>
           </div>
         </div>
 
         {/* Tags */}
         <div className="detail-tags-section">
-          <span className="detail-tags-section-label">标签</span>
+          <span className="detail-tags-section-label">Tags</span>
           <div className="detail-tags-wrap">
             {tags.map((tag) => {
               const checked = metadataTagIds.includes(tag.id);
@@ -2571,17 +2571,10 @@ function DetailPanel({
                 </label>
               );
             })}
-            <label className="detail-tag-pill">
-              <input
-                type="checkbox"
-                checked={metadataIsFavorite}
-                onChange={(event) => onMetadataFavoriteChange(event.target.checked)}
-              />
-              <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: "0.7rem" }}>
-                {metadataIsFavorite ? "star" : "star_border"}
-              </span>
-              <span>收藏</span>
-            </label>
+            <button className="detail-tag-add" type="button">
+              <span className="material-symbols-outlined" aria-hidden="true">add</span>
+              <span>Tag</span>
+            </button>
           </div>
         </div>
 
@@ -2598,8 +2591,9 @@ function DetailPanel({
           </summary>
           <div className="detail-collapsible-body">
             <div className="version-list">
-              {detail.versions.map((version) => {
+              {detail.versions.map((version, index) => {
                 const active = version.id === selectedVersion.id;
+                const isLatest = index === 0;
                 return (
                   <button
                     key={version.id}
@@ -2607,91 +2601,61 @@ function DetailPanel({
                     type="button"
                     onClick={() => openBookmark(detail.bookmark.id, version.id)}
                   >
-                    <strong>v{version.versionNo}</strong>
-                    <span>{formatWhen(version.createdAt)}</span>
+                    <span className="version-item-icon material-symbols-outlined" aria-hidden="true">refresh</span>
+                    <div>
+                      <strong>v{version.versionNo}{isLatest ? " (Latest)" : ""}</strong>
+                      <span>{formatWhen(version.createdAt)}</span>
+                    </div>
                   </button>
                 );
               })}
+              <div className="version-item version-item--source">
+                <span className="version-item-icon material-symbols-outlined" aria-hidden="true">description</span>
+                <div>
+                  <strong>Original Source</strong>
+                  <span>{new URL(detail.bookmark.sourceUrl).hostname} {"\u2022"} {formatWhen(detail.bookmark.createdAt)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </details>
 
         {/* Personal Notes */}
-        <details className="detail-collapsible" open>
-          <summary>
-            <span className="detail-summary-label">
-              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
-                edit_note
-              </span>
-              <span>备注</span>
-            </span>
-          </summary>
-          <div className="detail-collapsible-body">
-            <label className="field">
+        <div className="detail-notes-section">
+          <span className="detail-notes-section-label">Personal Notes</span>
+          {notesEditing ? (
+            <div className="detail-notes-edit">
               <textarea
                 value={metadataNote}
                 onChange={(event) => onMetadataNoteChange(event.target.value)}
                 rows={3}
                 placeholder="添加备注..."
+                autoFocus
               />
-            </label>
-            <button className="primary-button compact-button" type="button" onClick={onMetadataSave} disabled={metadataSaving}>
-              {metadataSaving ? "保存中..." : "保存"}
-            </button>
-            {metadataFeedback ? (
-              <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
-                {metadataFeedback.message}
-              </p>
-            ) : null}
-          </div>
-        </details>
-
-        {/* Quality Report */}
-        <details className="detail-collapsible">
-          <summary>
-            <span className="detail-summary-label">
-              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
-                analytics
-              </span>
-              <span>质量报告</span>
-            </span>
-            <span className="badge">{quality.score}分</span>
-          </summary>
-          <div className="detail-collapsible-body">
-            <div className="signal-grid">
-              <article className="signal-card">
-                <span>文本保留</span>
-                <strong>
-                  {retentionLabel(
-                    quality.archiveSignals.textLength,
-                    quality.liveSignals.textLength,
-                  )}
-                </strong>
-              </article>
-              <article className="signal-card">
-                <span>图片保留</span>
-                <strong>
-                  {retentionLabel(
-                    quality.archiveSignals.imageCount,
-                    quality.liveSignals.imageCount,
-                  )}
-                </strong>
-              </article>
-            </div>
-            {quality.reasons.length > 0 ? (
-              <div className="reason-list">
-                {quality.reasons.map((reason) => (
-                  <article className="reason-card" key={`${selectedVersion.id}-${reason.code}`}>
-                    <strong>{reason.code}</strong>
-                    <p>{reason.message}</p>
-                  </article>
-                ))}
+              <div className="detail-notes-edit-actions">
+                <button className="primary-button compact-button" type="button" onClick={() => { onMetadataSave(); setNotesEditing(false); }} disabled={metadataSaving}>
+                  {metadataSaving ? "保存中..." : "保存"}
+                </button>
+                <button className="ghost-button compact-button" type="button" onClick={() => setNotesEditing(false)}>
+                  取消
+                </button>
               </div>
-            ) : (
-              <p className="detail-note">无质量告警。</p>
-            )}
-          </div>
-        </details>
+              {metadataFeedback ? (
+                <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
+                  {metadataFeedback.message}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="detail-note-quote" role="button" tabIndex={0} onClick={() => setNotesEditing(true)} onKeyDown={(e) => { if (e.key === "Enter") setNotesEditing(true); }}>
+              {metadataNote ? (
+                <p>{metadataNote}</p>
+              ) : (
+                <p className="detail-note-quote-placeholder">点击添加备注...</p>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Action Buttons */}
         <div className="detail-actions-footer">
@@ -2701,18 +2665,18 @@ function DetailPanel({
               href={previewState.url}
               download={`keeppage-${detail.bookmark.id}-v${selectedVersion.versionNo}-${activePreviewMode === "reader" ? "reader" : "original"}.html`}
             >
-              <span className="material-symbols-outlined" aria-hidden="true">ios_share</span>
-              导出
+              <span className="material-symbols-outlined" aria-hidden="true">download</span>
+              Export
             </a>
           ) : (
             <span className="detail-action-button" style={{ opacity: 0.4, cursor: "not-allowed" }}>
-              <span className="material-symbols-outlined" aria-hidden="true">ios_share</span>
-              导出
+              <span className="material-symbols-outlined" aria-hidden="true">download</span>
+              Export
             </span>
           )}
           <button className="detail-action-button is-danger" type="button">
             <span className="material-symbols-outlined" aria-hidden="true">delete</span>
-            删除
+            Delete
           </button>
         </div>
       </aside>

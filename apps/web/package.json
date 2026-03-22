@@ -9,6 +9,7 @@
     "dev:demo": "vite --open /demo.html",
     "dev:demo:mock": "VITE_APP_MODE=mock vite --open /demo.html",
     "build": "tsc -p tsconfig.json && vite build",
+    "build:demo:html": "VITE_APP_MODE=mock vite build --config vite.standalone-demo.config.mjs && node ./scripts/build-standalone-demo.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Luminous Archive - Bookmark Detail</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9f9fb;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        .glass-sidebar {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(64px);
+            -webkit-backdrop-filter: blur(64px);
+            border-left: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: -8px 0 32px 0 rgba(31, 38, 135, 0.04);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        /* Collapsible logic */
+        #right-sidebar {
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #right-sidebar.collapsed {
+            width: 40px;
+        }
+        #right-sidebar.collapsed .sidebar-content {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .main-content-transition {
+            transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-background": "#2d3338",
+                        "on-tertiary": "#fcf7ff",
+                        "on-error-container": "#752121",
+                        "surface-container-high": "#e4e9ee",
+                        "on-primary-container": "#525252",
+                        "on-tertiary-fixed-variant": "#54516d",
+                        "on-primary-fixed": "#3f3f3f",
+                        "background": "#f9f9fb",
+                        "secondary-container": "#e2e2e9",
+                        "surface-container-low": "#f2f4f6",
+                        "surface": "#f9f9fb",
+                        "on-error": "#fff7f6",
+                        "surface-container": "#ebeef2",
+                        "on-secondary-container": "#505157",
+                        "tertiary-fixed-dim": "#cac6e6",
+                        "on-primary": "#f8f8f8",
+                        "inverse-surface": "#0c0e10",
+                        "on-secondary": "#f9f8ff",
+                        "surface-dim": "#d3dbe2",
+                        "surface-variant": "#dde3e9",
+                        "on-surface": "#2d3338",
+                        "outline": "#757c81",
+                        "secondary-fixed-dim": "#d4d4db",
+                        "inverse-primary": "#ffffff",
+                        "secondary-fixed": "#e2e2e9",
+                        "on-primary-fixed-variant": "#5b5b5b",
+                        "error-dim": "#4e0309",
+                        "on-secondary-fixed-variant": "#5a5b61",
+                        "surface-bright": "#f9f9fb",
+                        "secondary-dim": "#515359",
+                        "error": "#9f403d",
+                        "tertiary": "#5f5c78",
+                        "tertiary-container": "#d8d3f4",
+                        "on-tertiary-container": "#4a4863",
+                        "surface-container-highest": "#dde3e9",
+                        "error-container": "#fe8983",
+                        "primary-fixed-dim": "#d4d4d4",
+                        "on-surface-variant": "#596065",
+                        "on-secondary-fixed": "#3e3f45",
+                        "tertiary-fixed": "#d8d3f4",
+                        "primary-container": "#e2e2e2",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-fixed": "#e2e2e2",
+                        "primary-dim": "#525252",
+                        "primary": "#5e5e5e",
+                        "secondary": "#5d5f65",
+                        "surface-tint": "#5e5e5e",
+                        "tertiary-dim": "#53506b",
+                        "outline-variant": "#acb3b8",
+                        "inverse-on-surface": "#9c9d9f",
+                        "on-tertiary-fixed": "#37354f"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-surface text-on-surface selection:bg-primary-container selection:text-on-primary-container">
+<!-- SIDE NAVIGATION BAR (SHARED COMPONENT) -->
+<aside class="fixed left-0 top-0 h-full w-72 flex flex-col p-6 z-40 bg-zinc-50/50 dark:bg-black/40 backdrop-blur-2xl rounded-r-xl">
+<div class="flex items-center gap-3 mb-10 px-4">
+<div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white">
+<span class="material-symbols-outlined" data-icon="cloud_done">cloud_done</span>
+</div>
+<div>
+<h2 class="text-lg font-black tracking-tighter text-zinc-900">Personal Cloud</h2>
+<p class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Premium Tier</p>
+</div>
+</div>
+<button class="mb-8 w-full py-4 bg-inverse-surface text-white rounded-full font-semibold flex items-center justify-center gap-2 shadow-xl hover:scale-105 transition-transform active:scale-95">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+        New Collection
+    </button>
+<nav class="flex flex-col gap-2">
+<a class="flex items-center gap-3 bg-white/80 shadow-sm rounded-full px-4 py-2.5 text-zinc-900 font-medium" href="#">
+<span class="material-symbols-outlined" data-icon="folder_open">folder_open</span>
+            Workspace
+        </a>
+<a class="flex items-center gap-3 px-4 py-2.5 text-zinc-500 hover:text-zinc-900 transition-all rounded-full hover:bg-zinc-200/50" href="#">
+<span class="material-symbols-outlined" data-icon="bookmarks">bookmarks</span>
+            Library
+        </a>
+<a class="flex items-center gap-3 px-4 py-2.5 text-zinc-500 hover:text-zinc-900 transition-all rounded-full hover:bg-zinc-200/50" href="#">
+<span class="material-symbols-outlined" data-icon="sell">sell</span>
+            Tags
+        </a>
+<a class="flex items-center gap-3 px-4 py-2.5 text-zinc-500 hover:text-zinc-900 transition-all rounded-full hover:bg-zinc-200/50" href="#">
+<span class="material-symbols-outlined" data-icon="archive">archive</span>
+            Archives
+        </a>
+<a class="flex items-center gap-3 px-4 py-2.5 text-zinc-500 hover:text-zinc-900 transition-all rounded-full hover:bg-zinc-200/50" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+            Settings
+        </a>
+</nav>
+<div class="mt-auto p-4 glass-panel rounded-3xl">
+<div class="flex items-center gap-3">
+<img alt="User profile" class="w-10 h-10 rounded-full bg-surface-container-high" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBYx0nis-dyCZqTpk6Kd4ER0-W9wsZD1pBqtV2YJNv_hGGhmizMGdPl7IJOR02hRGzmumZ5MoQJuHfBV4S82t7cBkoQTp8LV57vRX6leCnwcepWwdUUDsp_oZeK0GCHcDSIhlmTO6FxX3Uavi7TYKRgq9GSc-k8W_VfCqE1vF5WFHkoNMgQagxL5JgmC1y3_AlDAr2TCiYTFI5q5XtXNWdNZh3VNW-E7Xxds4Z1z8x272Zrne2zVkhnp3rxGZxRPCwNEh14v8fXMkg"/>
+<div class="flex-1 overflow-hidden">
+<p class="text-sm font-bold truncate">Alex Sterling</p>
+<p class="text-xs text-on-surface-variant truncate">alex@archive.io</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- TOP APP BAR (SHARED COMPONENT) -->
+<header class="sticky top-0 z-50 flex justify-between items-center w-full pl-80 pr-8 h-16 bg-white/60 backdrop-blur-3xl shadow-[0_20px_40px_rgba(45,51,56,0.06)]">
+<div class="flex items-center gap-8">
+<h1 class="text-xl font-bold tracking-tighter text-zinc-900">Luminous Archive</h1>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-zinc-500 hover:text-zinc-800 transition-colors" href="#">All Bookmarks</a>
+<a class="text-zinc-900 font-semibold border-b-2 border-zinc-800 pb-1" href="#">Recent</a>
+<a class="text-zinc-500 hover:text-zinc-800 transition-colors" href="#">Favorites</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<span class="absolute inset-y-0 left-3 flex items-center text-on-surface-variant">
+<span class="material-symbols-outlined text-sm" data-icon="search">search</span>
+</span>
+<input class="pl-10 pr-4 py-1.5 bg-surface-container-low border-none rounded-full text-sm focus:ring-2 focus:ring-primary/20 w-64 transition-all" placeholder="Search archive..." type="text"/>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 hover:bg-white/20 rounded-full transition-all active:scale-95 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+</button>
+<button class="p-2 hover:bg-white/20 rounded-full transition-all active:scale-95 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="download">download</span>
+</button>
+<button class="p-2 hover:bg-white/20 rounded-full transition-all active:scale-95 text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="delete">delete</span>
+</button>
+</div>
+</div>
+</header>
+<!-- CENTRAL CONTENT AREA -->
+<main class="ml-72 mr-[360px] p-12 max-w-7xl mx-auto main-content-transition" id="main-content">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16">
+<div class="space-y-4">
+<div class="flex gap-2 items-center text-primary font-medium tracking-wide text-xs uppercase">
+<span class="material-symbols-outlined text-base" data-icon="history_edu">history_edu</span>
+                Technical Documentation
+            </div>
+<h2 class="text-5xl font-extrabold tracking-tight text-on-surface leading-tight max-w-2xl">
+                Understanding LLM Context Windows and Attention Mechanisms
+            </h2>
+</div>
+<div class="flex items-center gap-4 bg-surface-container-low p-2 rounded-full border border-outline-variant/10">
+<button class="flex items-center gap-2 px-6 py-2.5 bg-white shadow-sm rounded-full text-sm font-semibold text-on-surface transition-all">
+<span class="material-symbols-outlined text-lg" data-icon="auto_stories">auto_stories</span>
+                Readability Mode
+            </button>
+<button class="px-4 py-2 text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined" data-icon="settings_ethernet">settings_ethernet</span>
+</button>
+</div>
+</div>
+<!-- Main Content Block -->
+<div class="glass-panel rounded-xl p-10 overflow-hidden relative">
+<div class="absolute top-0 right-0 p-6">
+<span class="px-3 py-1 bg-surface-container text-[10px] font-bold uppercase tracking-widest rounded-full text-on-surface-variant">Source Snippet</span>
+</div>
+<div class="prose prose-zinc max-w-none">
+<p class="text-on-surface-variant leading-relaxed text-lg mb-8">
+                The architecture of modern large language models relies heavily on the attention mechanism. As the context window grows, the computational complexity scales quadratically with the input length.
+            </p>
+<div class="rounded-2xl bg-slate-900 p-8 font-mono text-sm leading-relaxed text-slate-300 shadow-inner">
+<pre><code><span class="text-purple-400">def</span> <span class="text-blue-400">scaled_dot_product_attention</span>(q, k, v, mask=None):
+    <span class="text-zinc-500">"""Calculate the attention weights."""</span>
+    matmul_qk = tf.matmul(q, k, transpose_b=<span class="text-orange-400">True</span>)
+    dk = tf.cast(tf.shape(k)[<span class="text-orange-400">-1</span>], tf.float32)
+    scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
+
+    <span class="text-purple-400">if</span> mask <span class="text-purple-400">is not None</span>:
+        scaled_attention_logits += (mask * <span class="text-orange-400">-1e9</span>)
+
+    attention_weights = tf.nn.softmax(scaled_attention_logits, axis=<span class="text-orange-400">-1</span>)
+    output = tf.matmul(attention_weights, v)
+    <span class="text-purple-400">return</span> output, attention_weights</code></pre>
+</div>
+<p class="text-on-surface-variant leading-relaxed text-lg mt-8">
+                By normalizing the dot product, we prevent the softmax function from reaching regions with extremely small gradients, which ensures stable backpropagation during training cycles.
+            </p>
+</div>
+</div>
+</main>
+<!-- RIGHT SIDEBAR (Collapsible, High Density - Viewing Mode) -->
+<aside class="fixed right-0 top-16 bottom-0 w-[360px] glass-sidebar z-40 flex flex-col transition-all duration-300" id="right-sidebar">
+<!-- Collapse Toggle Button -->
+<button class="absolute -left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white border border-outline-variant/20 rounded-full shadow-md flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors z-50" onclick="toggleSidebar()">
+<span class="material-symbols-outlined text-lg" data-icon="chevron_right" id="toggle-icon">chevron_right</span>
+</button>
+<div class="sidebar-content flex flex-col h-full overflow-y-auto no-scrollbar p-6 space-y-6 opacity-100 transition-opacity duration-200">
+<!-- Title & Basic Info -->
+<div class="space-y-3">
+<div class="flex items-center justify-between">
+<span class="text-[10px] font-black text-primary uppercase tracking-widest">Detail View</span>
+<span class="text-[10px] text-on-surface-variant font-medium">#1024-TR</span>
+</div>
+<h2 class="text-xl font-black text-zinc-900 leading-tight">Attention is All You Need</h2>
+<div class="flex items-center gap-1.5 p-2 bg-white/40 rounded-lg border border-white/60 hover:bg-white/60 transition-colors cursor-pointer group">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="link">link</span>
+<a class="text-[11px] text-primary font-semibold truncate group-hover:underline" href="#">arxiv.org/pdf/1706.03762</a>
+<span class="material-symbols-outlined text-xs text-zinc-400 ml-auto" data-icon="open_in_new">open_in_new</span>
+</div>
+</div>
+<!-- Compact Metadata Grid -->
+<div class="grid grid-cols-2 gap-3">
+<div class="p-3 bg-white/40 rounded-2xl border border-white/60 hover:bg-white/60 transition-colors cursor-pointer group">
+<p class="text-[9px] font-bold text-outline uppercase tracking-tighter mb-1">Collection</p>
+<div class="flex items-center justify-between">
+<p class="text-xs font-bold text-zinc-800">Tech Papers</p>
+<span class="material-symbols-outlined text-xs text-zinc-400" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+<div class="p-3 bg-white/40 rounded-2xl border border-white/60">
+<p class="text-[9px] font-bold text-outline uppercase tracking-tighter mb-1">Added</p>
+<p class="text-xs font-bold text-zinc-800">Aug 12, 2023</p>
+</div>
+<div class="p-3 bg-white/40 rounded-2xl border border-white/60">
+<p class="text-[9px] font-bold text-outline uppercase tracking-tighter mb-1">File Size</p>
+<p class="text-xs font-bold text-zinc-800">1.2 MB</p>
+</div>
+<div class="p-3 bg-white/40 rounded-2xl border border-white/60">
+<p class="text-[9px] font-bold text-outline uppercase tracking-tighter mb-1">Last Sync</p>
+<p class="text-xs font-bold text-zinc-800">2h ago</p>
+</div>
+</div>
+<!-- Tags (Dense) -->
+<div class="space-y-2">
+<label class="text-[9px] font-bold text-outline uppercase tracking-widest px-1">Tags</label>
+<div class="flex flex-wrap gap-1.5">
+<span class="px-2.5 py-1 bg-white/60 border border-white/80 rounded-full text-[10px] font-bold text-zinc-600 hover:bg-white transition-colors cursor-default">#deep-learning</span>
+<span class="px-2.5 py-1 bg-white/60 border border-white/80 rounded-full text-[10px] font-bold text-zinc-600 hover:bg-white transition-colors cursor-default">#transformer</span>
+<button class="px-2.5 py-1 border border-primary/20 rounded-full text-[10px] font-bold text-primary hover:bg-primary/5 transition-colors flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[10px]" data-icon="add">add</span> Tag
+                </button>
+</div>
+</div>
+<!-- Accordion Section: Version History -->
+<div class="border-t border-white/40 pt-4">
+<details class="group" open="">
+<summary class="flex items-center justify-between cursor-pointer list-none">
+<span class="text-[9px] font-bold text-outline uppercase tracking-widest">Version History</span>
+<span class="material-symbols-outlined text-sm text-zinc-400 group-open:rotate-180 transition-transform" data-icon="expand_more">expand_more</span>
+</summary>
+<div class="mt-3 space-y-2">
+<div class="flex items-center gap-3 p-2.5 bg-white shadow-sm rounded-xl border border-white/80">
+<span class="material-symbols-outlined text-primary text-base" data-icon="history">history</span>
+<div class="min-w-0">
+<p class="text-[11px] font-bold text-zinc-800">v2.4.1 (Latest)</p>
+<p class="text-[9px] text-on-surface-variant">Oct 24, 2023</p>
+</div>
+</div>
+<div class="flex items-center gap-3 p-2.5 bg-white/40 rounded-xl border border-transparent hover:border-white/60 transition-colors cursor-pointer group">
+<span class="material-symbols-outlined text-zinc-400 text-base" data-icon="cloud_download">cloud_download</span>
+<div class="min-w-0">
+<p class="text-[11px] font-bold text-zinc-600 group-hover:text-zinc-800 transition-colors">Original Source</p>
+<p class="text-[9px] text-on-surface-variant">ArXiv • Aug 12</p>
+</div>
+</div>
+</div>
+</details>
+</div>
+<!-- Accordion Section: Personal Notes -->
+<div class="border-t border-white/40 pt-4">
+<details class="group" open="">
+<summary class="flex items-center justify-between cursor-pointer list-none">
+<span class="text-[9px] font-bold text-outline uppercase tracking-widest">Personal Notes</span>
+<span class="material-symbols-outlined text-sm text-zinc-400 group-open:rotate-180 transition-transform" data-icon="expand_more">expand_more</span>
+</summary>
+<div class="mt-3">
+<div class="p-4 bg-white/40 rounded-2xl border border-white/60 text-[11px] text-zinc-600 italic leading-relaxed shadow-sm hover:bg-white/50 transition-colors relative group cursor-pointer">
+                        "Focus on the multi-head attention block for the upcoming seminar. The scaling factor √d is critical for gradient stability."
+                        <span class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity material-symbols-outlined text-xs text-zinc-400" data-icon="edit">edit</span>
+</div>
+</div>
+</details>
+</div>
+<!-- Action Buttons (Secondary) -->
+<div class="mt-auto pt-6 border-t border-white/40">
+<div class="grid grid-cols-2 gap-3">
+<button class="py-2.5 bg-white/60 border border-white/80 rounded-xl text-[11px] font-bold text-zinc-700 hover:bg-white hover:shadow-sm transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-base" data-icon="ios_share">ios_share</span> Export
+                </button>
+<button class="py-2.5 bg-white/60 border border-white/80 rounded-xl text-[11px] font-bold text-error hover:bg-error/5 hover:border-error/20 transition-all flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-base" data-icon="delete">delete</span> Delete
+                </button>
+</div>
+<!-- Preview (Mini) -->
+</div>
+</div>
+</aside>
+<!-- Floating Dock (Simplified Footer Navigation) -->
+<div class="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 bg-white/50 backdrop-blur-3xl border border-white/40 rounded-full shadow-[0_20px_40px_rgba(45,51,56,0.1)] z-50">
+<button class="w-12 h-12 flex items-center justify-center rounded-full bg-white text-zinc-900 shadow-sm hover:scale-110 transition-transform">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<div class="h-6 w-px bg-zinc-300 mx-2"></div>
+<button class="w-12 h-12 flex items-center justify-center rounded-full text-zinc-500 hover:bg-white hover:text-zinc-900 transition-all">
+<span class="material-symbols-outlined" data-icon="visibility">visibility</span>
+</button>
+<button class="w-12 h-12 flex items-center justify-center rounded-full text-zinc-500 hover:bg-white hover:text-zinc-900 transition-all">
+<span class="material-symbols-outlined" data-icon="star">star</span>
+</button>
+<button class="w-12 h-12 flex items-center justify-center rounded-full text-zinc-500 hover:bg-white hover:text-zinc-900 transition-all">
+<span class="material-symbols-outlined" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+<script>
+    function toggleSidebar() {
+        const sidebar = document.getElementById('right-sidebar');
+        const main = document.getElementById('main-content');
+        const icon = document.getElementById('toggle-icon');
+        
+        sidebar.classList.toggle('collapsed');
+        
+        if (sidebar.classList.contains('collapsed')) {
+            main.style.marginRight = '40px';
+            icon.textContent = 'chevron_left';
+        } else {
+            main.style.marginRight = '360px';
+            icon.textContent = 'chevron_right';
+        }
+    }
+</script>
+</body></html>

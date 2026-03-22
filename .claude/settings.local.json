@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(find /Users/hcy/code/KeepPage/packages -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.vue \\\\\\))",
-      "Bash(find /Users/hcy/code/KeepPage/apps/web -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.vue \\\\\\))"
+      "Bash(find /Users/hcy/code/KeepPage/apps/web -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.vue \\\\\\))",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
