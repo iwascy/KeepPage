@@ -84,7 +84,7 @@ export const importExecutionOptionsSchema = z.object({
   mode: importModeSchema.default("links_only"),
   targetFolderMode: importTargetFolderModeSchema.default("preserve"),
   targetFolderPath: z.string().trim().min(1).max(500).optional(),
-  tagStrategy: importTagStrategySchema.default("none"),
+  tagStrategy: importTagStrategySchema.default("keep_source_tags"),
   titleStrategy: importTitleStrategySchema.default("prefer_import_title"),
   dedupeStrategy: importDedupeStrategySchema.default("merge"),
 });

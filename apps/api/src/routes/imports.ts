@@ -207,7 +207,7 @@ function normalizeTagStrategy(value: unknown) {
   if (value === "keep_source_tags" || value === "none") {
     return value;
   }
-  return "none";
+  return "keep_source_tags";
 }
 
 function normalizeTitleStrategy(value: unknown) {
