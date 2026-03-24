@@ -69,7 +69,9 @@ export async function processCloudArchive(input: {
   url: string;
   title?: string;
   folderId?: string;
+  folderPath?: string;
   tagIds?: string[];
+  tags?: string[];
   config: ApiConfig;
   repository: BookmarkRepository;
   objectStorage: ObjectStorage;
@@ -148,10 +150,17 @@ export async function processCloudArchive(input: {
     deviceId: "cloud-archive",
   });
 
-  if (input.folderId || input.tagIds?.length) {
+  if (
+    input.folderId
+    || input.folderPath
+    || input.tagIds?.length
+    || input.tags !== undefined
+  ) {
     await repository.updateBookmarkMetadata(userId, completeResult.bookmark.id, {
       folderId: input.folderId,
+      folderPath: input.folderPath,
       tagIds: input.tagIds,
+      tags: input.tags,
     });
   }
 

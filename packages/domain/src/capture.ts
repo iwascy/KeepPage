@@ -141,6 +141,7 @@ const folderNameSchema = z
 
 const tagNameSchema = z.string().trim().min(1).max(80);
 const tagColorSchema = z.string().trim().min(1).max(32);
+const folderPathSchema = z.string().trim().min(1).max(500);
 
 export const authUserSchema = z.object({
   id: z.string().min(1),
@@ -281,13 +282,17 @@ export const tagUpdateRequestSchema = z.object({
 export const bookmarkMetadataUpdateRequestSchema = z.object({
   note: z.string().max(4000).optional(),
   folderId: z.string().min(1).nullable().optional(),
+  folderPath: folderPathSchema.optional(),
   tagIds: z.array(z.string().min(1)).max(100).optional(),
+  tags: z.array(tagNameSchema).max(100).optional(),
   isFavorite: z.boolean().optional(),
 }).refine(
   (value) =>
     value.note !== undefined
       || value.folderId !== undefined
+      || value.folderPath !== undefined
       || value.tagIds !== undefined
+      || value.tags !== undefined
       || value.isFavorite !== undefined,
   {
     message: "At least one field must be updated.",

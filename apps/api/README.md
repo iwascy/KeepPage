@@ -87,6 +87,7 @@ curl -X POST http://127.0.0.1:8787/ingest/bookmarks \
 - 去重维度是 `userId + normalizedUrlHash`。
 - `dedupeStrategy=merge` 会更新标题、备注、文件夹，并把新标签并入已有标签。
 - `dedupeStrategy=skip` 命中已存在链接时会直接返回已有书签。
+- `folderPath` 和 `tags` 按路径/名称写入；如果对应收藏夹或标签不存在，会自动创建。
 
 ## 当前存储模型
 

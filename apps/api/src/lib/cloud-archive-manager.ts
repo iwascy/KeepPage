@@ -16,7 +16,9 @@ type InternalTask = {
   url: string;
   title?: string;
   folderId?: string;
+  folderPath?: string;
   tagIds?: string[];
+  tags?: string[];
   bookmarkId?: string;
   versionId?: string;
   errorMessage?: string;
@@ -44,7 +46,9 @@ export class CloudArchiveManager {
       url: input.url,
       title: input.title,
       folderId: input.folderId,
+      folderPath: input.folderPath,
       tagIds: input.tagIds,
+      tags: input.tags,
       createdAt: now,
       updatedAt: now,
     };
@@ -85,7 +89,9 @@ export class CloudArchiveManager {
       url: task.url,
       title: task.title,
       folderId: task.folderId,
+      folderPath: task.folderPath,
       tagIds: task.tagIds,
+      tags: task.tags,
       config: this.config,
       repository: this.repository,
       objectStorage: this.objectStorage,

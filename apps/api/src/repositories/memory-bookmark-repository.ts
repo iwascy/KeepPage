@@ -519,7 +519,14 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       bookmark.isFavorite = input.isFavorite;
     }
 
-    if (input.folderId !== undefined) {
+    if (input.folderPath !== undefined) {
+      const folder = this.ensureFolderPath(state, input.folderPath);
+      if (!folder) {
+        bookmark.folder = undefined;
+      } else {
+        bookmark.folder = { ...folder };
+      }
+    } else if (input.folderId !== undefined) {
       if (input.folderId === null) {
         bookmark.folder = undefined;
       } else {
@@ -531,7 +538,9 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       }
     }
 
-    if (input.tagIds !== undefined) {
+    if (input.tags !== undefined) {
+      bookmark.tags = this.ensureTagsByName(state, input.tags);
+    } else if (input.tagIds !== undefined) {
       const nextTags = this.resolveTagIds(state, input.tagIds);
       bookmark.tags = nextTags;
     }

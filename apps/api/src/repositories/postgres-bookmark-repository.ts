@@ -872,25 +872,30 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       return null;
     }
 
-    let folderId = existing.folder?.id ?? null;
-    if (input.folderId !== undefined) {
-      if (input.folderId === null) {
-        folderId = null;
-      } else {
-        const folder = await this.loadFolderOrNull(userId, input.folderId);
-        if (!folder) {
-          throw new HttpError(404, "FolderNotFound", "Folder not found.");
-        }
-        folderId = folder.id;
-      }
-    }
-
-    const tagIds = input.tagIds !== undefined
-      ? await this.resolveTagIds(userId, input.tagIds)
-      : undefined;
     const now = new Date();
 
     await this.db.transaction(async (tx) => {
+      let folderId = existing.folder?.id ?? null;
+      if (input.folderPath !== undefined) {
+        folderId = await this.ensureFolderPathId(tx, userId, input.folderPath, now);
+      } else if (input.folderId !== undefined) {
+        if (input.folderId === null) {
+          folderId = null;
+        } else {
+          const folder = await this.loadFolderOrNull(userId, input.folderId);
+          if (!folder) {
+            throw new HttpError(404, "FolderNotFound", "Folder not found.");
+          }
+          folderId = folder.id;
+        }
+      }
+
+      const tagIds = input.tags !== undefined
+        ? await this.ensureTagIdsByName(tx, userId, input.tags, now)
+        : input.tagIds !== undefined
+        ? await this.resolveTagIds(userId, input.tagIds)
+        : undefined;
+
       const patch: Partial<typeof bookmarks.$inferInsert> = {
         updatedAt: now,
       };
@@ -900,7 +905,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       if (input.isFavorite !== undefined) {
         patch.isFavorite = input.isFavorite;
       }
-      if (input.folderId !== undefined) {
+      if (input.folderPath !== undefined || input.folderId !== undefined) {
         patch.folderId = folderId;
       }
       await tx.update(bookmarks).set(patch).where(eq(bookmarks.id, bookmarkId));

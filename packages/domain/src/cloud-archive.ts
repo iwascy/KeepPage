@@ -12,11 +12,16 @@ export const cloudArchiveStatusSchema = z.enum(cloudArchiveStatusValues);
 
 export type CloudArchiveStatus = z.infer<typeof cloudArchiveStatusSchema>;
 
+const folderPathSchema = z.string().trim().min(1).max(500);
+const tagNameSchema = z.string().trim().min(1).max(80);
+
 export const cloudArchiveRequestSchema = z.object({
   url: z.url(),
   title: z.string().trim().min(1).max(500).optional(),
   folderId: z.string().min(1).optional(),
+  folderPath: folderPathSchema.optional(),
   tagIds: z.array(z.string().min(1)).max(100).optional(),
+  tags: z.array(tagNameSchema).max(100).optional(),
 });
 
 export const cloudArchiveResponseSchema = z.object({
