@@ -254,7 +254,7 @@ function parseBookmarkHtml(content: string) {
     const attrs = match[2] ?? "";
     const rawUrl = readHtmlAttribute(attrs, "href") ?? "";
     const rawTitle = decodeHtml(stripTags(match[3] ?? "")).trim() || rawUrl;
-    const folderPath = folderStack.join(" / ") || undefined;
+    const folderPath = folderStack.join("/") || undefined;
     const sourceTags = splitTags(readHtmlAttribute(attrs, "tags"));
     const item = createPreparedItem({
       index,

@@ -143,6 +143,7 @@ export type ImportPreviewResult = {
   sourceType: ImportSourceType;
   stats: ImportPreviewStats;
   samples: ImportPreviewItem[];
+  folders: Array<{ path: string; count: number }>;
   domains: Array<{ domain: string; count: number }>;
 };
 
@@ -559,6 +560,7 @@ export async function previewImport(input: ImportPreviewRequest, token: string):
   const payload = asRecord(await response.json());
   const summary = asRecord(payload.summary);
   const samplesRaw = Array.isArray(payload.samples) ? payload.samples : [];
+  const foldersRaw = Array.isArray(payload.folders) ? payload.folders : [];
   const domainsRaw = Array.isArray(payload.domains) ? payload.domains : [];
   const samples = samplesRaw.map((item) => {
     const row = asRecord(item);
@@ -610,6 +612,13 @@ export async function previewImport(input: ImportPreviewRequest, token: string):
       willSkipCount: asNumber(summary.willSkipCount || summary.estimatedSkipCount),
     },
     samples,
+    folders: foldersRaw.map((item) => {
+      const row = asRecord(item);
+      return {
+        path: asString(row.path || row.folderPath || row.value),
+        count: asNumber(row.count),
+      };
+    }),
     domains: domainsRaw.map((item) => {
       const row = asRecord(item);
       return {

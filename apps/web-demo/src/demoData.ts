@@ -49,6 +49,39 @@ function parseUrl(input: string) {
   }
 }
 
+function stripTags(input: string) {
+  return input.replace(/<[^>]+>/g, "");
+}
+
+function decodeHtml(input: string) {
+  return input
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, value: string) => String.fromCodePoint(Number(value)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, value: string) => String.fromCodePoint(parseInt(value, 16)));
+}
+
+function readHtmlAttribute(attrs: string, name: string) {
+  const match = attrs.match(new RegExp(`${name}\\s*=\\s*"([\\s\\S]*?)"`, "i"));
+  return match ? decodeHtml(match[1]) : undefined;
+}
+
+function splitTags(rawValue?: string) {
+  if (!rawValue?.trim()) {
+    return [];
+  }
+  return [...new Set(
+    rawValue
+      .split(/[;,]/g)
+      .map((item) => item.trim())
+      .filter(Boolean),
+  )];
+}
+
 function createQuality(
   score: number,
   grade: QualityGrade,
@@ -345,6 +378,58 @@ function parseImportEntries(rawInput: string): ParsedImportItem[] {
   return entries;
 }
 
+function parseBookmarkHtmlEntries(rawInput: string): ParsedImportItem[] {
+  const entries: ParsedImportItem[] = [];
+  const folderStack: string[] = [];
+  let pendingFolder: string | null = null;
+  const tokenPattern = /<DT><H3[^>]*>([\s\S]*?)<\/H3>|<DL[^>]*>|<\/DL>|<DT><A([^>]*)>([\s\S]*?)<\/A>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(rawInput)) !== null) {
+    if (match[1] !== undefined) {
+      pendingFolder = decodeHtml(stripTags(match[1])).trim();
+      continue;
+    }
+
+    const token = match[0].toLowerCase();
+    if (token.startsWith("<dl")) {
+      if (pendingFolder) {
+        folderStack.push(pendingFolder);
+        pendingFolder = null;
+      }
+      continue;
+    }
+
+    if (token.startsWith("</dl")) {
+      folderStack.pop();
+      pendingFolder = null;
+      continue;
+    }
+
+    const attrs = match[2] ?? "";
+    const url = readHtmlAttribute(attrs, "href");
+    const parsed = url ? parseUrl(url) : null;
+    entries.push({
+      raw: url ?? "",
+      title: decodeHtml(stripTags(match[3] ?? "")).trim() || parsed?.hostname || url || "无标题",
+      url: url ?? undefined,
+      domain: parsed?.hostname,
+      folderPath: folderStack.join("/") || undefined,
+      sourceTags: splitTags(readHtmlAttribute(attrs, "tags")),
+      reason: url ? undefined : "未识别出合法 URL",
+    });
+  }
+
+  return entries;
+}
+
+function parseImportEntriesBySourceType(sourceType: ImportPreviewRequest["sourceType"], rawInput: string) {
+  if (sourceType === "browser_html") {
+    return parseBookmarkHtmlEntries(rawInput);
+  }
+  return parseImportEntries(rawInput);
+}
+
 function matchesQuery(bookmark: Bookmark, query: BookmarkQuery) {
   if (query.quality !== "all" && bookmark.latestQuality?.grade !== query.quality) {
     return false;
@@ -390,6 +475,7 @@ function createImportPreviewFromEntries(
   let willCreateCount = 0;
   let willMergeCount = 0;
   let willSkipCount = 0;
+  const folders = new Map<string, number>();
 
   const samples = entries.slice(0, 12).map((entry, index) => {
     if (!entry.url || !entry.domain) {
@@ -407,6 +493,9 @@ function createImportPreviewFromEntries(
     }
 
     domains.set(entry.domain, (domains.get(entry.domain) ?? 0) + 1);
+    if (entry.folderPath) {
+      folders.set(entry.folderPath, (folders.get(entry.folderPath) ?? 0) + 1);
+    }
 
     if (seenUrls.has(entry.url)) {
       duplicateInFileCount += 1;
@@ -470,6 +559,9 @@ function createImportPreviewFromEntries(
     }
     seenUrls.add(entry.url);
     domains.set(entry.domain, (domains.get(entry.domain) ?? 0) + 1);
+    if (entry.folderPath) {
+      folders.set(entry.folderPath, (folders.get(entry.folderPath) ?? 0) + 1);
+    }
     const existing = existingUrls.get(entry.url);
     if (existing) {
       duplicateInLibraryCount += 1;
@@ -498,6 +590,10 @@ function createImportPreviewFromEntries(
       willSkipCount,
     },
     samples,
+    folders: [...folders.entries()]
+      .map(([path, count]) => ({ path, count }))
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 20),
     domains: [...domains.entries()]
       .map(([domain, count]) => ({ domain, count }))
       .sort((left, right) => right.count - left.count)
@@ -1254,7 +1350,7 @@ export function updateDemoBookmarkMetadata(
 }
 
 export function previewDemoImport(workspace: DemoWorkspace, request: ImportPreviewRequest) {
-  const entries = parseImportEntries(request.rawInput);
+  const entries = parseImportEntriesBySourceType(request.sourceType, request.rawInput);
   return createImportPreviewFromEntries(entries, workspace, request);
 }
 
@@ -1327,7 +1423,7 @@ export function createDemoImportTask(
   request: ImportPreviewRequest & { name: string },
 ) {
   let current = cloneWorkspace(workspace);
-  const entries = parseImportEntries(request.rawInput);
+  const entries = parseImportEntriesBySourceType(request.sourceType, request.rawInput);
   const preview = createImportPreviewFromEntries(entries, current, request);
   const taskInfo = nextId(current, "task");
   current.nextId = taskInfo.nextCounter;

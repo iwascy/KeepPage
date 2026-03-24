@@ -359,6 +359,28 @@ export function ImportNewPanel({
             <table className="import-table">
               <thead>
                 <tr>
+                  <th>收藏夹</th>
+                  <th>数量</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.folders.length === 0 ? (
+                  <tr><td colSpan={2}>未识别出收藏夹层级</td></tr>
+                ) : (
+                  preview.folders.map((folder) => (
+                    <tr key={folder.path}>
+                      <td>{folder.path}</td>
+                      <td>{folder.count}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="import-table-wrap">
+            <table className="import-table">
+              <thead>
+                <tr>
                   <th>标题</th>
                   <th>URL</th>
                   <th>收藏夹</th>
