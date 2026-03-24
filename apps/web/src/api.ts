@@ -100,7 +100,17 @@ export type ImportItemStatus =
   | "archived"
   | "skipped"
   | "failed";
-export type ImportDedupeResult = "created" | "merged" | "skipped" | "duplicate_in_file" | "invalid";
+export type ImportDedupeResult =
+  | "created"
+  | "merged"
+  | "skipped"
+  | "duplicate_in_file"
+  | "invalid"
+  | "created_bookmark"
+  | "merged_existing"
+  | "skipped_existing"
+  | "skipped_duplicate"
+  | "invalid_input";
 
 export type ImportPreviewRequest = {
   sourceType: ImportSourceType;
@@ -115,14 +125,19 @@ export type ImportPreviewRequest = {
 };
 
 export type ImportPreviewStats = {
-  rawTotal: number;
+  totalCount?: number;
+  rawTotal?: number;
   validCount: number;
   invalidCount: number;
   duplicateInFileCount: number;
-  duplicateInLibraryCount: number;
-  willCreateCount: number;
-  willMergeCount: number;
-  willSkipCount: number;
+  duplicateExistingCount?: number;
+  duplicateInLibraryCount?: number;
+  estimatedCreateCount?: number;
+  willCreateCount?: number;
+  estimatedMergeCount?: number;
+  willMergeCount?: number;
+  estimatedSkipCount?: number;
+  willSkipCount?: number;
 };
 
 export type ImportPreviewItem = {
@@ -152,7 +167,8 @@ export type ImportTaskSummary = {
   sourceType: ImportSourceType;
   mode: ImportMode;
   totalCount: number;
-  successCount: number;
+  createdCount?: number;
+  successCount?: number;
   mergedCount: number;
   skippedCount: number;
   failedCount: number;
@@ -167,11 +183,13 @@ export type ImportTaskItem = {
   title: string;
   url: string;
   domain: string;
+  folderPath?: string;
   sourceFolderPath?: string;
   status: ImportItemStatus;
   dedupeResult?: ImportDedupeResult;
   bookmarkId?: string;
   hasArchive?: boolean;
+  reason?: string;
   errorReason?: string;
 };
 
@@ -276,12 +294,24 @@ function toImportSourceType(value: unknown): ImportSourceType {
   if (value === "browser_html" || value === "url_list" || value === "csv_txt" || value === "browser_extension") {
     return value;
   }
+  if (value === "bookmark_html") {
+    return "browser_html";
+  }
+  if (value === "csv_file" || value === "text_file" || value === "markdown_file") {
+    return "csv_txt";
+  }
+  if (value === "browser_bookmarks") {
+    return "browser_extension";
+  }
   return "url_list";
 }
 
 function toImportMode(value: unknown): ImportMode {
   if (value === "links_only" || value === "queue_archive" || value === "archive_now") {
     return value;
+  }
+  if (value === "start_archive") {
+    return "archive_now";
   }
   return "links_only";
 }
@@ -322,6 +352,11 @@ function toImportDedupeResult(value: unknown): ImportDedupeResult | undefined {
     "skipped",
     "duplicate_in_file",
     "invalid",
+    "created_bookmark",
+    "merged_existing",
+    "skipped_existing",
+    "skipped_duplicate",
+    "invalid_input",
   ];
   return valid.includes(value as ImportDedupeResult) ? (value as ImportDedupeResult) : undefined;
 }
@@ -335,6 +370,7 @@ function toImportSummary(value: unknown): ImportTaskSummary {
     sourceType: toImportSourceType(row.sourceType),
     mode: toImportMode(row.mode),
     totalCount: asNumber(row.totalCount),
+    createdCount: asNumber(row.createdCount),
     successCount: asNumber(row.successCount),
     mergedCount: asNumber(row.mergedCount),
     skippedCount: asNumber(row.skippedCount),
@@ -353,11 +389,13 @@ function toImportItem(value: unknown): ImportTaskItem {
     title: asString(row.title, "(无标题)"),
     url: asString(row.url),
     domain: asString(row.domain),
+    folderPath: asString(row.folderPath) || undefined,
     sourceFolderPath: asString(row.sourceFolderPath) || undefined,
     status: toImportItemStatus(row.status),
     dedupeResult: toImportDedupeResult(row.dedupeResult),
     bookmarkId: asString(row.bookmarkId) || undefined,
     hasArchive: typeof row.hasArchive === "boolean" ? row.hasArchive : undefined,
+    reason: asString(row.reason) || undefined,
     errorReason: asString(row.errorReason) || undefined,
   };
 }
@@ -571,7 +609,14 @@ export async function previewImport(input: ImportPreviewRequest, token: string):
   const domainsRaw = Array.isArray(payload.domains) ? payload.domains : [];
   const samples = samplesRaw.map((item) => {
     const row = asRecord(item);
-    const status = asString(row.status, "valid");
+    const derivedStatus = !asBoolean(row.valid, true)
+      ? "invalid"
+      : asBoolean(row.duplicateInFile)
+      ? "duplicate_in_file"
+      : asString(row.existingBookmarkId)
+      ? "duplicate_in_library"
+      : "valid";
+    const status = asString(row.status, derivedStatus);
     const sampleStatus: ImportPreviewItem["status"] = (
       status === "valid" || status === "invalid" || status === "duplicate_in_file" || status === "duplicate_in_library"
         ? status
@@ -594,20 +639,25 @@ export async function previewImport(input: ImportPreviewRequest, token: string):
     source: "api",
     sourceType: toImportSourceType(payload.sourceType),
     stats: {
-      rawTotal: asNumber(summary.rawTotal),
+      totalCount: asNumber(summary.totalCount || summary.rawTotal),
+      rawTotal: asNumber(summary.rawTotal || summary.totalCount),
       validCount: asNumber(summary.validCount),
       invalidCount: asNumber(summary.invalidCount),
       duplicateInFileCount: asNumber(summary.duplicateInFileCount),
-      duplicateInLibraryCount: asNumber(summary.duplicateInLibraryCount),
-      willCreateCount: asNumber(summary.willCreateCount),
-      willMergeCount: asNumber(summary.willMergeCount),
-      willSkipCount: asNumber(summary.willSkipCount),
+      duplicateExistingCount: asNumber(summary.duplicateExistingCount || summary.duplicateInLibraryCount),
+      duplicateInLibraryCount: asNumber(summary.duplicateInLibraryCount || summary.duplicateExistingCount),
+      estimatedCreateCount: asNumber(summary.estimatedCreateCount || summary.willCreateCount),
+      willCreateCount: asNumber(summary.willCreateCount || summary.estimatedCreateCount),
+      estimatedMergeCount: asNumber(summary.estimatedMergeCount || summary.willMergeCount),
+      willMergeCount: asNumber(summary.willMergeCount || summary.estimatedMergeCount),
+      estimatedSkipCount: asNumber(summary.estimatedSkipCount || summary.willSkipCount),
+      willSkipCount: asNumber(summary.willSkipCount || summary.estimatedSkipCount),
     },
     samples,
     domains: domainsRaw.map((item) => {
       const row = asRecord(item);
       return {
-        domain: asString(row.domain),
+        domain: asString(row.domain || row.value),
         count: asNumber(row.count),
       };
     }),

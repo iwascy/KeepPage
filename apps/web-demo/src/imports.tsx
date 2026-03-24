@@ -102,6 +102,30 @@ function importTaskStatusLabel(status: ImportTaskStatus) {
   return map[status];
 }
 
+function getPreviewTotalCount(preview: ImportPreviewResult) {
+  return preview.stats.totalCount ?? preview.stats.rawTotal ?? 0;
+}
+
+function getPreviewCreateCount(preview: ImportPreviewResult) {
+  return preview.stats.estimatedCreateCount ?? preview.stats.willCreateCount ?? 0;
+}
+
+function getPreviewDuplicateCount(preview: ImportPreviewResult) {
+  return preview.stats.duplicateExistingCount ?? preview.stats.duplicateInLibraryCount ?? 0;
+}
+
+function getTaskCreatedCount(task: ImportTaskSummary) {
+  return task.createdCount ?? task.successCount ?? 0;
+}
+
+function getTaskSuccessCount(task: ImportTaskSummary) {
+  return getTaskCreatedCount(task) + task.mergedCount + task.skippedCount;
+}
+
+function getItemReason(item: ImportTaskDetailResult["items"][number]) {
+  return item.reason ?? item.errorReason ?? "—";
+}
+
 export function ImportNewPanel({
   token,
   onApiError,
@@ -336,10 +360,10 @@ export function ImportNewPanel({
       {preview ? (
         <section className="import-card import-preview">
           <div className="summary import-summary">
-            <article className="metric"><p>总数</p><h3>{preview.stats.rawTotal}</h3></article>
+            <article className="metric"><p>总数</p><h3>{getPreviewTotalCount(preview)}</h3></article>
             <article className="metric"><p>有效</p><h3>{preview.stats.validCount}</h3></article>
-            <article className="metric"><p>新建</p><h3>{preview.stats.willCreateCount}</h3></article>
-            <article className="metric"><p>重复</p><h3>{preview.stats.duplicateInLibraryCount}</h3></article>
+            <article className="metric"><p>新建</p><h3>{getPreviewCreateCount(preview)}</h3></article>
+            <article className="metric"><p>重复</p><h3>{getPreviewDuplicateCount(preview)}</h3></article>
           </div>
           <div className="import-table-wrap">
             <table className="import-table">
@@ -456,7 +480,7 @@ export function ImportHistoryPanel({
                       <span className={`task-status task-status-${task.status}`}>{importTaskStatusLabel(task.status)}</span>
                     </td>
                     <td>{task.totalCount}</td>
-                    <td>{task.successCount + task.mergedCount + task.skippedCount}</td>
+                    <td>{getTaskSuccessCount(task)}</td>
                     <td>{task.failedCount}</td>
                     <td>{formatWhen(task.createdAt)}</td>
                   </tr>
@@ -547,7 +571,7 @@ export function ImportDetailPanel({
 
       <section className="summary import-summary">
         <article className="metric"><p>总数</p><h3>{task.totalCount}</h3></article>
-        <article className="metric"><p>成功</p><h3>{task.successCount + task.mergedCount + task.skippedCount}</h3></article>
+        <article className="metric"><p>成功</p><h3>{getTaskSuccessCount(task)}</h3></article>
         <article className="metric"><p>失败</p><h3>{task.failedCount}</h3></article>
         <article className="metric"><p>归档</p><h3>{task.archiveSuccessCount}</h3></article>
       </section>
@@ -573,7 +597,7 @@ export function ImportDetailPanel({
                     <td>{item.title}</td>
                     <td><span className="ellipsis-cell">{item.url}</span></td>
                     <td>{item.status}</td>
-                    <td>{item.errorReason ?? "—"}</td>
+                    <td>{getItemReason(item)}</td>
                     <td>
                       {item.bookmarkId ? (
                         <button
