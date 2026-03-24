@@ -5,6 +5,7 @@ import type {
   CaptureTask,
   PrivateAutoLock,
   PrivateVaultSummary,
+  QualityGrade,
   SaveMode,
 } from "@keeppage/domain";
 import {
@@ -75,6 +76,77 @@ const AUTO_LOCK_OPTIONS: Array<{ value: PrivateAutoLock; label: string }> = [
 
 const AUTH_PAGE_VIEW = new URLSearchParams(window.location.search).get("view") === "auth";
 const AUTH_PAGE_REASON = new URLSearchParams(window.location.search).get("reason");
+
+function captureStatusLabel(status: CaptureTask["status"]) {
+  switch (status) {
+    case "queued":
+      return "排队中";
+    case "capturing":
+      return "抓取中";
+    case "validating":
+      return "校验中";
+    case "local_ready":
+      return "本地就绪";
+    case "upload_pending":
+      return "等待同步";
+    case "uploading":
+      return "同步中";
+    case "uploaded":
+      return "已上传";
+    case "indexed":
+      return "建索引中";
+    case "synced":
+      return "已入库";
+    case "failed":
+      return "失败";
+  }
+}
+
+function captureProfileLabel(profile: CaptureProfile) {
+  return PROFILE_OPTIONS.find((option) => option.value === profile)?.label ?? profile;
+}
+
+function captureScopeLabel(scope: CaptureTask["source"]["captureScope"]) {
+  return scope === "selection" ? "选中区域" : "整页";
+}
+
+function privateSyncStateLabel(syncState?: CaptureTask["syncState"]) {
+  switch (syncState) {
+    case "local-only":
+      return "仅本机";
+    case "sync-disabled":
+      return "未启用同步";
+    case "sync-pending":
+      return "等待同步";
+    case "sync-failed":
+      return "同步失败";
+    default:
+      return null;
+  }
+}
+
+function qualityGradeLabel(grade?: QualityGrade) {
+  switch (grade) {
+    case "high":
+      return "高";
+    case "medium":
+      return "中";
+    case "low":
+      return "低";
+    default:
+      return "待评估";
+  }
+}
+
+function privateModeLabel(mode?: CaptureTask["privateMode"]) {
+  switch (mode) {
+    case "encrypted-sync":
+      return "端到端同步";
+    case "local-only":
+    default:
+      return "本机私密";
+  }
+}
 
 export function App() {
   const [tasks, setTasks] = useState<CaptureTask[]>([]);
@@ -589,7 +661,7 @@ export function App() {
       <div className="auth-page">
         <main className="auth-page-shell">
           <section className="auth-page-hero">
-            <p className="eyebrow">KeepPage Queue</p>
+            <p className="eyebrow">KeepPage 队列</p>
             <h1>{authPageTitle}</h1>
             <p className="auth-page-subtitle">{authPageSubtitle}</p>
           </section>
@@ -656,7 +728,7 @@ export function App() {
                       type="email"
                       value={authEmail}
                       onChange={(event) => setAuthEmail(event.target.value)}
-                      placeholder="you@example.com"
+                      placeholder="name@example.com"
                     />
                   </label>
                   <label className="field-inline">
@@ -688,7 +760,7 @@ export function App() {
               </div>
               <div className="settings-fields">
                 <label className="field-inline">
-                  <span>API Base URL</span>
+                  <span>API 地址</span>
                   <input
                     value={apiBaseUrl}
                     onChange={(event) => setApiBaseUrl(event.target.value)}
@@ -744,8 +816,8 @@ export function App() {
     <div className="layout">
       <header className="header">
         <div className="header-copy">
-          <p className="eyebrow">KeepPage Queue</p>
-          <h1>{isPrivateView ? "Private Vault 私密队列" : "Archive-First 保存队列"}</h1>
+          <p className="eyebrow">KeepPage 队列</p>
+          <h1>{isPrivateView ? "私密归档队列" : "本地归档队列"}</h1>
           <p className="header-subtitle">
             {isPrivateView
               ? "私密任务会先在当前设备加密写入本地库，锁定状态下不展示标题、URL 与质量详情。"
@@ -961,7 +1033,7 @@ export function App() {
                   type="email"
                   value={authEmail}
                   onChange={(event) => setAuthEmail(event.target.value)}
-                  placeholder="you@example.com"
+                  placeholder="name@example.com"
                 />
               </label>
               <label className="field-inline">
@@ -996,7 +1068,7 @@ export function App() {
         </div>
         <div className="settings-fields">
           <label className="field-inline">
-            <span>API Base URL</span>
+            <span>API 地址</span>
             <input
               value={apiBaseUrl}
               onChange={(event) => setApiBaseUrl(event.target.value)}
@@ -1072,12 +1144,14 @@ export function App() {
                   <p className="task-selection">{task.source.selectionText}</p>
                 ) : null}
                 <div className="task-meta">
-                  <span className={`status status-${task.status}`}>{task.status}</span>
+                  <span className={`status status-${task.status}`}>{captureStatusLabel(task.status)}</span>
                   {lockedTask ? (
-                    <span className="grade grade-private">LOCKED</span>
+                    <span className="grade grade-private">已锁定</span>
                   ) : (
                     <span className={`grade grade-${task.quality?.grade ?? "none"}`}>
-                      {task.quality ? `${task.quality.grade.toUpperCase()} ${task.quality.score}` : "N/A"}
+                      {task.quality
+                        ? `${qualityGradeLabel(task.quality.grade)} · ${task.quality.score} 分`
+                        : "待评估"}
                     </span>
                   )}
                 </div>
@@ -1102,7 +1176,7 @@ export function App() {
                 当前只展示最小摘要信息。输入私密口令解锁后，才能查看标题、域名、质量诊断和本地预览。
               </p>
               <div className="task-facts">
-                <span>状态：{selectedTask.status}</span>
+                <span>状态：{captureStatusLabel(selectedTask.status)}</span>
                 <span>模式：本机私密</span>
                 {vaultSummary?.lastUpdatedAt ? (
                   <span>最近更新：{formatDateTime(vaultSummary.lastUpdatedAt)}</span>
@@ -1139,24 +1213,33 @@ export function App() {
               ) : null}
               <div className="task-facts">
                 {selectedTask.owner ? <span>账号：{selectedTask.owner.email}</span> : null}
-                <span>状态：{selectedTask.status}</span>
-                <span>Profile：{selectedTask.profile}</span>
-                <span>范围：{selectedTask.source.captureScope === "selection" ? "选中区域" : "整页"}</span>
-                {selectedTask.isPrivate ? <span>私密模式：本机私密</span> : null}
-                {selectedTask.syncState ? <span>同步：{selectedTask.syncState}</span> : null}
-                {selectedTask.bookmarkId && <span>Bookmark：{selectedTask.bookmarkId}</span>}
+                <span>状态：{captureStatusLabel(selectedTask.status)}</span>
+                <span>抓取配置：{captureProfileLabel(selectedTask.profile)}</span>
+                <span>范围：{captureScopeLabel(selectedTask.source.captureScope)}</span>
+                {selectedTask.isPrivate ? <span>私密模式：{privateModeLabel(selectedTask.privateMode)}</span> : null}
+                {privateSyncStateLabel(selectedTask.syncState) ? (
+                  <span>同步状态：{privateSyncStateLabel(selectedTask.syncState)}</span>
+                ) : null}
+                {selectedTask.bookmarkId && <span>书签记录：{selectedTask.bookmarkId}</span>}
               </div>
               <div className="quality-box">
                 <p>
-                  质量等级:{" "}
-                  <strong>{selectedTask.quality?.grade ?? "unknown"}</strong>{" "}
-                  {selectedTask.quality ? `(${selectedTask.quality.score})` : ""}
+                  归档质量：
+                  {" "}
+                  <strong>
+                    {selectedTask.quality
+                      ? `${qualityGradeLabel(selectedTask.quality.grade)} · ${selectedTask.quality.score} 分`
+                      : "待评估"}
+                  </strong>
                 </p>
                 {(selectedTask.quality?.reasons ?? []).slice(0, 3).map((reason) => (
                   <p className="reason" key={reason.code}>
                     {reason.message}
                   </p>
                 ))}
+                {!selectedTask.quality && !selectedTask.failureReason ? (
+                  <p className="reason">当前任务还没有生成质量诊断，稍后会补充评分与原因。</p>
+                ) : null}
                 {selectedTask.failureReason && (
                   <p className="reason error">{selectedTask.failureReason}</p>
                 )}
