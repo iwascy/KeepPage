@@ -121,7 +121,6 @@ export type ImportPreviewRequest = {
   titleStrategy: "prefer_input" | "prefer_web" | "update_later";
   targetFolderMode: "keep_source" | "specific_folder" | "flatten";
   targetFolderPath?: string;
-  addBatchTag?: boolean;
 };
 
 export type ImportPreviewStats = {
@@ -146,6 +145,7 @@ export type ImportPreviewItem = {
   url: string;
   domain: string;
   folderPath?: string;
+  sourceTags?: string[];
   status: "valid" | "invalid" | "duplicate_in_file" | "duplicate_in_library";
   reason?: string;
   existingBookmarkId?: string;
@@ -628,6 +628,9 @@ export async function previewImport(input: ImportPreviewRequest, token: string):
       url: asString(row.url),
       domain: asString(row.domain),
       folderPath: asString(row.folderPath) || undefined,
+      sourceTags: Array.isArray(row.sourceTags)
+        ? row.sourceTags.filter((value): value is string => typeof value === "string")
+        : undefined,
       status: sampleStatus,
       reason: asString(row.reason) || undefined,
       existingBookmarkId: asString(row.existingBookmarkId) || undefined,

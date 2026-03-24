@@ -34,6 +34,8 @@ type ParsedImportItem = {
   title: string;
   url?: string;
   domain?: string;
+  folderPath?: string;
+  sourceTags?: string[];
   reason?: string;
 };
 
@@ -397,6 +399,8 @@ function createImportPreviewFromEntries(
         title: entry.title || "无效条目",
         url: entry.raw,
         domain: "invalid",
+        folderPath: entry.folderPath,
+        sourceTags: entry.sourceTags,
         status: "invalid" as const,
         reason: entry.reason ?? "缺少有效 URL",
       };
@@ -411,6 +415,8 @@ function createImportPreviewFromEntries(
         title: entry.title,
         url: entry.url,
         domain: entry.domain,
+        folderPath: entry.folderPath,
+        sourceTags: entry.sourceTags,
         status: "duplicate_in_file" as const,
         reason: "与当前导入文件中的其他链接重复",
       };
@@ -430,6 +436,8 @@ function createImportPreviewFromEntries(
         title: existing.title,
         url: entry.url,
         domain: entry.domain,
+        folderPath: entry.folderPath,
+        sourceTags: entry.sourceTags,
         status: "duplicate_in_library" as const,
         reason: `已命中现有书签：${existing.title}`,
         existingBookmarkId: existing.id,
@@ -444,6 +452,8 @@ function createImportPreviewFromEntries(
       title: entry.title,
       url: entry.url,
       domain: entry.domain,
+      folderPath: entry.folderPath,
+      sourceTags: entry.sourceTags,
       status: "valid" as const,
       reason: request.mode === "links_only" ? "将导入为轻量书签" : "将生成书签并进入归档流程",
     };
@@ -1253,7 +1263,6 @@ function createGeneratedBookmark(
   entry: ParsedImportItem,
   request: ImportPreviewRequest,
   folder?: Folder,
-  batchTag?: Tag,
 ) {
   const idInfo = nextId(workspace, "bm");
   workspace.nextId = idInfo.nextCounter;
@@ -1272,7 +1281,7 @@ function createGeneratedBookmark(
     domain: entry.domain!,
     note: request.mode === "links_only" ? "由 Mock 导入工作台生成的轻量书签。" : "由 Mock 导入工作台生成，并附带预览归档。",
     isFavorite: false,
-    tags: batchTag ? [batchTag] : [],
+    tags: [],
     folder,
     latestVersionId: hasArchive ? versionInfo.id : undefined,
     versionCount: hasArchive ? 1 : 0,
@@ -1322,17 +1331,6 @@ export function createDemoImportTask(
   const preview = createImportPreviewFromEntries(entries, current, request);
   const taskInfo = nextId(current, "task");
   current.nextId = taskInfo.nextCounter;
-  let batchTag: Tag | undefined;
-  if (request.addBatchTag) {
-    const tagInfo = nextId(current, "tag");
-    current.nextId = tagInfo.nextCounter;
-    batchTag = {
-      id: tagInfo.id,
-      name: `import-${new Date().toISOString().slice(5, 10).replace("-", "")}`,
-      color: "#6b7280",
-    };
-    current.tags = [...current.tags, batchTag];
-  }
 
   const folderResult = request.targetFolderMode === "specific_folder"
     ? ensureFolderPath(current, request.targetFolderPath)
@@ -1416,7 +1414,7 @@ export function createDemoImportTask(
       continue;
     }
 
-    const bookmark = createGeneratedBookmark(current, entry, request, folderResult.folder, batchTag);
+    const bookmark = createGeneratedBookmark(current, entry, request, folderResult.folder);
     existingByUrl.set(bookmark.sourceUrl, bookmark);
     successCount += 1;
     if (request.mode !== "links_only") {

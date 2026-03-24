@@ -145,7 +145,6 @@ export function ImportNewPanel({
   const [titleStrategy, setTitleStrategy] = useState<ImportPreviewRequest["titleStrategy"]>("prefer_input");
   const [targetFolderMode, setTargetFolderMode] = useState<ImportPreviewRequest["targetFolderMode"]>("keep_source");
   const [targetFolderPath, setTargetFolderPath] = useState("");
-  const [addBatchTag, setAddBatchTag] = useState(true);
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -164,7 +163,6 @@ export function ImportNewPanel({
     titleStrategy,
     targetFolderMode,
     targetFolderPath: targetFolderPath.trim() || undefined,
-    addBatchTag,
   };
   const runPreviewImport = adapter?.previewImport ?? previewImportRequest;
   const runCreateImportTask = adapter?.createImportTask ?? createImportTaskRequest;
@@ -338,14 +336,6 @@ export function ImportNewPanel({
                 />
               </label>
             ) : null}
-            <label className="check-row">
-              <input
-                type="checkbox"
-                checked={addBatchTag}
-                onChange={(event) => setAddBatchTag(event.target.checked)}
-              />
-              <span>追加批次标签</span>
-            </label>
           </details>
         </div>
 
@@ -375,18 +365,22 @@ export function ImportNewPanel({
                 <tr>
                   <th>标题</th>
                   <th>URL</th>
+                  <th>收藏夹</th>
+                  <th>标签</th>
                   <th>状态</th>
                   <th>说明</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.samples.length === 0 ? (
-                  <tr><td colSpan={4}>暂无预览条目</td></tr>
+                  <tr><td colSpan={6}>暂无预览条目</td></tr>
                 ) : (
                   preview.samples.map((item) => (
                     <tr key={item.id}>
                       <td>{item.title}</td>
                       <td><span className="ellipsis-cell">{item.url}</span></td>
+                      <td>{item.folderPath ?? "—"}</td>
+                      <td>{item.sourceTags?.length ? item.sourceTags.join(", ") : "—"}</td>
                       <td>{item.status}</td>
                       <td>{item.reason || "—"}</td>
                     </tr>

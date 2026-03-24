@@ -55,7 +55,6 @@ export const importTargetFolderModeValues = [
 
 export const importTagStrategyValues = [
   "keep_source_tags",
-  "append_batch_tag",
   "none",
 ] as const;
 
@@ -111,6 +110,7 @@ export const importPreviewItemSchema = z.object({
   url: z.string().optional(),
   domain: z.string().optional(),
   folderPath: z.string().optional(),
+  sourceTags: z.array(z.string().min(1)).default([]),
   valid: z.boolean(),
   duplicateInFile: z.boolean().default(false),
   existingBookmarkId: z.string().min(1).optional(),

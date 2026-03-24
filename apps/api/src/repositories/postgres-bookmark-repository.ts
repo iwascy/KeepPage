@@ -1934,7 +1934,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     tx: any,
     userId: string,
     sourceTags: string[],
-    taskName: string,
+    _taskName: string,
     options: ImportExecutionOptions,
     now: Date,
   ) {
@@ -1945,9 +1945,6 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
           names.add(tagName.trim());
         }
       }
-    }
-    if (options.tagStrategy === "append_batch_tag") {
-      names.add(`导入批次:${taskName}`);
     }
     if (names.size === 0) {
       return [];

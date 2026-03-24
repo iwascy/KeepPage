@@ -120,6 +120,7 @@ export function buildImportPreview(input: {
       url: item.url,
       domain: item.domain,
       folderPath: item.folderPath,
+      sourceTags: item.sourceTags,
       valid: item.valid,
       duplicateInFile: item.duplicateInFile,
       existingBookmarkId: match?.bookmarkId,

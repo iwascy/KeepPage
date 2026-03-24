@@ -1178,7 +1178,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   private resolveTags(
     state: UserBookmarkState,
     item: PreparedImportItem,
-    taskName: string,
+    _taskName: string,
     options: ImportExecutionOptions,
   ) {
     const names = new Set<string>();
@@ -1186,9 +1186,6 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       for (const tagName of item.sourceTags) {
         names.add(tagName);
       }
-    }
-    if (options.tagStrategy === "append_batch_tag") {
-      names.add(`导入批次:${taskName}`);
     }
 
     return [...names].map((tagName) => {

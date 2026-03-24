@@ -145,7 +145,7 @@ function normalizeImportRequestBody(body: unknown) {
       mode: normalizeMode(readOption(record, "mode")),
       targetFolderMode: normalizeTargetFolderMode(readOption(record, "targetFolderMode")),
       targetFolderPath: asOptionalString(readOption(record, "targetFolderPath")),
-      tagStrategy: normalizeTagStrategy(readOption(record, "tagStrategy"), readOption(record, "addBatchTag")),
+      tagStrategy: normalizeTagStrategy(readOption(record, "tagStrategy")),
       titleStrategy: normalizeTitleStrategy(readOption(record, "titleStrategy")),
       dedupeStrategy: normalizeDedupeStrategy(readOption(record, "dedupeStrategy")),
     }),
@@ -203,12 +203,9 @@ function normalizeTargetFolderMode(value: unknown) {
   return "preserve";
 }
 
-function normalizeTagStrategy(value: unknown, addBatchTag: unknown) {
-  if (value === "keep_source_tags" || value === "append_batch_tag" || value === "none") {
+function normalizeTagStrategy(value: unknown) {
+  if (value === "keep_source_tags" || value === "none") {
     return value;
-  }
-  if (typeof addBatchTag === "boolean") {
-    return addBatchTag ? "append_batch_tag" : "none";
   }
   return "none";
 }
