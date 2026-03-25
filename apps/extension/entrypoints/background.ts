@@ -25,7 +25,6 @@ import {
 import {
   recoverUnauthorizedSession,
   openExtensionAuthPage,
-  openWorkspaceUi,
   openSidePanelForWindow,
   validateStoredAuthSession,
 } from "../src/lib/auth-flow";
@@ -77,7 +76,9 @@ export default defineBackground(() => {
       if (!await ensureAuthenticated("toolbar-action")) {
         return;
       }
-      await openWorkspaceUi(tab.windowId);
+      await attemptQuickCapture(tab.windowId, "standard", {
+        openSidePanelOnFinish: false,
+      });
     }
   });
 
@@ -289,7 +290,14 @@ async function ensureAuthenticated(trigger: string) {
   return false;
 }
 
-async function attemptQuickCapture(windowId: number | undefined, profile: "standard") {
+async function attemptQuickCapture(
+  windowId: number | undefined,
+  profile: "standard",
+  options: {
+    openSidePanelOnFinish?: boolean;
+  } = {},
+) {
+  const { openSidePanelOnFinish = true } = options;
   try {
     await captureActiveTab(profile);
   } catch (error) {
@@ -297,7 +305,7 @@ async function attemptQuickCapture(windowId: number | undefined, profile: "stand
       error: error instanceof Error ? error.message : String(error),
     });
   } finally {
-    if (windowId != null) {
+    if (openSidePanelOnFinish && windowId != null) {
       await openSidePanelForWindow(windowId);
     }
   }
