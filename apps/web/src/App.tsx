@@ -15,6 +15,7 @@ import type {
   AuthUser,
   Bookmark,
   BookmarkListView,
+  CloudArchiveRequest,
   CloudArchiveStatus,
   Folder,
   QualityGrade,
@@ -2675,6 +2676,7 @@ function cloudArchiveStatusLabel(status: CloudArchiveStatus) {
 
 function CloudArchiveDialog({
   state,
+  isUpdateMode,
   url,
   title,
   folderId,
@@ -2693,6 +2695,7 @@ function CloudArchiveDialog({
   onOpenBookmark,
 }: {
   state: CloudArchiveDialogState;
+  isUpdateMode: boolean;
   url: string;
   title: string;
   folderId: string;
@@ -2732,13 +2735,17 @@ function CloudArchiveDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="create-folder-header">
-          <h2 id="cloud-archive-title" className="create-folder-heading">云端存档</h2>
+          <h2 id="cloud-archive-title" className="create-folder-heading">
+            {isUpdateMode ? "云端更新存档" : "云端存档"}
+          </h2>
           <p className="create-folder-description">
             {state.step === "form"
-              ? "输入网页 URL，服务端将自动抓取并生成存档。"
+              ? (isUpdateMode
+                  ? "重新抓取当前网页并为这条书签追加新版本。"
+                  : "输入网页 URL，服务端将自动抓取并生成存档。")
               : state.step === "progress"
                 ? cloudArchiveStatusLabel(state.status)
-                : "存档已完成。"}
+                : (isUpdateMode ? "存档已更新完成。" : "存档已完成。")}
           </p>
           <button
             className="create-folder-close"
@@ -2821,7 +2828,7 @@ function CloudArchiveDialog({
                 取消
               </button>
               <button className="primary-button" type="submit" disabled={busy || !url.trim()}>
-                {busy ? "提交中..." : "开始存档"}
+                {busy ? "提交中..." : isUpdateMode ? "更新存档" : "开始存档"}
               </button>
             </div>
           </form>
@@ -2858,7 +2865,9 @@ function CloudArchiveDialog({
           </div>
         ) : state.step === "done" ? (
           <div className="create-folder-body" style={{ textAlign: "center", padding: "24px 0" }}>
-            <p style={{ marginBottom: "16px" }}>网页已成功存档！</p>
+            <p style={{ marginBottom: "16px" }}>
+              {isUpdateMode ? "当前书签已成功更新存档。" : "网页已成功存档！"}
+            </p>
             <div className="manager-dialog-actions">
               <button className="secondary-button" type="button" onClick={onClose}>
                 关闭
@@ -3084,12 +3093,14 @@ function DetailPanel({
   activePreviewMode,
   folders,
   tags,
+  cloudArchiveUpdating,
   metadataNote,
   metadataIsFavorite,
   metadataFolderId,
   metadataTagIds,
   metadataSaving,
   metadataFeedback,
+  onCloudArchiveRefresh,
   onMetadataNoteChange,
   onMetadataFavoriteChange,
   onMetadataFolderChange,
@@ -3104,12 +3115,14 @@ function DetailPanel({
   activePreviewMode: ArchiveViewMode | null;
   folders: Folder[];
   tags: Tag[];
+  cloudArchiveUpdating: boolean;
   metadataNote: string;
   metadataIsFavorite: boolean;
   metadataFolderId: string;
   metadataTagIds: string[];
   metadataSaving: boolean;
   metadataFeedback: InlineFeedback | null;
+  onCloudArchiveRefresh: () => void;
   onMetadataNoteChange: (value: string) => void;
   onMetadataFavoriteChange: (value: boolean) => void;
   onMetadataFolderChange: (value: string) => void;
@@ -3352,6 +3365,15 @@ function DetailPanel({
 
         {/* Action Buttons */}
         <div className="detail-actions-footer">
+          <button
+            className="detail-action-button is-primary"
+            type="button"
+            onClick={onCloudArchiveRefresh}
+            disabled={cloudArchiveUpdating}
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">cloud_sync</span>
+            {cloudArchiveUpdating ? "更新中..." : "云端更新"}
+          </button>
           {previewState.status === "ready" && activePreviewMode ? (
             <a
               className="detail-action-button"
@@ -3438,6 +3460,7 @@ export function App({
   const [cloudArchiveTitle, setCloudArchiveTitle] = useState("");
   const [cloudArchiveFolderId, setCloudArchiveFolderId] = useState("");
   const [cloudArchiveTagIds, setCloudArchiveTagIds] = useState<string[]>([]);
+  const [cloudArchiveTargetBookmarkId, setCloudArchiveTargetBookmarkId] = useState<string | null>(null);
   const [cloudArchiveBusy, setCloudArchiveBusy] = useState(false);
   const [cloudArchiveError, setCloudArchiveError] = useState<string | null>(null);
   const cloudArchiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -3583,6 +3606,7 @@ export function App({
     setCloudArchiveTitle("");
     setCloudArchiveFolderId("");
     setCloudArchiveTagIds([]);
+    setCloudArchiveTargetBookmarkId(null);
     setCloudArchiveBusy(false);
     setCloudArchiveError(null);
     setCloudArchiveDialog({ step: "form" });
@@ -3593,6 +3617,7 @@ export function App({
       clearInterval(cloudArchiveTimerRef.current);
       cloudArchiveTimerRef.current = null;
     }
+    setCloudArchiveTargetBookmarkId(null);
     setCloudArchiveDialog({ step: "closed" });
   }
 
@@ -3621,6 +3646,9 @@ export function App({
           if (authToken) {
             void refreshBookmarksList(authToken);
             void refreshSidebarCountItems(authToken);
+            if (route.page === "detail" && task.bookmarkId === route.bookmarkId) {
+              void refreshBookmarkDetail(authToken, route.bookmarkId);
+            }
           }
         } else if (task.status === "failed") {
           if (cloudArchiveTimerRef.current) {
@@ -3646,20 +3674,28 @@ export function App({
     }, 2000);
   }
 
-  async function handleCloudArchiveSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!authToken || !cloudArchiveUrl.trim()) {
+  async function startCloudArchiveTask(
+    input: CloudArchiveRequest,
+    options?: { targetBookmarkId?: string | null },
+  ) {
+    if (!authToken || !input.url.trim()) {
       return;
     }
+    setCloudArchiveUrl(input.url);
+    setCloudArchiveTitle(input.title ?? "");
+    setCloudArchiveFolderId(input.folderId ?? "");
+    setCloudArchiveTagIds(input.tagIds ?? []);
+    setCloudArchiveTargetBookmarkId(options?.targetBookmarkId ?? null);
     setCloudArchiveBusy(true);
     setCloudArchiveError(null);
+    if (isDemoMode) {
+      setCloudArchiveDialog({ step: "form" });
+      setCloudArchiveError("Mock 模式暂不支持云端存档，请切换到真实 API 环境后使用。");
+      setCloudArchiveBusy(false);
+      return;
+    }
     try {
-      const result = await submitCloudArchive({
-        url: cloudArchiveUrl.trim(),
-        title: cloudArchiveTitle.trim() || undefined,
-        folderId: cloudArchiveFolderId || undefined,
-        tagIds: cloudArchiveTagIds.length > 0 ? cloudArchiveTagIds : undefined,
-      }, authToken);
+      const result = await submitCloudArchive(input, authToken);
       setCloudArchiveDialog({
         step: "progress",
         taskId: result.taskId,
@@ -3670,10 +3706,34 @@ export function App({
       if (handleProtectedApiError(error)) {
         return;
       }
+      setCloudArchiveDialog({ step: "form" });
       setCloudArchiveError(toErrorMessage(error));
     } finally {
       setCloudArchiveBusy(false);
     }
+  }
+
+  async function handleCloudArchiveSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await startCloudArchiveTask({
+      url: cloudArchiveUrl.trim(),
+      title: cloudArchiveTitle.trim() || undefined,
+      folderId: cloudArchiveFolderId || undefined,
+      tagIds: cloudArchiveTagIds.length > 0 ? cloudArchiveTagIds : undefined,
+    }, {
+      targetBookmarkId: cloudArchiveTargetBookmarkId,
+    });
+  }
+
+  async function handleCloudArchiveRefreshCurrentBookmark() {
+    if (!detail) {
+      return;
+    }
+    await startCloudArchiveTask({
+      url: detail.bookmark.sourceUrl,
+    }, {
+      targetBookmarkId: detail.bookmark.id,
+    });
   }
 
   function handleCloudArchiveRetry() {
@@ -5026,6 +5086,12 @@ export function App({
     ];
   }, [contextMenu, managerBusy, selectedFolderId, selectedTagId, route, authToken, demoState, isDemoMode, bookmarkView]);
 
+  const detailCloudArchiveUpdating = Boolean(
+    detail
+      && cloudArchiveTargetBookmarkId === detail.bookmark.id
+      && (cloudArchiveBusy || cloudArchiveDialog.step === "progress"),
+  );
+
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthSubmitting(true);
@@ -5214,12 +5280,14 @@ export function App({
           activePreviewMode={previewSelection?.mode ?? null}
           folders={folders}
           tags={tags}
+          cloudArchiveUpdating={detailCloudArchiveUpdating}
           metadataNote={metadataNote}
           metadataIsFavorite={metadataIsFavorite}
           metadataFolderId={metadataFolderId}
           metadataTagIds={metadataTagIds}
           metadataSaving={metadataSaving}
           metadataFeedback={metadataFeedback}
+          onCloudArchiveRefresh={() => void handleCloudArchiveRefreshCurrentBookmark()}
           onMetadataNoteChange={setMetadataNote}
           onMetadataFavoriteChange={setMetadataIsFavorite}
           onMetadataFolderChange={setMetadataFolderId}
@@ -5284,6 +5352,7 @@ export function App({
       />
       <CloudArchiveDialog
         state={cloudArchiveDialog}
+        isUpdateMode={Boolean(cloudArchiveTargetBookmarkId)}
         url={cloudArchiveUrl}
         title={cloudArchiveTitle}
         folderId={cloudArchiveFolderId}

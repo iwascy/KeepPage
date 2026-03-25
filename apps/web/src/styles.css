@@ -3720,7 +3720,7 @@ button {
   position: relative;
   padding-top: 1rem;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.55rem;
 }
 
@@ -3761,6 +3761,23 @@ button {
 
 .detail-action-button .material-symbols-outlined {
   font-size: 1rem;
+}
+
+.detail-action-button.is-primary {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(82, 82, 82, 0.16);
+}
+
+.detail-action-button.is-primary:hover {
+  background: linear-gradient(135deg, #666666, #4a4a4a);
+}
+
+.detail-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+  box-shadow: none;
 }
 
 .detail-action-button.is-danger {
