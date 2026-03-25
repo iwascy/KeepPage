@@ -47,7 +47,7 @@ import { getStoredAuthUser } from "./auth-storage";
 import { createLogger } from "./logger";
 import { syncTaskToApi } from "./sync-api";
 
-const DEFAULT_PROFILE: CaptureProfile = "standard";
+const DEFAULT_PROFILE: CaptureProfile = "complete";
 const logger = createLogger("capture");
 
 export async function captureActiveTab(
