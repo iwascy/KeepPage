@@ -728,11 +728,8 @@ function collectXiaohongshuMediaItems(input: {
     ...readXiaohongshuStateImages(archivedDocument, currentUrl),
     ...(liveDocument ? readXiaohongshuStateImages(liveDocument, currentUrl) : []),
   ]);
-  const liveImages = liveDocument ? queryXiaohongshuMediaImages(liveDocument) : [];
-  const candidates = [
-    ...queryXiaohongshuMediaImages(archivedDocument),
-    ...liveImages,
-  ];
+  const archivedMediaImages = queryXiaohongshuMediaImages(archivedDocument);
+  const liveMediaImages = liveDocument ? queryXiaohongshuMediaImages(liveDocument) : [];
   const seen = new Set<string>();
   const items: XiaohongshuMediaItem[] = [];
 
@@ -742,7 +739,7 @@ function collectXiaohongshuMediaItems(input: {
       continue;
     }
 
-    const matchingLiveImage = liveImages.find((image) => {
+    const matchingLiveImage = [...liveMediaImages, ...archivedMediaImages].find((image) => {
       const imageKey = normalizeXiaohongshuMediaKey(readImageCandidateUrl(image), currentUrl);
       return imageKey === key;
     });
@@ -768,6 +765,14 @@ function collectXiaohongshuMediaItems(input: {
     });
   }
 
+  if (items.length > 0) {
+    return items;
+  }
+
+  const candidates = [
+    ...archivedMediaImages,
+    ...liveMediaImages,
+  ];
   for (const image of candidates) {
     const key = normalizeXiaohongshuMediaKey(readImageCandidateUrl(image), currentUrl);
     if (key && seen.has(key)) {
@@ -796,8 +801,6 @@ function collectXiaohongshuMediaItems(input: {
 
 function queryXiaohongshuMediaImages(doc: Document) {
   return [
-    ...doc.querySelectorAll<HTMLImageElement>("#noteContainer img"),
-    ...doc.querySelectorAll<HTMLImageElement>(".note-container img"),
     ...doc.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
     ...doc.querySelectorAll<HTMLImageElement>(".media-container .img-container img"),
   ];
