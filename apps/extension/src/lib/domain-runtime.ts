@@ -407,6 +407,27 @@ function parseCaptureArtifacts(input: unknown): CaptureArtifacts {
     thumbnailDataUrl: expectOptionalString(record.thumbnailDataUrl, "capture artifacts thumbnailDataUrl"),
     screenshotDataUrl: expectOptionalString(record.screenshotDataUrl, "capture artifacts screenshotDataUrl"),
     pdfDataUrl: expectOptionalString(record.pdfDataUrl, "capture artifacts pdfDataUrl"),
+    downloadableMedia: expectArray(
+      record.downloadableMedia ?? [],
+      "capture artifacts downloadableMedia",
+    ).map((item) => {
+      const media = expectRecord(item, "capture artifacts downloadable media");
+      return {
+        id: expectString(media.id, "capture artifacts downloadable media id"),
+        kind: parseEnum(media.kind, ["image", "video", "video_cover"], "capture media kind"),
+        url: expectUrlString(media.url, "capture artifacts downloadable media url"),
+        mimeType: expectOptionalString(
+          media.mimeType,
+          "capture artifacts downloadable media mimeType",
+        ),
+        width: media.width == null
+          ? undefined
+          : expectInt(media.width, "capture artifacts downloadable media width", { min: 1 }),
+        height: media.height == null
+          ? undefined
+          : expectInt(media.height, "capture artifacts downloadable media height", { min: 1 }),
+      };
+    }),
     meta: expectRecord(record.meta ?? {}, "capture artifacts meta"),
   };
 }

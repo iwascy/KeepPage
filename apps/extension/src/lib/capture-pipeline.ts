@@ -333,6 +333,7 @@ async function captureTab(
           readerHtml,
           extractedText,
           screenshotDataUrl: screenshotDataUrl ?? undefined,
+          downloadableMedia: archiveResult.ok ? archiveResult.downloadableMedia ?? [] : [],
           meta: {
             usedSingleFile: archiveResult.ok && archiveResult.usedSingleFile === true,
           },
@@ -360,6 +361,7 @@ async function captureTab(
         readerHtml,
         extractedText,
         screenshotDataUrl: screenshotDataUrl ?? undefined,
+        downloadableMedia: archiveResult.ok ? archiveResult.downloadableMedia ?? [] : [],
         meta: {
           usedSingleFile: archiveResult.ok && archiveResult.usedSingleFile === true,
         },

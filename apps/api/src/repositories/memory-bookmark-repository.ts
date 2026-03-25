@@ -228,6 +228,13 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     const existingByObjectKey = state.versionsByObjectKey.get(input.objectKey);
     if (!pendingCapture && existingByObjectKey) {
       await this.persistReaderArchive(state, existingByObjectKey, input.readerHtml);
+      existingByObjectKey.mediaFiles = mergeBookmarkMediaFiles(
+        existingByObjectKey.mediaFiles,
+        input.mediaFiles,
+      );
+      for (const mediaFile of existingByObjectKey.mediaFiles ?? []) {
+        state.versionsByObjectKey.set(mediaFile.objectKey, existingByObjectKey);
+      }
       const bookmark = this.findBookmarkByVersionId(state, existingByObjectKey.id);
       if (!bookmark) {
         throw new Error("Existing version not linked to bookmark.");
@@ -271,6 +278,10 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
     if (matchedVersion) {
       await this.persistReaderArchive(state, matchedVersion, input.readerHtml);
+      matchedVersion.mediaFiles = mergeBookmarkMediaFiles(matchedVersion.mediaFiles, input.mediaFiles);
+      for (const mediaFile of matchedVersion.mediaFiles ?? []) {
+        state.versionsByObjectKey.set(mediaFile.objectKey, matchedVersion);
+      }
       state.pendingByObjectKey.delete(input.objectKey);
       bookmark.sourceUrl = input.source.url;
       bookmark.canonicalUrl = input.source.canonicalUrl;
@@ -299,6 +310,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       htmlSha256: input.htmlSha256,
       textSha256: input.textSha256,
       textSimhash: input.textSimhash,
+      mediaFiles: input.mediaFiles ?? [],
       captureProfile: pendingCapture.request.profile ?? "standard",
       quality: input.quality,
       createdAt: now,
@@ -310,6 +322,9 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     state.versionsByObjectKey.set(input.objectKey, version);
     if (version.readerHtmlObjectKey) {
       state.versionsByObjectKey.set(version.readerHtmlObjectKey, version);
+    }
+    for (const mediaFile of version.mediaFiles ?? []) {
+      state.versionsByObjectKey.set(mediaFile.objectKey, version);
     }
     state.pendingByObjectKey.delete(input.objectKey);
 
@@ -491,6 +506,9 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       state.versionsByObjectKey.delete(version.htmlObjectKey);
       if (version.readerHtmlObjectKey) {
         state.versionsByObjectKey.delete(version.readerHtmlObjectKey);
+      }
+      for (const mediaFile of version.mediaFiles ?? []) {
+        state.versionsByObjectKey.delete(mediaFile.objectKey);
       }
     }
 
@@ -938,12 +956,24 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
   async userCanReadObject(userId: string, objectKey: string) {
     const state = this.ensureUserState(userId);
-    return state.versionsByObjectKey.has(objectKey);
+    if (state.versionsByObjectKey.has(objectKey)) {
+      return true;
+    }
+
+    const ownerObjectKey = deriveHtmlObjectKeyFromMediaObjectKey(objectKey);
+    return ownerObjectKey ? state.versionsByObjectKey.has(ownerObjectKey) : false;
   }
 
   async userCanWriteObject(userId: string, objectKey: string) {
     const state = this.ensureUserState(userId);
-    return state.pendingByObjectKey.has(objectKey) || state.versionsByObjectKey.has(objectKey);
+    if (state.pendingByObjectKey.has(objectKey) || state.versionsByObjectKey.has(objectKey)) {
+      return true;
+    }
+
+    const ownerObjectKey = deriveHtmlObjectKeyFromMediaObjectKey(objectKey);
+    return ownerObjectKey
+      ? state.pendingByObjectKey.has(ownerObjectKey) || state.versionsByObjectKey.has(ownerObjectKey)
+      : false;
   }
 
   private ensureUserState(userId: string): UserBookmarkState {
@@ -1327,6 +1357,22 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     version.readerHtmlObjectKey = readerObjectKey;
     state.versionsByObjectKey.set(readerObjectKey, version);
   }
+}
+
+function deriveHtmlObjectKeyFromMediaObjectKey(objectKey: string) {
+  const matched = objectKey.match(/^(.*)\.assets\/[^/]+$/i);
+  return matched?.[1] ? `${matched[1]}.html` : null;
+}
+
+function mergeBookmarkMediaFiles(existing: BookmarkVersion["mediaFiles"], incoming?: BookmarkVersion["mediaFiles"]) {
+  const merged = new Map<string, NonNullable<BookmarkVersion["mediaFiles"]>[number]>();
+  for (const item of existing ?? []) {
+    merged.set(item.objectKey, item);
+  }
+  for (const item of incoming ?? []) {
+    merged.set(item.objectKey, item);
+  }
+  return [...merged.values()];
 }
 
 function deduplicateScopes(scopes: ApiTokenScope[]) {

@@ -5,6 +5,7 @@ import {
   type ApiTokenScope,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
+  bookmarkVersionMediaFileSchema,
   bookmarkVersionSchema,
   captureSourceSchema,
   createImportTaskId,
@@ -385,6 +386,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         bookmarkId: bookmarks.id,
         versionId: bookmarkVersions.id,
         readerHtmlObjectKey: bookmarkVersions.readerHtmlObjectKey,
+        sourceMetaJson: bookmarkVersions.sourceMetaJson,
       })
       .from(bookmarkVersions)
       .innerJoin(bookmarks, eq(bookmarks.id, bookmarkVersions.bookmarkId))
@@ -409,9 +411,11 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
             qualityGrade: input.quality.grade,
             qualityReasonsJson: input.quality.reasons,
             qualityReportJson: input.quality,
-            sourceMetaJson: {
-              source: input.source,
-            },
+            sourceMetaJson: this.buildSourceMetaPayload(
+              input.source,
+              input.mediaFiles,
+              existingByObjectKey[0].sourceMetaJson,
+            ),
           })
           .where(eq(bookmarkVersions.id, existingByObjectKey[0].versionId));
 
@@ -501,6 +505,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
           id: bookmarkVersions.id,
           htmlObjectKey: bookmarkVersions.htmlObjectKey,
           readerHtmlObjectKey: bookmarkVersions.readerHtmlObjectKey,
+          sourceMetaJson: bookmarkVersions.sourceMetaJson,
         })
         .from(bookmarkVersions)
         .where(
@@ -526,9 +531,11 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
             qualityGrade: input.quality.grade,
             qualityReasonsJson: input.quality.reasons,
             qualityReportJson: input.quality,
-            sourceMetaJson: {
-              source: input.source,
-            },
+            sourceMetaJson: this.buildSourceMetaPayload(
+              input.source,
+              input.mediaFiles,
+              duplicateVersionRows[0].sourceMetaJson,
+            ),
           })
           .where(eq(bookmarkVersions.id, duplicatedVersionId));
         await tx
@@ -581,9 +588,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         qualityGrade: input.quality.grade,
         qualityReasonsJson: input.quality.reasons,
         qualityReportJson: input.quality,
-        sourceMetaJson: {
-          source: input.source,
-        },
+        sourceMetaJson: this.buildSourceMetaPayload(input.source, input.mediaFiles),
         extractedText: input.extractedText ?? null,
         createdByDeviceId: null,
         createdAt: now,
@@ -1475,6 +1480,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
   }
 
   async userCanReadObject(userId: string, objectKey: string) {
+    const ownerHtmlObjectKey = deriveHtmlObjectKeyFromMediaObjectKey(objectKey) ?? objectKey;
     const rows = await this.db
       .select({
         id: bookmarkVersions.id,
@@ -1485,8 +1491,8 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         and(
           eq(bookmarks.userId, userId),
           or(
-            eq(bookmarkVersions.htmlObjectKey, objectKey),
-            eq(bookmarkVersions.readerHtmlObjectKey, objectKey),
+            eq(bookmarkVersions.htmlObjectKey, ownerHtmlObjectKey),
+            eq(bookmarkVersions.readerHtmlObjectKey, ownerHtmlObjectKey),
           ),
         ),
       )
@@ -1495,6 +1501,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
   }
 
   async userCanWriteObject(userId: string, objectKey: string) {
+    const ownerHtmlObjectKey = deriveHtmlObjectKeyFromMediaObjectKey(objectKey) ?? objectKey;
     const pendingRows = await this.db
       .select({
         objectKey: captureUploads.objectKey,
@@ -1503,7 +1510,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       .where(
         and(
           eq(captureUploads.userId, userId),
-          eq(captureUploads.objectKey, objectKey),
+          eq(captureUploads.objectKey, ownerHtmlObjectKey),
         ),
       )
       .limit(1);
@@ -1594,6 +1601,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         textSimhash: bookmarkVersions.textSimhash,
         captureProfile: bookmarkVersions.captureProfile,
         qualityReport: bookmarkVersions.qualityReportJson,
+        sourceMeta: bookmarkVersions.sourceMetaJson,
         createdAt: bookmarkVersions.createdAt,
       })
       .from(bookmarkVersions)
@@ -1616,6 +1624,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
         htmlSha256: row.htmlSha256,
         textSha256: row.textSha256 ?? undefined,
         textSimhash: row.textSimhash ?? undefined,
+        mediaFiles: this.readMediaFiles(row.sourceMeta),
         captureProfile: row.captureProfile,
         quality: this.readQuality(row.qualityReport),
         createdAt: row.createdAt.toISOString(),
@@ -2163,6 +2172,28 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     return parsed.data.coverImageUrl;
   }
 
+  private readMediaFiles(sourceMeta: unknown): BookmarkVersion["mediaFiles"] {
+    if (!sourceMeta || typeof sourceMeta !== "object") {
+      return [];
+    }
+
+    const mediaFiles = (sourceMeta as Record<string, unknown>).mediaFiles;
+    const parsed = bookmarkVersionMediaFileSchema.array().safeParse(mediaFiles ?? []);
+    return parsed.success ? parsed.data : [];
+  }
+
+  private buildSourceMetaPayload(
+    source: CaptureCompleteRequest["source"],
+    mediaFiles?: CaptureCompleteRequest["mediaFiles"],
+    existingSourceMeta?: unknown,
+  ) {
+    const existingMediaFiles = this.readMediaFiles(existingSourceMeta);
+    return {
+      source,
+      mediaFiles: mergeBookmarkMediaFiles(existingMediaFiles, mediaFiles),
+    };
+  }
+
   private readApiTokenScopes(value: unknown) {
     return apiTokenScopeSchema.array().parse(value);
   }
@@ -2333,4 +2364,23 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
 function deduplicateScopes(scopes: ApiTokenScope[]) {
   return [...new Set(scopes)];
+}
+
+function deriveHtmlObjectKeyFromMediaObjectKey(objectKey: string) {
+  const matched = objectKey.match(/^(.*)\.assets\/[^/]+$/i);
+  return matched?.[1] ? `${matched[1]}.html` : null;
+}
+
+function mergeBookmarkMediaFiles(
+  existing: BookmarkVersion["mediaFiles"],
+  incoming?: BookmarkVersion["mediaFiles"],
+) {
+  const merged = new Map<string, NonNullable<BookmarkVersion["mediaFiles"]>[number]>();
+  for (const item of existing ?? []) {
+    merged.set(item.objectKey, item);
+  }
+  for (const item of incoming ?? []) {
+    merged.set(item.objectKey, item);
+  }
+  return [...merged.values()];
 }

@@ -1,4 +1,6 @@
 import type {
+  BookmarkVersionMediaFile,
+  CaptureDownloadableMedia,
   CaptureCompleteRequest,
   CaptureInitRequest,
   CaptureTask,
@@ -62,18 +64,42 @@ async function uploadArchiveHtml(
   authHeaders: Record<string, string>,
   archiveHtml: string,
 ): Promise<UploadResult> {
-  const uploadPayload = await createUploadPayload(archiveHtml);
+  const uploadPayload = await createTextUploadPayload(archiveHtml);
+  return uploadObject(uploadUrl, authHeaders, uploadPayload);
+}
+
+async function uploadBinaryObject(
+  uploadUrl: string,
+  authHeaders: Record<string, string>,
+  body: Uint8Array,
+  contentType: string,
+): Promise<UploadResult> {
+  return uploadObject(uploadUrl, authHeaders, {
+    headers: {
+      "content-type": contentType,
+    },
+    body,
+    byteLength: body.byteLength,
+    contentType,
+  });
+}
+
+async function uploadObject(
+  uploadUrl: string,
+  authHeaders: Record<string, string>,
+  uploadPayload: UploadPayload,
+): Promise<UploadResult> {
   if (uploadPayload.byteLength > CHUNK_UPLOAD_THRESHOLD_BYTES) {
-    logger.info("Archive payload exceeds direct upload threshold, switching to chunked upload.", {
+    logger.info("Upload payload exceeds direct upload threshold, switching to chunked upload.", {
       uploadUrl,
       payloadBytes: uploadPayload.byteLength,
       chunkSizeBytes: CHUNK_SIZE_BYTES,
     });
-    return uploadArchiveHtmlInChunks(uploadUrl, authHeaders, uploadPayload);
+    return uploadObjectInChunks(uploadUrl, authHeaders, uploadPayload);
   }
 
   try {
-    await uploadArchiveHtmlDirect(uploadUrl, authHeaders, uploadPayload);
+    await uploadObjectDirect(uploadUrl, authHeaders, uploadPayload);
     return {
       mode: "direct",
       payloadBytes: uploadPayload.byteLength,
@@ -82,18 +108,18 @@ async function uploadArchiveHtml(
     };
   } catch (error) {
     if (isPayloadTooLargeError(error)) {
-      logger.warn("Direct archive upload hit 413, retrying with chunked upload.", {
+      logger.warn("Direct upload hit 413, retrying with chunked upload.", {
         uploadUrl,
         payloadBytes: uploadPayload.byteLength,
         chunkSizeBytes: CHUNK_SIZE_BYTES,
       });
-      return uploadArchiveHtmlInChunks(uploadUrl, authHeaders, uploadPayload);
+      return uploadObjectInChunks(uploadUrl, authHeaders, uploadPayload);
     }
     throw error;
   }
 }
 
-async function uploadArchiveHtmlDirect(
+async function uploadObjectDirect(
   uploadUrl: string,
   authHeaders: Record<string, string>,
   uploadPayload: UploadPayload,
@@ -112,7 +138,7 @@ async function uploadArchiveHtmlDirect(
   }
 }
 
-async function uploadArchiveHtmlInChunks(
+async function uploadObjectInChunks(
   uploadUrl: string,
   authHeaders: Record<string, string>,
   uploadPayload: UploadPayload,
@@ -167,7 +193,7 @@ async function uploadArchiveHtmlInChunks(
   };
 }
 
-async function createUploadPayload(archiveHtml: string): Promise<UploadPayload> {
+async function createTextUploadPayload(archiveHtml: string): Promise<UploadPayload> {
   const textEncoder = new TextEncoder();
   const originalBytes = textEncoder.encode(archiveHtml);
   const compressed = await gzipContent(archiveHtml);
@@ -412,12 +438,23 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     });
   }
 
+  const uploadedMediaFiles = await uploadDownloadableMediaFiles({
+    apiBaseUrl,
+    authHeaders,
+    debugTabId,
+    htmlObjectKey: initResponse.objectKey,
+    sourceUrl: task.source.url,
+    taskId: task.id,
+    media: artifacts.downloadableMedia ?? [],
+  });
+
   const completePayload: CaptureCompleteRequest = {
     objectKey: initResponse.objectKey,
     htmlSha256: task.localArchiveSha256,
     readerHtml: artifacts.readerHtml,
     textSha256: await computeSha256Hex(artifacts.extractedText),
     extractedText: artifacts.extractedText,
+    mediaFiles: uploadedMediaFiles.length > 0 ? uploadedMediaFiles : undefined,
     quality,
     source: task.source,
     deviceId,
@@ -428,6 +465,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     readerHtmlBytes: completePayload.readerHtml?.length,
     sourceUrl: completePayload.source.url,
     textSha256: completePayload.textSha256,
+    mediaFileCount: uploadedMediaFiles.length,
     qualityGrade: completePayload.quality.grade,
     qualityScore: completePayload.quality.score,
   });
@@ -454,6 +492,202 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     bookmarkId: completeResponse.bookmarkId,
     versionId: completeResponse.versionId,
   };
+}
+
+async function uploadDownloadableMediaFiles(input: {
+  apiBaseUrl: string;
+  authHeaders: Record<string, string>;
+  debugTabId?: number;
+  htmlObjectKey: string;
+  sourceUrl: string;
+  taskId: string;
+  media: CaptureDownloadableMedia[];
+}): Promise<BookmarkVersionMediaFile[]> {
+  const deduplicatedMedia = deduplicateMedia(input.media);
+  if (deduplicatedMedia.length === 0) {
+    return [];
+  }
+
+  const uploaded: BookmarkVersionMediaFile[] = [];
+  await logSync("info", input.debugTabId, "Uploading downloadable media files.", {
+    taskId: input.taskId,
+    htmlObjectKey: input.htmlObjectKey,
+    mediaCount: deduplicatedMedia.length,
+  });
+
+  for (const media of deduplicatedMedia) {
+    const downloaded = await downloadMediaBinary(media, input.sourceUrl);
+    const extension = resolveMediaFileExtension(downloaded.contentType, media.url, media.kind);
+    const objectKey = createMediaObjectKey(input.htmlObjectKey, media.id, extension);
+    const uploadUrl = `${input.apiBaseUrl}/uploads/${encodeURIComponent(objectKey)}`;
+    const uploadResult = await withUnauthorizedAuthRecovery(
+      () => uploadBinaryObject(uploadUrl, input.authHeaders, downloaded.body, downloaded.contentType),
+      input.debugTabId,
+      input.taskId,
+    );
+    await logSync("info", input.debugTabId, "Media upload completed.", {
+      taskId: input.taskId,
+      mediaId: media.id,
+      mediaKind: media.kind,
+      mediaUrl: media.url,
+      objectKey,
+      fileSize: downloaded.body.byteLength,
+      contentType: downloaded.contentType,
+      uploadMode: uploadResult.mode,
+      uploadChunkCount: uploadResult.chunkCount,
+    });
+    uploaded.push({
+      id: media.id,
+      kind: media.kind,
+      objectKey,
+      originalUrl: media.url,
+      mimeType: downloaded.contentType,
+      fileSize: downloaded.body.byteLength,
+      width: media.width,
+      height: media.height,
+    });
+  }
+
+  return uploaded;
+}
+
+async function downloadMediaBinary(media: CaptureDownloadableMedia, sourceUrl: string) {
+  let response: Response;
+  try {
+    response = await fetch(media.url, {
+      cache: "no-store",
+      referrer: sourceUrl,
+      referrerPolicy: "strict-origin-when-cross-origin",
+    });
+  } catch {
+    response = await fetch(media.url, {
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
+    });
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`下载媒体失败（${response.status}）：${media.url}${body ? ` - ${body.slice(0, 200)}` : ""}`);
+  }
+
+  const contentType = normalizeContentType(
+    response.headers.get("content-type"),
+    media.url,
+    media.kind,
+  );
+  const buffer = new Uint8Array(await response.arrayBuffer());
+  if (buffer.byteLength === 0) {
+    throw new Error(`下载到的媒体内容为空：${media.url}`);
+  }
+
+  return {
+    contentType,
+    body: buffer,
+  };
+}
+
+function deduplicateMedia(media: CaptureDownloadableMedia[]) {
+  const seen = new Set<string>();
+  return media.filter((item) => {
+    const key = `${item.kind}:${item.url}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function createMediaObjectKey(htmlObjectKey: string, mediaId: string, extension: string) {
+  const safeId = mediaId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "media";
+  const safeExtension = extension.replace(/[^a-z0-9]+/gi, "").toLowerCase() || "bin";
+  const baseKey = htmlObjectKey.endsWith(".html")
+    ? htmlObjectKey.replace(/\.html$/i, "")
+    : htmlObjectKey;
+  return `${baseKey}.assets/${safeId}.${safeExtension}`;
+}
+
+function resolveMediaFileExtension(
+  contentType: string,
+  mediaUrl: string,
+  kind: CaptureDownloadableMedia["kind"],
+) {
+  const normalizedType = contentType.toLowerCase();
+  if (normalizedType === "image/jpeg") {
+    return "jpg";
+  }
+  if (normalizedType === "image/png") {
+    return "png";
+  }
+  if (normalizedType === "image/webp") {
+    return "webp";
+  }
+  if (normalizedType === "image/gif") {
+    return "gif";
+  }
+  if (normalizedType === "video/mp4") {
+    return "mp4";
+  }
+  if (normalizedType === "video/webm") {
+    return "webm";
+  }
+  if (normalizedType === "video/quicktime") {
+    return "mov";
+  }
+
+  const pathname = safeParseUrl(mediaUrl)?.pathname ?? "";
+  const matchedExtension = pathname.match(/\.([a-z0-9]{2,5})$/i)?.[1];
+  if (matchedExtension) {
+    return matchedExtension.toLowerCase();
+  }
+
+  return kind === "video" ? "mp4" : "jpg";
+}
+
+function normalizeContentType(
+  rawContentType: string | null,
+  mediaUrl: string,
+  kind: CaptureDownloadableMedia["kind"],
+) {
+  const normalized = rawContentType?.split(";")[0]?.trim().toLowerCase();
+  if (normalized && normalized !== "application/octet-stream" && normalized !== "binary/octet-stream") {
+    return normalized;
+  }
+
+  const extension = resolveMediaFileExtension("application/octet-stream", mediaUrl, kind);
+  switch (extension) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    case "mp4":
+      return "video/mp4";
+    case "webm":
+      return "video/webm";
+    case "mov":
+      return "video/quicktime";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function safeParseUrl(rawUrl: string) {
+  try {
+    return new URL(rawUrl);
+  } catch {
+    return null;
+  }
 }
 
 async function logSync(
