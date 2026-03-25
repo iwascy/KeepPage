@@ -595,6 +595,16 @@ body {
   color: var(--bad);
 }
 
+.status-queued,
+.status-capturing,
+.status-validating,
+.status-local_ready,
+.status-uploading,
+.status-uploaded,
+.status-indexed {
+  color: var(--accent);
+}
+
 .status-upload_pending,
 .grade-medium {
   color: var(--warn);
@@ -607,6 +617,10 @@ body {
 
 .grade-low {
   color: var(--bad);
+}
+
+.grade-none {
+  color: var(--muted);
 }
 
 .grade-private {

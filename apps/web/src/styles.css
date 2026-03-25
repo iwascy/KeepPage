@@ -941,10 +941,12 @@ button {
   flex-direction: column;
   gap: 1rem;
   padding: 1.4rem 1.1rem;
-  background: rgba(255, 255, 255, 0.52);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(247, 249, 252, 0.42)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0) 74%, rgba(255, 255, 255, 0.22) 100%),
+    rgba(255, 255, 255, 0.52);
   backdrop-filter: blur(34px);
   -webkit-backdrop-filter: blur(34px);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 10px 0 42px rgba(45, 51, 56, 0.05);
   overflow: hidden;
 }
@@ -1545,9 +1547,13 @@ button {
 }
 
 .home-settings-divider {
-  height: 1px;
-  background: rgba(0, 0, 0, 0.06);
-  margin: 0.5rem 0.9rem;
+  height: 18px;
+  margin: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 62%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(126, 136, 154, 0.14), rgba(255, 255, 255, 0));
+  opacity: 0.92;
 }
 
 /* ── API Token Page ── */
@@ -2305,6 +2311,11 @@ button {
 .context-menu-item:hover {
   background: rgba(255, 255, 255, 0.52);
   transform: translateX(2px);
+}
+
+.context-menu-item:active {
+  background: rgba(255, 255, 255, 0.6);
+  transform: scale(0.985);
 }
 
 .context-menu-item.is-danger {
@@ -3706,11 +3717,24 @@ button {
 
 .detail-actions-footer {
   margin-top: auto;
+  position: relative;
   padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.4);
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.55rem;
+}
+
+.detail-actions-footer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0.1rem;
+  right: 0.1rem;
+  height: 14px;
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0) 68%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(164, 172, 182, 0.18), rgba(255, 255, 255, 0));
+  pointer-events: none;
 }
 
 .detail-action-button {
@@ -4398,11 +4422,15 @@ button {
   cursor: pointer;
   padding: 0.3rem 0.5rem;
   border-radius: var(--radius-button);
-  transition: background 150ms ease;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
 }
 
 .selection-toolbar-check-all:hover {
   background: rgba(0, 0, 0, 0.05);
+}
+
+.selection-toolbar-check-all:active {
+  transform: scale(0.96);
 }
 
 .selection-toolbar-checkbox {
@@ -4447,12 +4475,16 @@ button {
   padding: 0.35rem 0.7rem;
   border-radius: var(--radius-button);
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
   white-space: nowrap;
 }
 
 .selection-toolbar-btn:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.06);
+}
+
+.selection-toolbar-btn:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .selection-toolbar-btn:disabled {
@@ -4502,11 +4534,15 @@ button {
   border-radius: 10px;
   cursor: pointer;
   text-align: left;
-  transition: background 120ms ease;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
 .selection-toolbar-dropdown-item:hover {
   background: rgba(0, 0, 0, 0.05);
+}
+
+.selection-toolbar-dropdown-item:active {
+  transform: scale(0.97);
 }
 
 .selection-toolbar-dropdown-empty {
@@ -4532,7 +4568,7 @@ button {
   padding: 0.35rem 0.7rem;
   border-radius: var(--radius-button);
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
   white-space: nowrap;
   margin-left: 0.3rem;
 }
@@ -4540,6 +4576,10 @@ button {
 .selection-toolbar-exit:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.06);
   color: var(--text);
+}
+
+.selection-toolbar-exit:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .selection-toolbar-exit:disabled {

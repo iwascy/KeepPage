@@ -421,8 +421,8 @@ function buildBookmarkIngestCurl(
     "  -H 'Content-Type: application/json' \\",
     "  -d '{",
     '    "url": "https://example.com/article",',
-    '    "title": "KeepPage API Key 测试",',
-    '    "note": "来自 API Key 页面",',
+    '    "title": "KeepPage API 密钥测试",',
+    '    "note": "来自 API 密钥页面",',
     '    "tags": ["api-key", "curl"],',
     '    "folderPath": "Inbox/API",',
     '    "dedupeStrategy": "merge"',
@@ -981,7 +981,7 @@ function AppShell({
               <span className="material-symbols-outlined" aria-hidden="true">
                 arrow_back
               </span>
-              <span>Settings</span>
+              <span>设置</span>
             </button>
 
             <div className="home-settings-list">
@@ -993,7 +993,7 @@ function AppShell({
                 <span className="material-symbols-outlined" aria-hidden="true">
                   vpn_key
                 </span>
-                <span>API Keys</span>
+                <span>API 密钥</span>
               </button>
               <button
                 className="home-settings-item"
@@ -1086,7 +1086,7 @@ function AppShell({
                 >
                   bookmark
                 </span>
-                <span>All Bookmarks</span>
+                <span>全部书签</span>
               </button>
               <button
                 className={activeNav === "recent" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
@@ -1096,7 +1096,7 @@ function AppShell({
                 <span className="material-symbols-outlined" aria-hidden="true">
                   schedule
                 </span>
-                <span>Recent</span>
+                <span>最近更新</span>
               </button>
               <button
                 className={activeNav === "favorites" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
@@ -1106,7 +1106,7 @@ function AppShell({
                 <span className="material-symbols-outlined" aria-hidden="true">
                   star
                 </span>
-                <span>Favorites</span>
+                <span>星标收藏</span>
               </button>
             </nav>
 
@@ -1227,7 +1227,7 @@ function AppShell({
                 <div className="home-avatar">{userInitials(user)}</div>
                 <div className="home-user-info">
                   <span className="home-user-name">{displayName}</span>
-                  <span className="home-user-plan">Pro Plan</span>
+                  <span className="home-user-plan">专业版</span>
                 </div>
                 <button
                   className="home-settings-btn"
@@ -1681,7 +1681,7 @@ function ApiTokensPanel({
       await copyTextToClipboard(revealedToken.value);
       setFeedback({
         kind: "success",
-        message: `已复制 ${revealedToken.name} 的完整 API Key。`,
+        message: `已复制 ${revealedToken.name} 的完整 API 密钥。`,
       });
     } catch (error) {
       setFeedback({
@@ -1718,7 +1718,7 @@ function ApiTokensPanel({
       await copyTextToClipboard(tokenValue);
       setFeedback({
         kind: "success",
-        message: `已复制 ${itemName} 的完整 API Key。`,
+        message: `已复制 ${itemName} 的完整 API 密钥。`,
       });
     } catch (error) {
       setFeedback({
@@ -1732,7 +1732,7 @@ function ApiTokensPanel({
     event.preventDefault();
     const trimmedName = createName.trim();
     if (!trimmedName) {
-      setCreateError("请填写 API Key 名称。");
+      setCreateError("请填写 API 密钥名称。");
       return;
     }
 
@@ -1805,7 +1805,7 @@ function ApiTokensPanel({
       setCreateExpiresAt("");
       setFeedback({
         kind: "success",
-        message: `已创建 API Key：${trimmedName}。完整明文已保存在当前浏览器，下面可以直接复制 curl 测试。`,
+        message: `已创建 API 密钥：${trimmedName}。完整明文已保存在当前浏览器，下面可以直接复制 curl 测试。`,
       });
     } catch (error) {
       if (!isDemoMode && onApiError(error)) {
@@ -1860,7 +1860,7 @@ function ApiTokensPanel({
 
       setFeedback({
         kind: "success",
-        message: `已吊销 API Key：${revokeTarget.name}。`,
+        message: `已吊销 API 密钥：${revokeTarget.name}。`,
       });
       setRevokeTarget(null);
     } catch (error) {
@@ -1878,11 +1878,11 @@ function ApiTokensPanel({
       <section className="api-token-page">
         <header className="api-token-hero">
           <div className="api-token-hero-copy">
-            <p className="eyebrow">Settings</p>
-            <h1>API Keys</h1>
+            <p className="eyebrow">设置</p>
+            <h1>API 密钥</h1>
             <p>
               给 Raycast、快捷指令、Zapier 或你自己的脚本一个受限写入口。
-              目前每个 key 只授予 <code>bookmark:create</code> 权限，适合只传 URL 的自动入库场景。
+              目前每个密钥只授予 <code>bookmark:create</code> 权限，适合只传 URL 的自动入库场景。
             </p>
           </div>
 
@@ -1894,30 +1894,30 @@ function ApiTokensPanel({
               <span className="material-symbols-outlined" aria-hidden="true">
                 add
               </span>
-              <span>创建 API Key</span>
+              <span>创建 API 密钥</span>
             </button>
           </div>
 
           <div className="api-token-stat-grid">
             <article className="api-token-stat-card">
-              <span className="api-token-stat-label">Active Keys</span>
+              <span className="api-token-stat-label">生效密钥</span>
               <strong>{activeCount}</strong>
-              <small>{items.length} 个 key 中可用的写入入口</small>
+              <small>{items.length} 个密钥中可用的写入入口</small>
             </article>
             <article className="api-token-stat-card">
-              <span className="api-token-stat-label">Last Activity</span>
+              <span className="api-token-stat-label">最近调用</span>
               <strong>{latestUsedAt ? formatRelativeWhen(latestUsedAt) : "尚未调用"}</strong>
               <small>{latestUsedAt ? formatWhen(latestUsedAt) : "创建后等待第一次接入请求"}</small>
             </article>
             <article className="api-token-stat-card">
-              <span className="api-token-stat-label">Revoked</span>
+              <span className="api-token-stat-label">已吊销</span>
               <strong>{revokedCount}</strong>
               <small>建议定期清理停用的集成入口</small>
             </article>
             <article className="api-token-stat-card">
-              <span className="api-token-stat-label">Local Plaintext</span>
+              <span className="api-token-stat-label">本地明文</span>
               <strong>{locallyStoredCount}</strong>
-              <small>完整 key 仅保存在当前浏览器，方便复制和 curl 调试</small>
+              <small>完整密钥仅保存在当前浏览器，方便复制和 curl 调试</small>
             </article>
           </div>
         </header>
@@ -1925,9 +1925,9 @@ function ApiTokensPanel({
         {revealedToken ? (
           <section className="api-token-reveal-card">
             <div className="api-token-reveal-copy">
-              <p className="eyebrow">Ready To Test</p>
+              <p className="eyebrow">可立即测试</p>
               <h2>{revealedToken.name}</h2>
-              <p>完整 API Key 已保存在当前浏览器本地。服务端仍然只保存哈希，所以换浏览器后不会重新取回明文。</p>
+              <p>完整 API 密钥已保存在当前浏览器本地。服务端仍然只保存哈希，所以换浏览器后不会重新取回明文。</p>
             </div>
             <div className="api-token-secret-shell">
               <code>{revealedToken.value}</code>
@@ -1936,7 +1936,7 @@ function ApiTokensPanel({
                   关闭提示
                 </button>
                 <button className="primary-button compact-button" type="button" onClick={() => void handleCopyRevealedToken()}>
-                  复制完整 Key
+                  复制完整密钥
                 </button>
                 <button
                   className="secondary-button compact-button"
@@ -1957,7 +1957,7 @@ function ApiTokensPanel({
         ) : null}
 
         {loadState === "loading" && items.length > 0 ? (
-          <p className="status-banner">正在刷新 API Key 列表...</p>
+          <p className="status-banner">正在刷新 API 密钥列表...</p>
         ) : null}
 
         {loadState === "loading" && items.length === 0 ? (
@@ -1976,18 +1976,18 @@ function ApiTokensPanel({
           </section>
         ) : loadState === "error" ? (
           <section className="api-token-empty">
-            <h2>API Key 列表加载失败</h2>
-            <p>{loadError ?? "暂时无法读取当前账号的 API Key。"}</p>
+            <h2>API 密钥列表加载失败</h2>
+            <p>{loadError ?? "暂时无法读取当前账号的 API 密钥。"}</p>
             <button className="primary-button" type="button" onClick={openCreateDialog}>
               继续创建
             </button>
           </section>
         ) : items.length === 0 ? (
           <section className="api-token-empty">
-            <h2>还没有 API Key</h2>
+            <h2>还没有 API 密钥</h2>
             <p>创建一个只允许写入书签的 key，把外部网址流接进 KeepPage 的收集箱。</p>
             <button className="primary-button" type="button" onClick={openCreateDialog}>
-              创建第一个 API Key
+              创建第一个 API 密钥
             </button>
           </section>
         ) : (
@@ -2010,7 +2010,7 @@ function ApiTokensPanel({
                 <article className="api-token-card" key={item.id}>
                   <div className="api-token-card-head">
                     <div className="api-token-card-copy">
-                      <p className="eyebrow">Bookmark Ingest</p>
+                      <p className="eyebrow">书签写入口</p>
                       <h2>{item.name}</h2>
                       <code className="api-token-preview">{item.tokenPreview}</code>
                     </div>
@@ -2037,11 +2037,11 @@ function ApiTokensPanel({
                   <section className="api-token-secret-box">
                     <div className="api-token-section-head">
                       <div>
-                        <p className="eyebrow">API Key</p>
+                        <p className="eyebrow">API 密钥</p>
                         <p>
                           {storedTokenValue
                             ? "完整明文已保存在当前浏览器，可直接复制到脚本、Raycast 或快捷指令。"
-                            : "当前浏览器没有保存这把 key 的完整明文；服务端不会再次返回明文。"}
+                            : "当前浏览器没有保存这把密钥的完整明文；服务端不会再次返回明文。"}
                         </p>
                       </div>
                       {storedTokenValue ? (
@@ -2050,7 +2050,7 @@ function ApiTokensPanel({
                           type="button"
                           onClick={() => void handleCopyStoredToken(item.name, storedTokenValue)}
                         >
-                          复制 Key
+                          复制密钥
                         </button>
                       ) : null}
                     </div>
@@ -2062,14 +2062,14 @@ function ApiTokensPanel({
                     <p className="api-token-secret-note">
                       {storedTokenValue
                         ? "为了方便测试，这个明文只保存在当前浏览器的本地存储里。"
-                        : "如果你需要直接测试，请重新创建一个新的 API Key。"}
+                        : "如果你需要直接测试，请重新创建一个新的 API 密钥。"}
                     </p>
                   </section>
 
                   <section className="api-token-usage-box">
                     <div className="api-token-section-head">
                       <div>
-                        <p className="eyebrow">Curl Test</p>
+                        <p className="eyebrow">curl 调试</p>
                         <p>默认示例使用 <code>Authorization: Bearer</code>。也支持复制 <code>X-KeepPage-Api-Key</code> 版本。</p>
                       </div>
                     </div>
@@ -2144,9 +2144,9 @@ function ApiTokensPanel({
             <div className="api-token-dialog-shell">
               <div className="api-token-dialog-header">
                 <div className="api-token-dialog-heading">
-                  <p className="eyebrow">New Credential</p>
-                  <h2 id="api-token-create-title">Create API Key</h2>
-                  <p>生成一个只允许新增书签的写入 key。创建成功后，完整明文会保存在当前浏览器，方便你直接复制和测试。</p>
+                  <p className="eyebrow">新建凭证</p>
+                  <h2 id="api-token-create-title">创建 API 密钥</h2>
+                  <p>生成一个只允许新增书签的写入密钥。创建成功后，完整明文会保存在当前浏览器，方便你直接复制和测试。</p>
                 </div>
                 <button className="create-folder-dialog-close" type="button" onClick={closeCreateDialog} disabled={createBusy}>
                   <DialogCloseIcon />
@@ -2155,19 +2155,19 @@ function ApiTokensPanel({
 
               <form className="api-token-dialog-form" onSubmit={handleCreateToken}>
                 <label className="api-token-field">
-                  <span className="api-token-field-label">Key Name</span>
+                  <span className="api-token-field-label">密钥名称</span>
                   <input
                     type="text"
                     value={createName}
                     onChange={(event) => setCreateName(event.target.value)}
-                    placeholder="e.g. Raycast Inbox"
+                    placeholder="例如 Raycast 收件箱"
                     autoFocus
                     maxLength={120}
                   />
                 </label>
 
                 <label className="api-token-field">
-                  <span className="api-token-field-label">Expiry (Optional)</span>
+                  <span className="api-token-field-label">过期时间（可选）</span>
                   <input
                     type="datetime-local"
                     value={createExpiresAt}
@@ -2188,7 +2188,7 @@ function ApiTokensPanel({
                     取消
                   </button>
                   <button className="primary-button" type="submit" disabled={createBusy}>
-                    {createBusy ? "Creating..." : "Create Key"}
+                    {createBusy ? "创建中..." : "创建密钥"}
                   </button>
                 </div>
               </form>
@@ -2213,9 +2213,9 @@ function ApiTokensPanel({
             <div className="api-token-dialog-shell">
               <div className="api-token-dialog-header">
                 <div className="api-token-dialog-heading">
-                  <p className="eyebrow">Revoke Access</p>
-                  <h2 id="api-token-revoke-title">吊销 API Key</h2>
-                  <p>吊销后，依赖这个 key 的自动化入口会立即失效，现有 URL 不会继续写入你的书签库。</p>
+                  <p className="eyebrow">吊销访问</p>
+                  <h2 id="api-token-revoke-title">吊销 API 密钥</h2>
+                  <p>吊销后，依赖这个密钥的自动化入口会立即失效，现有 URL 不会继续写入你的书签库。</p>
                 </div>
                 <button
                   className="create-folder-dialog-close"
