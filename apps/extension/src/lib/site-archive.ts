@@ -30,14 +30,19 @@ export function extractReaderArchiveHtml(options: ReaderExtractionOptions) {
     return null;
   }
 
-  if (options.liveDocument && isXiaohongshuNotePage(currentUrl)) {
-    const xiaohongshuArchive = buildXiaohongshuNoteArchive(options.liveDocument, currentUrl);
+  const parsedDocument = new DOMParser().parseFromString(archiveHtml, "text/html");
+
+  if (isXiaohongshuNotePage(currentUrl)) {
+    const xiaohongshuArchive = buildXiaohongshuNoteArchive({
+      archivedDocument: parsedDocument,
+      liveDocument: options.liveDocument,
+      currentUrl,
+    });
     if (xiaohongshuArchive) {
       return xiaohongshuArchive;
     }
   }
 
-  const parsedDocument = new DOMParser().parseFromString(archiveHtml, "text/html");
   const readerArticle = parseReadableArticle(parsedDocument);
   if (readerArticle) {
     return buildGenericReaderArchive(readerArticle, currentUrl);
@@ -363,13 +368,30 @@ function isXiaohongshuNotePage(url: URL) {
   return hostname === "xiaohongshu.com" && /^\/explore\/[a-z0-9]+\/?$/i.test(url.pathname);
 }
 
-function buildXiaohongshuNoteArchive(doc: Document, currentUrl: URL) {
+function buildXiaohongshuNoteArchive(input: {
+  archivedDocument: Document;
+  liveDocument?: Document | null;
+  currentUrl: URL;
+}) {
+  const { archivedDocument, liveDocument, currentUrl } = input;
   const title = normalizeText(
-    doc.querySelector<HTMLElement>("#detail-title")?.textContent
-      ?? doc.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content
-      ?? stripXiaohongshuTitleSuffix(doc.title),
+    readXiaohongshuText(
+      archivedDocument,
+      liveDocument,
+      "#detail-title",
+    )
+      ?? readXiaohongshuMetaContent(
+        archivedDocument,
+        liveDocument,
+        'meta[property="og:title"]',
+      )
+      ?? stripXiaohongshuTitleSuffix(archivedDocument.title || liveDocument?.title || ""),
   );
-  const descriptionSource = doc.querySelector<HTMLElement>("#detail-desc");
+  const descriptionSource = readXiaohongshuElement(
+    archivedDocument,
+    liveDocument,
+    "#detail-desc",
+  );
   if (!title || !descriptionSource) {
     return null;
   }
@@ -377,27 +399,37 @@ function buildXiaohongshuNoteArchive(doc: Document, currentUrl: URL) {
   const body = descriptionSource.cloneNode(true) as HTMLElement;
   sanitizeXiaohongshuBody(body, currentUrl);
   const bodyText = normalizeText(body.textContent);
-  const mediaItems = collectXiaohongshuMediaItems(doc, currentUrl, title);
+  const mediaItems = collectXiaohongshuMediaItems({
+    archivedDocument,
+    liveDocument,
+    currentUrl,
+    title,
+  });
   if (bodyText.length < 40 && mediaItems.length === 0) {
     return null;
   }
 
   const author = normalizeText(
-    doc.querySelector<HTMLElement>(".author-container .username, .author-wrapper .username")?.textContent,
+    readXiaohongshuText(
+      archivedDocument,
+      liveDocument,
+      ".author-container .username, .author-wrapper .username",
+    ),
   );
   const avatarUrl = readImageUrl(
-    doc.querySelector<HTMLImageElement>(".author-container img.avatar-item, .author-wrapper img.avatar-item"),
+    readXiaohongshuElement<HTMLImageElement>(
+      archivedDocument,
+      liveDocument,
+      ".author-container img.avatar-item, .author-wrapper img.avatar-item",
+    ),
     currentUrl,
   );
   const publishedMeta = normalizeText(
-    doc.querySelector<HTMLElement>(".bottom-container .date")?.textContent
-      ?? doc.querySelector<HTMLElement>(".note-content .date")?.textContent,
-  );
-  const commentSummary = normalizeText(
-    doc.querySelector<HTMLElement>(".total-comments, .interactions .total")?.textContent
-      ?? Array.from(doc.querySelectorAll<HTMLElement>(".note-content span, .note-content div"))
-        .map((node) => normalizeText(node.textContent))
-        .find((text) => /^共\s*\d+\s*条评论$/u.test(text)),
+    readXiaohongshuText(
+      archivedDocument,
+      liveDocument,
+      ".bottom-container .date, .note-content .date",
+    ),
   );
 
   return `<!DOCTYPE html>
@@ -640,7 +672,6 @@ function buildXiaohongshuNoteArchive(doc: Document, currentUrl: URL) {
         <h1>${escapeHtml(title)}</h1>
         <div class="meta-row">
           ${publishedMeta ? `<span class="meta-pill">${escapeHtml(publishedMeta)}</span>` : ""}
-          ${commentSummary ? `<span class="meta-pill">${escapeHtml(commentSummary)}</span>` : ""}
           <span class="meta-pill">${escapeHtml(currentUrl.hostname)}</span>
         </div>
         <div class="note-body">${body.innerHTML}</div>
@@ -680,10 +711,16 @@ function sanitizeXiaohongshuBody(root: HTMLElement, currentUrl: URL) {
   }
 }
 
-function collectXiaohongshuMediaItems(doc: Document, currentUrl: URL, title: string) {
+function collectXiaohongshuMediaItems(input: {
+  archivedDocument: Document;
+  liveDocument?: Document | null;
+  currentUrl: URL;
+  title: string;
+}) {
+  const { archivedDocument, liveDocument, currentUrl, title } = input;
   const candidates = [
-    ...doc.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
-    ...doc.querySelectorAll<HTMLImageElement>(".media-container .img-container img"),
+    ...queryXiaohongshuMediaImages(archivedDocument),
+    ...(liveDocument ? queryXiaohongshuMediaImages(liveDocument) : []),
   ];
   const seen = new Set<string>();
   const items: XiaohongshuMediaItem[] = [];
@@ -696,7 +733,7 @@ function collectXiaohongshuMediaItems(doc: Document, currentUrl: URL, title: str
         || image.getAttribute("data-original"),
       currentUrl,
     );
-    if (!src || src.startsWith("data:") || seen.has(src)) {
+    if (!src || seen.has(src)) {
       continue;
     }
 
@@ -712,6 +749,39 @@ function collectXiaohongshuMediaItems(doc: Document, currentUrl: URL, title: str
   }
 
   return items;
+}
+
+function queryXiaohongshuMediaImages(doc: Document) {
+  return [
+    ...doc.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
+    ...doc.querySelectorAll<HTMLImageElement>(".media-container .img-container img"),
+  ];
+}
+
+function readXiaohongshuElement<T extends Element>(
+  archivedDocument: Document,
+  liveDocument: Document | null | undefined,
+  selector: string,
+) {
+  return archivedDocument.querySelector<T>(selector)
+    ?? liveDocument?.querySelector<T>(selector)
+    ?? null;
+}
+
+function readXiaohongshuText(
+  archivedDocument: Document,
+  liveDocument: Document | null | undefined,
+  selector: string,
+) {
+  return readXiaohongshuElement<HTMLElement>(archivedDocument, liveDocument, selector)?.textContent;
+}
+
+function readXiaohongshuMetaContent(
+  archivedDocument: Document,
+  liveDocument: Document | null | undefined,
+  selector: string,
+) {
+  return readXiaohongshuElement<HTMLMetaElement>(archivedDocument, liveDocument, selector)?.content;
 }
 
 function stripXiaohongshuTitleSuffix(title: string) {
