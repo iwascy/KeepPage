@@ -60,10 +60,13 @@ export type BookmarkQuery = {
   view: BookmarkListView;
   folderId?: string;
   tagId?: string;
+  limit?: number;
+  offset?: number;
 };
 
 export type BookmarkResult = {
   items: Bookmark[];
+  total: number;
   source: DataSource;
 };
 
@@ -459,12 +462,19 @@ export async function fetchBookmarks(query: BookmarkQuery, token: string): Promi
   if (query.tagId) {
     params.set("tagId", query.tagId);
   }
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  if (query.offset !== undefined) {
+    params.set("offset", String(query.offset));
+  }
   const path = `/bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
   const payload = await requestJson(path, bookmarkSearchResponseSchema, {
     token,
   });
   return {
     items: payload.items,
+    total: payload.total,
     source: "api",
   };
 }

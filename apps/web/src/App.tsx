@@ -136,6 +136,7 @@ type ContextMenuGroup = {
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 const API_TOKEN_SECRET_STORAGE_PREFIX = "keeppage.api-token-secrets";
+const SIDEBAR_COUNT_PAGE_SIZE = 100;
 
 type ApiTokenSecretRecord = {
   value: string;
@@ -769,6 +770,7 @@ function HomeBookmarkSkeleton({
 function AppShell({
   user,
   items,
+  countItems,
   folders,
   tags,
   routePage,
@@ -798,6 +800,7 @@ function AppShell({
 }: {
   user: AuthUser;
   items: Bookmark[];
+  countItems: Bookmark[];
   folders: Folder[];
   tags: Tag[];
   routePage: ViewRoute["page"];
@@ -892,7 +895,7 @@ function AppShell({
     for (const folder of sortedFolders) {
       const descendantIds = new Set(descendantIdsByFolder.get(folder.id) ?? [folder.id]);
       let count = 0;
-      for (const item of items) {
+      for (const item of countItems) {
         const folderId = item.folder?.id;
         if (folderId && descendantIds.has(folderId)) {
           count += 1;
@@ -901,7 +904,7 @@ function AppShell({
       mapping.set(folder.id, count);
     }
     return mapping;
-  }, [descendantIdsByFolder, items, sortedFolders]);
+  }, [countItems, descendantIdsByFolder, sortedFolders]);
 
   useEffect(() => {
     setCollapsedFolderIds((current) => {
@@ -931,6 +934,20 @@ function AppShell({
     onSelectBookmarkView(nextNav);
     onSelectFolder("");
     onSelectTag("");
+  }
+
+  function handleSelectFolderFilter(nextFolderId: string) {
+    setSidebarView("main");
+    onSelectBookmarkView("all");
+    onSelectTag("");
+    onSelectFolder(nextFolderId);
+  }
+
+  function handleSelectTagFilter(nextTagId: string) {
+    setSidebarView("main");
+    onSelectBookmarkView("all");
+    onSelectFolder("");
+    onSelectTag(nextTagId);
   }
 
   function handleToggleFolder(folder: Folder) {
@@ -1126,12 +1143,7 @@ function AppShell({
                         type="button"
                         style={{ paddingLeft: `${12 + depth * 14}px` }}
                         onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
-                        onClick={() => {
-                          const nextFolderId = selectedFolderId === folder.id ? "" : folder.id;
-                          setSidebarView("main");
-                          onSelectBookmarkView("all");
-                          onSelectFolder(nextFolderId);
-                        }}
+                        onClick={() => handleSelectFolderFilter(selectedFolderId === folder.id ? "" : folder.id)}
                       >
                         <span className="home-folder-label">
                           <span className="home-folder-icon material-symbols-outlined" aria-hidden="true">
@@ -1192,13 +1204,8 @@ function AppShell({
                           contextOpen ? "is-context-open" : "",
                         ].filter(Boolean).join(" ")}
                         type="button"
-                      onClick={() => {
-                        const nextTagId = active ? "" : tag.id;
-                        setSidebarView("main");
-                        onSelectBookmarkView("all");
-                        onSelectTag(nextTagId);
-                      }}
-                      onContextMenu={(event) => onTagContextMenu(tag, event)}
+                        onClick={() => handleSelectTagFilter(active ? "" : tag.id)}
+                        onContextMenu={(event) => onTagContextMenu(tag, event)}
                       >
                         {tag.name}
                       </button>
@@ -3396,6 +3403,7 @@ export function App({
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [selectedTagId, setSelectedTagId] = useState("");
   const [items, setItems] = useState<Bookmark[]>([]);
+  const [sidebarCountItems, setSidebarCountItems] = useState<Bookmark[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -3504,6 +3512,7 @@ export function App({
         error: message ?? null,
       });
       setItems([]);
+      setSidebarCountItems([]);
       setFolders([]);
       setTags([]);
       setBookmarkView("all");
@@ -3611,6 +3620,7 @@ export function App({
           });
           if (authToken) {
             void refreshBookmarksList(authToken);
+            void refreshSidebarCountItems(authToken);
           }
         } else if (task.status === "failed") {
           if (cloudArchiveTimerRef.current) {
@@ -3856,6 +3866,36 @@ export function App({
       cancelled = true;
     };
   }, [authToken, demoState.folders, demoState.tags, isDemoMode]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setSidebarCountItems([]);
+      return;
+    }
+
+    if (isDemoMode) {
+      setSidebarCountItems(demoState.bookmarks);
+      return;
+    }
+
+    let cancelled = false;
+    loadSidebarCountItems(authToken)
+      .then((nextItems) => {
+        if (cancelled) {
+          return;
+        }
+        setSidebarCountItems(nextItems);
+      })
+      .catch((error) => {
+        if (cancelled || handleProtectedApiError(error)) {
+          return;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, demoState.bookmarks, isDemoMode, route.page]);
 
   useEffect(() => {
     if (!authToken) {
@@ -4161,6 +4201,38 @@ export function App({
     selectedVersion?.id,
   ]);
 
+  async function loadSidebarCountItems(currentToken: string) {
+    const nextItems: Bookmark[] = [];
+    let offset = 0;
+    let total = 0;
+
+    do {
+      const result = await fetchBookmarks(
+        {
+          search: "",
+          quality: "all",
+          view: "all",
+          limit: SIDEBAR_COUNT_PAGE_SIZE,
+          offset,
+        },
+        currentToken,
+      );
+      nextItems.push(...result.items);
+      total = result.total;
+      offset += result.items.length;
+      if (result.items.length === 0) {
+        break;
+      }
+    } while (nextItems.length < total);
+
+    return nextItems;
+  }
+
+  async function refreshSidebarCountItems(currentToken: string) {
+    const nextItems = await loadSidebarCountItems(currentToken);
+    setSidebarCountItems(nextItems);
+  }
+
   async function refreshCatalogs(currentToken: string) {
     const [nextFolders, nextTags] = await Promise.all([
       fetchFolders(currentToken),
@@ -4208,6 +4280,7 @@ export function App({
     try {
       const message = await action();
       await refreshCatalogs(authToken);
+      await refreshSidebarCountItems(authToken);
       await refreshBookmarksList(authToken);
       if (route.page === "detail") {
         await refreshBookmarkDetail(authToken, route.bookmarkId);
@@ -4282,10 +4355,12 @@ export function App({
             kind: "error",
             message: `批量删除完成，但有 ${failed} 条失败。`,
           });
+          await refreshSidebarCountItems(authToken!);
           await refreshBookmarksList(authToken!);
           exitSelectionMode();
           return;
         }
+        await refreshSidebarCountItems(authToken!);
         await refreshBookmarksList(authToken!);
       }
       setManagerFeedback({
@@ -4317,6 +4392,7 @@ export function App({
         await Promise.allSettled(
           [...ids].map((id) => updateBookmarkMetadata(id, { isFavorite }, authToken!)),
         );
+        await refreshSidebarCountItems(authToken!);
         await refreshBookmarksList(authToken!);
       }
       setManagerFeedback({
@@ -4350,6 +4426,7 @@ export function App({
         await Promise.allSettled(
           [...ids].map((id) => updateBookmarkMetadata(id, { folderId }, authToken!)),
         );
+        await refreshSidebarCountItems(authToken!);
         await refreshBookmarksList(authToken!);
       }
       const folderName = folderId
@@ -4384,6 +4461,7 @@ export function App({
         await Promise.allSettled(
           [...ids].map((id) => updateBookmarkMetadata(id, { tagIds }, authToken!)),
         );
+        await refreshSidebarCountItems(authToken!);
         await refreshBookmarksList(authToken!);
       }
       const tagName = tags.find((t) => t.id === tagIds[0])?.name ?? "标签";
@@ -4715,6 +4793,7 @@ export function App({
         },
         authToken,
       );
+      await refreshSidebarCountItems(authToken);
       await refreshBookmarksList(authToken);
       await refreshBookmarkDetail(authToken, updated.id);
       setMetadataFeedback({
@@ -4747,6 +4826,7 @@ export function App({
         setDemoState(result.workspace);
       } else {
         await updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
+        await refreshSidebarCountItems(authToken);
         await refreshBookmarksList(authToken);
         if (route.page === "detail" && route.bookmarkId === bookmark.id) {
           await refreshBookmarkDetail(authToken, bookmark.id);
@@ -4872,6 +4952,7 @@ export function App({
               icon: "FL",
               onSelect: () => {
                 setBookmarkView("all");
+                setSelectedFolderId("");
                 setSelectedTagId((current) => current === tag.id ? "" : tag.id);
               },
             },
@@ -4910,6 +4991,7 @@ export function App({
             icon: "FL",
             onSelect: () => {
               setBookmarkView("all");
+              setSelectedTagId("");
               setSelectedFolderId((current) => current === folder.id ? "" : folder.id);
             },
           },
@@ -5022,6 +5104,7 @@ export function App({
       <AppShell
         user={session.user}
         items={items}
+        countItems={sidebarCountItems}
         folders={folders}
         tags={tags}
         routePage={route.page}

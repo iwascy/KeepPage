@@ -92,6 +92,7 @@ type ManagerDialogState =
   | { kind: "delete-tag"; tag: Tag };
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
+const SIDEBAR_COUNT_PAGE_SIZE = 100;
 
 function qualityLabel(grade?: QualityGrade) {
   if (!grade) {
@@ -544,6 +545,7 @@ function HomeBookmarkSkeleton({
 function AppShell({
   user,
   items,
+  countItems,
   folders,
   tags,
   selectedFolderId,
@@ -563,6 +565,7 @@ function AppShell({
 }: {
   user: AuthUser;
   items: Bookmark[];
+  countItems: Bookmark[];
   folders: Folder[];
   tags: Tag[];
   selectedFolderId: string;
@@ -645,7 +648,7 @@ function AppShell({
     for (const folder of sortedFolders) {
       const descendantIds = new Set(descendantIdsByFolder.get(folder.id) ?? [folder.id]);
       let count = 0;
-      for (const item of items) {
+      for (const item of countItems) {
         const folderId = item.folder?.id;
         if (folderId && descendantIds.has(folderId)) {
           count += 1;
@@ -654,7 +657,7 @@ function AppShell({
       mapping.set(folder.id, count);
     }
     return mapping;
-  }, [descendantIdsByFolder, items, sortedFolders]);
+  }, [countItems, descendantIdsByFolder, sortedFolders]);
 
   useEffect(() => {
     setCollapsedFolderIds((current) => {
@@ -678,6 +681,16 @@ function AppShell({
   }, [sortedFolders]);
 
   const displayName = displayUserName(user);
+
+  function handleSelectFolderFilter(nextFolderId: string) {
+    onSelectTag("");
+    onSelectFolder(nextFolderId);
+  }
+
+  function handleSelectTagFilter(nextTagId: string) {
+    onSelectFolder("");
+    onSelectTag(nextTagId);
+  }
 
   function handleToggleFolder(folder: Folder) {
     setCollapsedFolderIds((current) => {
@@ -730,10 +743,10 @@ function AppShell({
               <button
                 className={selectedFolderId ? "home-folder-main" : "home-folder-main is-active"}
                 type="button"
-                onClick={() => onSelectFolder("")}
+                onClick={() => handleSelectFolderFilter("")}
               >
                 <span className="home-folder-name">全部归档</span>
-                <span className="home-folder-count">{items.length}</span>
+                <span className="home-folder-count">{countItems.length}</span>
               </button>
               <span className="home-folder-toggle-spacer" aria-hidden="true" />
             </div>
@@ -747,7 +760,7 @@ function AppShell({
                   ].filter(Boolean).join(" ")}
                   type="button"
                   style={{ paddingLeft: `${12 + depth * 14}px` }}
-                  onClick={() => onSelectFolder(selectedFolderId === folder.id ? "" : folder.id)}
+                  onClick={() => handleSelectFolderFilter(selectedFolderId === folder.id ? "" : folder.id)}
                 >
                   <span className="home-folder-name">{folder.name}</span>
                   <span className="home-folder-count">{folderCounts.get(folder.id) ?? 0}</span>
@@ -788,7 +801,7 @@ function AppShell({
                   key={tag.id}
                   className={active ? "home-tag-chip is-active" : "home-tag-chip"}
                   type="button"
-                  onClick={() => onSelectTag(active ? "" : tag.id)}
+                  onClick={() => handleSelectTagFilter(active ? "" : tag.id)}
                 >
                   #{tag.name}
                 </button>
@@ -1605,6 +1618,7 @@ export function App({
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [selectedTagId, setSelectedTagId] = useState("");
   const [items, setItems] = useState<Bookmark[]>([]);
+  const [sidebarCountItems, setSidebarCountItems] = useState<Bookmark[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -1694,6 +1708,7 @@ export function App({
         error: message ?? null,
       });
       setItems([]);
+      setSidebarCountItems([]);
       setFolders([]);
       setTags([]);
       setSelectedFolderId("");
@@ -1846,6 +1861,36 @@ export function App({
       cancelled = true;
     };
   }, [authToken, demoState.folders, demoState.tags, isDemoMode]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setSidebarCountItems([]);
+      return;
+    }
+
+    if (isDemoMode) {
+      setSidebarCountItems(demoState.bookmarks);
+      return;
+    }
+
+    let cancelled = false;
+    loadSidebarCountItems(authToken)
+      .then((nextItems) => {
+        if (cancelled) {
+          return;
+        }
+        setSidebarCountItems(nextItems);
+      })
+      .catch((error) => {
+        if (cancelled || handleProtectedApiError(error)) {
+          return;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, demoState.bookmarks, isDemoMode, route.page]);
 
   useEffect(() => {
     if (!authToken) {
@@ -2132,6 +2177,37 @@ export function App({
     selectedVersion?.id,
   ]);
 
+  async function loadSidebarCountItems(currentToken: string) {
+    const nextItems: Bookmark[] = [];
+    let offset = 0;
+    let total = 0;
+
+    do {
+      const result = await fetchBookmarks(
+        {
+          search: "",
+          quality: "all",
+          limit: SIDEBAR_COUNT_PAGE_SIZE,
+          offset,
+        },
+        currentToken,
+      );
+      nextItems.push(...result.items);
+      total = result.total;
+      offset += result.items.length;
+      if (result.items.length === 0) {
+        break;
+      }
+    } while (nextItems.length < total);
+
+    return nextItems;
+  }
+
+  async function refreshSidebarCountItems(currentToken: string) {
+    const nextItems = await loadSidebarCountItems(currentToken);
+    setSidebarCountItems(nextItems);
+  }
+
   async function refreshCatalogs(currentToken: string) {
     const [nextFolders, nextTags] = await Promise.all([
       fetchFolders(currentToken),
@@ -2178,6 +2254,7 @@ export function App({
     try {
       const message = await action();
       await refreshCatalogs(authToken);
+      await refreshSidebarCountItems(authToken);
       await refreshBookmarksList(authToken);
       if (route.page === "detail") {
         await refreshBookmarkDetail(authToken, route.bookmarkId);
@@ -2504,6 +2581,7 @@ export function App({
         },
         authToken,
       );
+      await refreshSidebarCountItems(authToken);
       await refreshBookmarksList(authToken);
       await refreshBookmarkDetail(authToken, updated.id);
       setMetadataFeedback({
@@ -2601,6 +2679,7 @@ export function App({
       <AppShell
         user={session.user}
         items={items}
+        countItems={sidebarCountItems}
         folders={folders}
         tags={tags}
         selectedFolderId={selectedFolderId}
