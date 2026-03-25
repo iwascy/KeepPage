@@ -31,32 +31,28 @@ type AuthState = "idle" | "submitting" | "ok" | "error";
 type AuthMode = "login" | "register";
 
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
-const PROFILE_OPTIONS: Array<{
-  value: CaptureProfile;
+const LOCKED_CAPTURE_PROFILE: CaptureProfile = "complete";
+const PROFILE_META: Record<CaptureProfile, {
   label: string;
   description: string;
-}> = [
-  {
-    value: "standard",
+}> = {
+  standard: {
     label: "标准保真",
     description: "默认方案，平衡质量与体积。",
   },
-  {
-    value: "complete",
+  complete: {
     label: "完整保留",
     description: "尽量少裁剪，适合复杂页面。",
   },
-  {
-    value: "dynamic",
+  dynamic: {
     label: "动态增强",
     description: "更适合延迟内容和 SPA。",
   },
-  {
-    value: "lightweight",
+  lightweight: {
     label: "轻量快照",
     description: "更快更小，优先搜索和快速归档。",
   },
-];
+};
 const SAVE_MODE_OPTIONS: Array<{ value: SaveMode; label: string }> = [
   {
     value: "standard",
@@ -103,7 +99,7 @@ function captureStatusLabel(status: CaptureTask["status"]) {
 }
 
 function captureProfileLabel(profile: CaptureProfile) {
-  return PROFILE_OPTIONS.find((option) => option.value === profile)?.label ?? profile;
+  return PROFILE_META[profile]?.label ?? profile;
 }
 
 function captureScopeLabel(scope: CaptureTask["source"]["captureScope"]) {
@@ -153,7 +149,7 @@ export function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [state, setState] = useState<AsyncState>("idle");
   const [saveMode, setSaveMode] = useState<SaveMode>("standard");
-  const [captureProfile, setCaptureProfile] = useState<CaptureProfile>("standard");
+  const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(LOCKED_CAPTURE_PROFILE);
   const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_API_BASE_URL);
   const [incognitoPrivateDefault, setIncognitoPrivateDefault] = useState(true);
   const [debugMode, setDebugMode] = useState(false);
@@ -230,7 +226,7 @@ export function App() {
   }, [saveMode]);
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
-  const selectedProfileMeta = PROFILE_OPTIONS.find((option) => option.value === captureProfile);
+  const selectedProfileMeta = PROFILE_META[captureProfile] ?? PROFILE_META[LOCKED_CAPTURE_PROFILE];
   const authBannerTone = authState === "ok" ? "ok" : authState;
   const isRegister = authMode === "register";
   const isPrivateView = saveMode === "private";
@@ -470,7 +466,6 @@ export function App() {
   async function loadSettings() {
     const result = await chrome.storage.local.get([
       "apiBaseUrl",
-      "captureProfilePreference",
       "saveModePreference",
       "incognitoPrivateDefault",
       "debugMode",
@@ -481,15 +476,7 @@ export function App() {
       ? normalizeApiBaseUrl(result.apiBaseUrl)
       : DEFAULT_API_BASE_URL;
     setApiBaseUrl(normalizedApiBaseUrl);
-
-    if (typeof result.captureProfilePreference === "string") {
-      const matched = PROFILE_OPTIONS.find(
-        (option) => option.value === result.captureProfilePreference,
-      );
-      if (matched) {
-        setCaptureProfile(matched.value);
-      }
-    }
+    setCaptureProfile(LOCKED_CAPTURE_PROFILE);
 
     const nextIncognitoPrivateDefault = result.incognitoPrivateDefault !== false;
     setIncognitoPrivateDefault(nextIncognitoPrivateDefault);
@@ -542,7 +529,7 @@ export function App() {
       const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
       await chrome.storage.local.set({
         apiBaseUrl: normalizedApiBaseUrl,
-        captureProfilePreference: captureProfile,
+        captureProfilePreference: LOCKED_CAPTURE_PROFILE,
         saveModePreference: saveMode,
         incognitoPrivateDefault,
         debugMode,
@@ -840,16 +827,9 @@ export function App() {
           </label>
           <label className="compact-field">
             <span>抓取 profile</span>
-            <select
-              value={captureProfile}
-              onChange={(event) => setCaptureProfile(event.target.value as CaptureProfile)}
-            >
-              {PROFILE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div className="compact-field-value" title={selectedProfileMeta.description}>
+              {selectedProfileMeta.label}
+            </div>
           </label>
           <div className="capture-actions">
             <div className="capture-action-row">
@@ -1062,7 +1042,7 @@ export function App() {
         <div className="settings-copy">
           <p className="settings-title">同步与默认规则</p>
           <p className="muted">
-            当前保存会使用 <strong>{selectedProfileMeta?.label ?? "标准保真"}</strong>。
+            当前保存会使用 <strong>{selectedProfileMeta?.label ?? PROFILE_META[LOCKED_CAPTURE_PROFILE].label}</strong>。
             {selectedProfileMeta?.description ? ` ${selectedProfileMeta.description}` : ""}
           </p>
         </div>

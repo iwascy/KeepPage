@@ -61,7 +61,7 @@ export default defineBackground(() => {
       if (!await ensureAuthenticated("context-menu")) {
         return;
       }
-      await attemptQuickCapture(tab.windowId, "standard");
+      await attemptQuickCapture(tab.windowId);
     }
   });
 
@@ -88,7 +88,7 @@ export default defineBackground(() => {
       if (!await ensureAuthenticated("keyboard-shortcut")) {
         return;
       }
-      await attemptQuickCapture(tab?.windowId, "standard");
+      await attemptQuickCapture(tab?.windowId);
       return;
     }
     if (command === "open-side-panel") {
@@ -289,9 +289,9 @@ async function ensureAuthenticated(trigger: string) {
   return false;
 }
 
-async function attemptQuickCapture(windowId: number | undefined, profile: "standard") {
+async function attemptQuickCapture(windowId: number | undefined) {
   try {
-    await captureActiveTab(profile);
+    await captureActiveTab();
   } catch (error) {
     logger.warn("Quick capture failed.", {
       error: error instanceof Error ? error.message : String(error),

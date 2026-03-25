@@ -236,6 +236,7 @@ body {
 }
 
 .compact-field select,
+.compact-field-value,
 .field-inline input,
 .field-inline select {
   min-width: 0;
@@ -256,6 +257,12 @@ body {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.7),
     0 0 0 2px rgba(161, 161, 170, 0.18);
+}
+
+.compact-field-value {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
 }
 
 .capture-btn {

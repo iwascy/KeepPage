@@ -292,7 +292,7 @@ npm run zip -w @keeppage/extension
 
 1. 打开 Side Panel
 2. 设置 `API Base URL`
-3. 选择抓取 profile
+3. 确认默认抓取 profile
 4. 点击“测试连接”确认 API 可达
 5. 点击“保存当前页”生成归档任务
 6. 在左侧任务列表查看状态变化
@@ -300,12 +300,11 @@ npm run zip -w @keeppage/extension
 
 ### 抓取 Profile
 
-当前提供四种抓取配置：
+当前扩展界面固定使用 `complete`：
 
-- `standard`：标准保真，默认方案
 - `complete`：完整保留，适合复杂页面
-- `dynamic`：动态增强，适合延迟内容和 SPA
-- `lightweight`：轻量快照，优先体积和速度
+
+其余 `standard`、`dynamic`、`lightweight` 仍保留在内部兼容逻辑中，但默认界面不再提供切换入口。
 
 ### 任务状态说明
 
@@ -324,13 +323,13 @@ npm run zip -w @keeppage/extension
 
 - 任务队列：IndexedDB
 - `apiBaseUrl`：API 地址
-- `captureProfilePreference`：默认抓取 profile
+- `captureProfilePreference`：默认抓取 profile（当前固定为 `complete`）
 - `deviceId`：当前浏览器实例的设备标识
 
 ### 常用操作建议
 
 - 看到 `upload_pending` 时，可先检查 API 地址和网络，再点击“继续同步”
-- 如果页面质量不理想，可切换 profile 后重新抓取
+- 如果页面质量不理想，可直接重试抓取，当前会继续使用 `complete`
 - 如果只想检查本地归档是否成功，可直接使用“新标签预览”
 
 ---
