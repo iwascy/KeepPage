@@ -719,13 +719,15 @@ function HomeBookmarkCard({
               </div>
             </div>
           )}
-          <div className="home-bookmark-cover-overlay">
-            <div className="home-bookmark-cover-overlay-meta">
-              <span className="home-bookmark-overlay-badge">{folderLabel}</span>
-              <span className="home-bookmark-overlay-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+          {hasCoverImage ? (
+            <div className="home-bookmark-cover-overlay">
+              <div className="home-bookmark-cover-overlay-meta">
+                <span className="home-bookmark-overlay-badge">{folderLabel}</span>
+                <span className="home-bookmark-overlay-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+              </div>
+              <strong>{bookmark.title}</strong>
             </div>
-            <strong>{bookmark.title}</strong>
-          </div>
+          ) : null}
         </div>
         <div className="home-bookmark-body">
           <div className="home-bookmark-title-row">

@@ -2525,6 +2525,10 @@ button {
   transition: transform 320ms ease, box-shadow 320ms ease, background 320ms ease;
 }
 
+.home-bookmark-cover.is-placeholder .home-bookmark-paper {
+  inset: 1.15rem;
+}
+
 .home-bookmark-paper::after {
   content: "";
   position: absolute;
@@ -2648,11 +2652,6 @@ button {
   transition: opacity 220ms ease, transform 220ms ease;
 }
 
-.home-bookmark-cover.is-placeholder .home-bookmark-cover-overlay {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 .home-bookmark-cover-overlay-meta {
   display: flex;
   align-items: center;
@@ -2681,15 +2680,6 @@ button {
   font-weight: 700;
 }
 
-.home-bookmark-cover.is-placeholder .home-bookmark-overlay-badge {
-  background: rgba(255, 255, 255, 0.72);
-  color: #5f6871;
-}
-
-.home-bookmark-cover.is-placeholder .home-bookmark-overlay-time {
-  color: rgba(45, 51, 56, 0.64);
-}
-
 .home-bookmark-cover-overlay strong {
   max-width: 18rem;
   color: #ffffff;
@@ -2698,11 +2688,6 @@ button {
   letter-spacing: -0.03em;
   line-height: 1.25;
   text-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
-}
-
-.home-bookmark-cover.is-placeholder .home-bookmark-cover-overlay strong {
-  color: #34404b;
-  text-shadow: none;
 }
 
 .home-bookmark-card:hover .home-bookmark-cover-overlay {
