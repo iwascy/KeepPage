@@ -88,6 +88,26 @@ export const qualityReportSchema = z.object({
   archiveSignals: capturePageSignalsSchema,
 });
 
+export const captureDownloadableMediaSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["image", "video", "video_cover"]),
+  url: z.url(),
+  mimeType: z.string().min(1).optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+});
+
+export const bookmarkVersionMediaFileSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["image", "video", "video_cover"]),
+  objectKey: z.string().min(1),
+  originalUrl: z.url(),
+  mimeType: z.string().min(1).optional(),
+  fileSize: z.number().int().nonnegative().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+});
+
 export const captureArtifactsSchema = z.object({
   archiveHtml: z.string().min(1),
   readerHtml: z.string().min(1).optional(),
@@ -95,6 +115,7 @@ export const captureArtifactsSchema = z.object({
   thumbnailDataUrl: z.string().optional(),
   screenshotDataUrl: z.string().optional(),
   pdfDataUrl: z.string().optional(),
+  downloadableMedia: z.array(captureDownloadableMediaSchema).optional(),
   meta: z.record(z.string(), z.unknown()).default({}),
 });
 
@@ -182,6 +203,7 @@ export const bookmarkVersionSchema = z.object({
   htmlSha256: z.string().min(1),
   textSha256: z.string().optional(),
   textSimhash: z.string().optional(),
+  mediaFiles: z.array(bookmarkVersionMediaFileSchema).optional(),
   captureProfile: captureProfileSchema,
   quality: qualityReportSchema,
   createdAt: z.string().datetime(),
@@ -229,6 +251,7 @@ export const captureCompleteRequestSchema = z.object({
   textSha256: z.string().optional(),
   textSimhash: z.string().optional(),
   extractedText: z.string().optional(),
+  mediaFiles: z.array(bookmarkVersionMediaFileSchema).max(64).optional(),
   screenshotObjectKey: z.string().optional(),
   thumbnailObjectKey: z.string().optional(),
   quality: qualityReportSchema,
@@ -316,12 +339,14 @@ export type CapturePageSignals = z.infer<typeof capturePageSignalsSchema>;
 export type QualityReason = z.infer<typeof qualityReasonSchema>;
 export type QualityReport = z.infer<typeof qualityReportSchema>;
 export type CaptureArtifacts = z.infer<typeof captureArtifactsSchema>;
+export type CaptureDownloadableMedia = z.infer<typeof captureDownloadableMediaSchema>;
 export type CaptureTaskOwner = z.infer<typeof captureTaskOwnerSchema>;
 export type CaptureTask = z.infer<typeof captureTaskSchema>;
 export type Tag = z.infer<typeof tagSchema>;
 export type Folder = z.infer<typeof folderSchema>;
 export type Bookmark = z.infer<typeof bookmarkSchema>;
 export type BookmarkVersion = z.infer<typeof bookmarkVersionSchema>;
+export type BookmarkVersionMediaFile = z.infer<typeof bookmarkVersionMediaFileSchema>;
 export type BookmarkDetailVersion = z.infer<typeof bookmarkDetailVersionSchema>;
 export type AuthUser = z.infer<typeof authUserSchema>;
 export type AuthRegisterRequest = z.infer<typeof authRegisterRequestSchema>;

@@ -1,4 +1,5 @@
 import type {
+  CaptureDownloadableMedia,
   CapturePageSignals,
   CaptureProfile,
   CaptureScope,
@@ -48,6 +49,7 @@ export interface CaptureArchiveHtmlResponse {
   ok: boolean;
   archiveHtml?: string;
   readerHtml?: string;
+  downloadableMedia?: CaptureDownloadableMedia[];
   usedSingleFile?: boolean;
   error?: string;
 }

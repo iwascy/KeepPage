@@ -179,10 +179,17 @@ export async function registerUploadRoutes(
 function decodeObjectKey(encodedObjectKey: string) {
   try {
     const objectKey = decodeURIComponent(encodedObjectKey);
-    if (!objectKey) {
+    const normalized = path.posix.normalize(objectKey.replaceAll("\\", "/"));
+    if (
+      !normalized
+      || normalized === "."
+      || normalized === ".."
+      || normalized.startsWith("../")
+      || normalized.startsWith("/")
+    ) {
       throw new Error("Object key is empty.");
     }
-    return objectKey;
+    return normalized;
   } catch {
     throw new Error("Invalid upload object key.");
   }
@@ -317,6 +324,27 @@ async function decodeUploadBody(
 }
 
 function guessContentType(objectKey: string) {
+  if (objectKey.endsWith(".gif")) {
+    return "image/gif";
+  }
+  if (objectKey.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (objectKey.endsWith(".png")) {
+    return "image/png";
+  }
+  if (objectKey.endsWith(".jpg") || objectKey.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (objectKey.endsWith(".mp4")) {
+    return "video/mp4";
+  }
+  if (objectKey.endsWith(".webm")) {
+    return "video/webm";
+  }
+  if (objectKey.endsWith(".mov")) {
+    return "video/quicktime";
+  }
   if (objectKey.endsWith(".html")) {
     return "text/html; charset=utf-8";
   }

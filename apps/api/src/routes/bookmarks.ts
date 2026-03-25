@@ -103,6 +103,7 @@ export async function registerBookmarkRoutes(
           version.readerHtmlObjectKey
             ? objectStorage.deleteObject(version.readerHtmlObjectKey)
             : Promise.resolve(),
+          ...(version.mediaFiles ?? []).map((mediaFile) => objectStorage.deleteObject(mediaFile.objectKey)),
         ]
       )),
     );

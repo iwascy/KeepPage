@@ -1,4 +1,5 @@
 import type {
+  CaptureDownloadableMedia,
   CapturePageSignals,
   CaptureProfile,
   CaptureScope,
@@ -45,6 +46,7 @@ type ArchiveCaptureResult =
       ok: true;
       archiveHtml: string;
       readerHtml?: string;
+      downloadableMedia: CaptureDownloadableMedia[];
       usedSingleFile: boolean;
     }
   | {
@@ -169,6 +171,7 @@ export default defineContentScript({
                 ok: true,
                 archiveHtml: capture.archiveHtml,
                 readerHtml: capture.readerHtml,
+                downloadableMedia: capture.downloadableMedia,
                 usedSingleFile: capture.usedSingleFile,
               }
             : {
@@ -330,6 +333,11 @@ function readXiaohongshuCoverImageUrl(root: ParentNode | HTMLElement) {
     return stateImageUrls[0];
   }
 
+  const videoPosterUrl = readXiaohongshuVideoPosterUrl(root);
+  if (videoPosterUrl) {
+    return videoPosterUrl;
+  }
+
   const scope = root instanceof HTMLElement ? root : document;
   const candidates = [
     ...scope.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
@@ -378,6 +386,68 @@ function readXiaohongshuStateImageUrls() {
   }
 
   return urls;
+}
+
+function collectDownloadableMedia() {
+  if (!isXiaohongshuNotePage(new URL(location.href))) {
+    return [];
+  }
+
+  return collectXiaohongshuDownloadableMedia();
+}
+
+function collectXiaohongshuDownloadableMedia() {
+  const scope = document;
+  const media = new Map<string, CaptureDownloadableMedia>();
+
+  const stateImageUrls = readXiaohongshuStateImageUrls();
+  stateImageUrls.forEach((url, index) => {
+    media.set(`image:${url}`, {
+      id: `image-${index + 1}`,
+      kind: "image",
+      url,
+    });
+  });
+
+  const domImages = [
+    ...scope.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
+    ...scope.querySelectorAll<HTMLImageElement>(".media-container .img-container img"),
+  ];
+  for (const [index, image] of domImages.entries()) {
+    const url = resolveCoverCandidateUrl(image);
+    if (!url) {
+      continue;
+    }
+    media.set(`image:${url}`, {
+      id: media.get(`image:${url}`)?.id ?? `image-${index + 1}`,
+      kind: "image",
+      url,
+      width: readPositiveInt(image.naturalWidth || image.width || image.clientWidth),
+      height: readPositiveInt(image.naturalHeight || image.height || image.clientHeight),
+    });
+  }
+
+  const videoUrls = collectXiaohongshuVideoUrls();
+  videoUrls.forEach((url, index) => {
+    media.set(`video:${url}`, {
+      id: `video-${index + 1}`,
+      kind: "video",
+      url,
+    });
+  });
+
+  if (videoUrls.length > 0) {
+    const coverUrl = readXiaohongshuVideoPosterUrl(document) ?? readXiaohongshuCoverImageUrl(document);
+    if (coverUrl) {
+      media.set(`video_cover:${coverUrl}`, {
+        id: "video-cover-1",
+        kind: "video_cover",
+        url: coverUrl,
+      });
+    }
+  }
+
+  return [...media.values()];
 }
 
 function readXiaohongshuStateNoteRecord() {
@@ -449,6 +519,148 @@ function normalizeXiaohongshuStateUrl(rawUrl: string) {
   } catch {
     return normalized.replace(/^http:\/\//iu, "https://");
   }
+}
+
+function collectXiaohongshuVideoUrls() {
+  const urls = new Set<string>();
+  const noteState = readXiaohongshuStateNoteRecord();
+
+  for (const video of document.querySelectorAll<HTMLVideoElement>("video")) {
+    const candidates = [
+      video.currentSrc,
+      video.src,
+      video.getAttribute("src"),
+      ...Array.from(video.querySelectorAll("source"))
+        .map((source) => source.getAttribute("src") ?? ""),
+    ];
+    for (const candidate of candidates) {
+      const normalized = normalizeXiaohongshuStateUrl(candidate ?? "");
+      if (normalized && isLikelyVideoUrl(normalized)) {
+        urls.add(normalized);
+      }
+    }
+  }
+
+  if (noteState) {
+    const candidates = collectUrlsFromUnknown(noteState);
+    const prioritized = candidates
+      .filter((candidate) => candidate.url && isLikelyVideoUrl(candidate.url))
+      .sort((left, right) => scoreVideoCandidate(right) - scoreVideoCandidate(left));
+    for (const candidate of prioritized) {
+      urls.add(candidate.url);
+    }
+  }
+
+  return [...urls];
+}
+
+function readXiaohongshuVideoPosterUrl(root: ParentNode | HTMLElement) {
+  const scope = root instanceof HTMLElement ? root : document;
+  for (const video of scope.querySelectorAll<HTMLVideoElement>("video")) {
+    const poster = normalizeXiaohongshuStateUrl(video.poster);
+    if (poster) {
+      return poster;
+    }
+  }
+
+  const noteState = readXiaohongshuStateNoteRecord();
+  if (!noteState) {
+    return undefined;
+  }
+
+  const candidates = collectUrlsFromUnknown(noteState)
+    .filter((candidate) => candidate.url && isLikelyImageUrl(candidate.url))
+    .sort((left, right) => scorePosterCandidate(right) - scorePosterCandidate(left));
+  return candidates[0]?.url;
+}
+
+function collectUrlsFromUnknown(
+  value: unknown,
+  path: string[] = [],
+  seen = new Set<unknown>(),
+): Array<{ path: string[]; url: string }> {
+  if (seen.has(value)) {
+    return [];
+  }
+
+  if (typeof value === "string") {
+    const normalized = normalizeXiaohongshuStateUrl(value);
+    return normalized ? [{ path, url: normalized }] : [];
+  }
+
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectUrlsFromUnknown(item, [...path, String(index)], seen));
+  }
+
+  return Object.entries(value).flatMap(([key, nested]) =>
+    collectUrlsFromUnknown(nested, [...path, key], seen)
+  );
+}
+
+function scoreVideoCandidate(candidate: { path: string[]; url: string }) {
+  const pathText = candidate.path.join(".").toLowerCase();
+  let score = 0;
+  if (candidate.url.includes(".mp4") || candidate.url.includes("mp4")) {
+    score += 10;
+  }
+  if (pathText.includes("master") || pathText.includes("origin")) {
+    score += 5;
+  }
+  if (pathText.includes("video") || pathText.includes("stream") || pathText.includes("play")) {
+    score += 3;
+  }
+  if (candidate.url.includes(".m3u8")) {
+    score -= 4;
+  }
+  return score;
+}
+
+function scorePosterCandidate(candidate: { path: string[]; url: string }) {
+  const pathText = candidate.path.join(".").toLowerCase();
+  let score = 0;
+  if (pathText.includes("poster") || pathText.includes("cover")) {
+    score += 6;
+  }
+  if (pathText.includes("image") || pathText.includes("thumbnail") || pathText.includes("firstframe")) {
+    score += 3;
+  }
+  return score;
+}
+
+function isLikelyVideoUrl(url: string) {
+  const lower = url.toLowerCase();
+  return lower.includes(".mp4")
+    || lower.includes(".mov")
+    || lower.includes(".webm")
+    || lower.includes(".m3u8")
+    || lower.includes("/video/")
+    || lower.includes("videoplay");
+}
+
+function isLikelyImageUrl(url: string) {
+  const lower = url.toLowerCase();
+  return lower.includes(".jpg")
+    || lower.includes(".jpeg")
+    || lower.includes(".png")
+    || lower.includes(".webp")
+    || lower.includes(".gif")
+    || lower.includes("/image/")
+    || (!isLikelyVideoUrl(url) && (
+      lower.includes("poster")
+      || lower.includes("cover")
+      || lower.includes("thumbnail")
+      || lower.includes("firstframe")
+      || lower.includes("image")
+    ));
+}
+
+function readPositiveInt(value: number) {
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -562,10 +774,13 @@ async function captureArchiveHtml(
       });
     }
 
+    const downloadableMedia = collectDownloadableMedia();
+
     return {
       ok: true,
       archiveHtml: finalizedArchiveHtml,
       readerHtml,
+      downloadableMedia,
       usedSingleFile,
     };
   };

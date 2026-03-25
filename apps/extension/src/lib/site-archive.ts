@@ -744,7 +744,7 @@ function collectXiaohongshuMediaItems(input: {
       return imageKey === key;
     });
 
-    const src = readReaderImageSource(matchingLiveImage, currentUrl) || stateImage.src;
+    const src = readXiaohongshuImageSource(matchingLiveImage, stateImage.src, currentUrl);
     if (!src) {
       continue;
     }
@@ -778,7 +778,7 @@ function collectXiaohongshuMediaItems(input: {
     if (key && seen.has(key)) {
       continue;
     }
-    const src = readReaderImageSource(image, currentUrl);
+    const src = readXiaohongshuImageSource(image, "", currentUrl);
     if (!src) {
       continue;
     }
@@ -794,6 +794,21 @@ function collectXiaohongshuMediaItems(input: {
       alt: `${title} - 第 ${items.length + 1} 张图`,
       aspectRatio,
     });
+  }
+
+  if (items.length === 0) {
+    const videoCover = readXiaohongshuVideoCoverUrl({
+      archivedDocument,
+      liveDocument,
+      currentUrl,
+    });
+    if (videoCover) {
+      items.push({
+        src: videoCover,
+        alt: `${title} - 视频封面`,
+        aspectRatio: "16 / 9",
+      });
+    }
   }
 
   return items;
@@ -829,6 +844,62 @@ function readReaderImageSource(image: HTMLImageElement | null | undefined, curre
   }
 
   return resolveUrl(readImageCandidateUrl(image), currentUrl);
+}
+
+function readXiaohongshuImageSource(
+  image: HTMLImageElement | null | undefined,
+  fallbackSrc: string,
+  currentUrl: URL,
+) {
+  const resolvedImageUrl = resolveUrl(readImageCandidateUrl(image), currentUrl);
+  if (resolvedImageUrl) {
+    return resolvedImageUrl;
+  }
+
+  const resolvedFallback = resolveUrl(fallbackSrc, currentUrl);
+  if (resolvedFallback) {
+    return resolvedFallback;
+  }
+
+  if (!image) {
+    return resolvedFallback ?? fallbackSrc;
+  }
+
+  return convertImageToDataUrl(image);
+}
+
+function readXiaohongshuVideoCoverUrl(input: {
+  archivedDocument: Document;
+  liveDocument?: Document | null;
+  currentUrl: URL;
+}) {
+  const { archivedDocument, liveDocument, currentUrl } = input;
+  const candidates = [
+    readXiaohongshuVideoPosterFromDocument(archivedDocument, currentUrl),
+    liveDocument ? readXiaohongshuVideoPosterFromDocument(liveDocument, currentUrl) : "",
+    readXiaohongshuMetaContent(archivedDocument, liveDocument, 'meta[property="og:image"]') ?? "",
+  ];
+
+  for (const candidate of candidates) {
+    const resolved = resolveUrl(candidate, currentUrl);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return "";
+}
+
+function readXiaohongshuVideoPosterFromDocument(doc: Document, currentUrl: URL) {
+  const poster = doc.querySelector<HTMLVideoElement>("video[poster]")?.poster;
+  if (poster) {
+    return poster;
+  }
+
+  const image = doc.querySelector<HTMLImageElement>(
+    ".player-container img, .note-video-container img, .browser-player img",
+  );
+  return resolveUrl(readImageCandidateUrl(image), currentUrl) ?? "";
 }
 
 function convertImageToDataUrl(image: HTMLImageElement) {
