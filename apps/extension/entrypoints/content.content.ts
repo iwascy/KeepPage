@@ -325,6 +325,11 @@ function readXiaohongshuCoverImageUrl(root: ParentNode | HTMLElement) {
     return undefined;
   }
 
+  const stateImageUrls = readXiaohongshuStateImageUrls();
+  if (stateImageUrls.length > 0) {
+    return stateImageUrls[0];
+  }
+
   const scope = root instanceof HTMLElement ? root : document;
   const candidates = [
     ...scope.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
@@ -349,6 +354,105 @@ function readXiaohongshuCoverImageUrl(root: ParentNode | HTMLElement) {
 function isXiaohongshuNotePage(url: URL) {
   const hostname = url.hostname.replace(/^www\./i, "");
   return hostname === "xiaohongshu.com" && /^\/explore\/[a-z0-9]+\/?$/i.test(url.pathname);
+}
+
+function readXiaohongshuStateImageUrls() {
+  const noteState = readXiaohongshuStateNoteRecord();
+  const imageList = Array.isArray(noteState?.imageList) ? noteState.imageList : [];
+  const seen = new Set<string>();
+  const urls: string[] = [];
+
+  for (const item of imageList) {
+    const record = isRecord(item) ? item : null;
+    if (!record) {
+      continue;
+    }
+
+    const url = normalizeXiaohongshuStateUrl(readXiaohongshuStateImageUrl(record));
+    if (!url || seen.has(url)) {
+      continue;
+    }
+
+    seen.add(url);
+    urls.push(url);
+  }
+
+  return urls;
+}
+
+function readXiaohongshuStateNoteRecord() {
+  const state = (globalThis as { __INITIAL_STATE__?: unknown }).__INITIAL_STATE__;
+  if (!isRecord(state) || !isRecord(state.note)) {
+    return null;
+  }
+
+  const noteState = state.note;
+  const noteDetailMap = isRecord(noteState.noteDetailMap) ? noteState.noteDetailMap : null;
+  const currentNoteId = typeof noteState.currentNoteId === "string"
+    ? noteState.currentNoteId
+    : typeof noteState.firstNoteId === "string"
+      ? noteState.firstNoteId
+      : noteDetailMap
+        ? Object.keys(noteDetailMap)[0]
+        : "";
+
+  if (currentNoteId && noteDetailMap && isRecord(noteDetailMap[currentNoteId])) {
+    const detail = noteDetailMap[currentNoteId];
+    if (isRecord(detail.note)) {
+      return detail.note;
+    }
+  }
+
+  return isRecord(noteState.note) ? noteState.note : null;
+}
+
+function readXiaohongshuStateImageUrl(record: Record<string, unknown>) {
+  const infoList = Array.isArray(record.infoList) ? record.infoList : [];
+  const preferredInfo = infoList.find((entry) => {
+    if (!isRecord(entry)) {
+      return false;
+    }
+    return entry.imageScene === "WB_DFT" && typeof entry.url === "string";
+  });
+  if (isRecord(preferredInfo) && typeof preferredInfo.url === "string") {
+    return preferredInfo.url;
+  }
+
+  const fallbackInfo = infoList.find((entry) => isRecord(entry) && typeof entry.url === "string");
+  if (isRecord(fallbackInfo) && typeof fallbackInfo.url === "string") {
+    return fallbackInfo.url;
+  }
+
+  const directCandidates = [record.urlDefault, record.urlPre, record.url];
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function normalizeXiaohongshuStateUrl(rawUrl: string) {
+  const normalized = normalizeCoverImageUrl(rawUrl);
+  if (!normalized) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(normalized);
+    if (url.protocol === "http:") {
+      url.protocol = "https:";
+    }
+    url.hash = "";
+    return url.href;
+  } catch {
+    return normalized.replace(/^http:\/\//iu, "https://");
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isQualifiedCoverImage(image: HTMLImageElement) {

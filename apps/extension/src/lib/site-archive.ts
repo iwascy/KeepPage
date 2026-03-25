@@ -363,6 +363,12 @@ type XiaohongshuMediaItem = {
   aspectRatio: string;
 };
 
+type XiaohongshuStateImage = {
+  src: string;
+  width?: number;
+  height?: number;
+};
+
 function isXiaohongshuNotePage(url: URL) {
   const hostname = url.hostname.replace(/^www\./i, "");
   return hostname === "xiaohongshu.com" && /^\/explore\/[a-z0-9]+\/?$/i.test(url.pathname);
@@ -718,26 +724,63 @@ function collectXiaohongshuMediaItems(input: {
   title: string;
 }) {
   const { archivedDocument, liveDocument, currentUrl, title } = input;
+  const stateImages = dedupeXiaohongshuStateImages([
+    ...readXiaohongshuStateImages(archivedDocument, currentUrl),
+    ...(liveDocument ? readXiaohongshuStateImages(liveDocument, currentUrl) : []),
+  ]);
+  const liveImages = liveDocument ? queryXiaohongshuMediaImages(liveDocument) : [];
   const candidates = [
     ...queryXiaohongshuMediaImages(archivedDocument),
-    ...(liveDocument ? queryXiaohongshuMediaImages(liveDocument) : []),
+    ...liveImages,
   ];
   const seen = new Set<string>();
   const items: XiaohongshuMediaItem[] = [];
 
-  for (const image of candidates) {
-    const src = resolveUrl(
-      image.currentSrc
-        || image.getAttribute("src")
-        || image.getAttribute("data-src")
-        || image.getAttribute("data-original"),
-      currentUrl,
-    );
-    if (!src || seen.has(src)) {
+  for (const stateImage of stateImages) {
+    const key = normalizeXiaohongshuMediaKey(stateImage.src, currentUrl);
+    if (!key || seen.has(key)) {
       continue;
     }
 
-    seen.add(src);
+    const matchingLiveImage = liveImages.find((image) => {
+      const imageKey = normalizeXiaohongshuMediaKey(readImageCandidateUrl(image), currentUrl);
+      return imageKey === key;
+    });
+
+    const src = readReaderImageSource(matchingLiveImage, currentUrl) || stateImage.src;
+    if (!src) {
+      continue;
+    }
+
+    seen.add(key);
+    const width = stateImage.width
+      ?? matchingLiveImage?.naturalWidth
+      ?? matchingLiveImage?.width
+      ?? 4;
+    const height = stateImage.height
+      ?? matchingLiveImage?.naturalHeight
+      ?? matchingLiveImage?.height
+      ?? 5;
+    items.push({
+      src,
+      alt: `${title} - 第 ${items.length + 1} 张图`,
+      aspectRatio: `${width} / ${height}`,
+    });
+  }
+
+  for (const image of candidates) {
+    const key = normalizeXiaohongshuMediaKey(readImageCandidateUrl(image), currentUrl);
+    if (key && seen.has(key)) {
+      continue;
+    }
+    const src = readReaderImageSource(image, currentUrl);
+    if (!src) {
+      continue;
+    }
+
+    if (key) {
+      seen.add(key);
+    }
     const width = image.naturalWidth || Number(image.getAttribute("width")) || 4;
     const height = image.naturalHeight || Number(image.getAttribute("height")) || 5;
     const aspectRatio = `${width} / ${height}`;
@@ -753,9 +796,244 @@ function collectXiaohongshuMediaItems(input: {
 
 function queryXiaohongshuMediaImages(doc: Document) {
   return [
+    ...doc.querySelectorAll<HTMLImageElement>("#noteContainer img"),
+    ...doc.querySelectorAll<HTMLImageElement>(".note-container img"),
     ...doc.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
     ...doc.querySelectorAll<HTMLImageElement>(".media-container .img-container img"),
   ];
+}
+
+function readImageCandidateUrl(image: HTMLImageElement | null | undefined) {
+  if (!image) {
+    return "";
+  }
+
+  return image.currentSrc
+    || image.getAttribute("src")
+    || image.getAttribute("data-src")
+    || image.getAttribute("data-original")
+    || "";
+}
+
+function readReaderImageSource(image: HTMLImageElement | null | undefined, currentUrl: URL) {
+  if (!image) {
+    return "";
+  }
+
+  const canvasDataUrl = convertImageToDataUrl(image);
+  if (canvasDataUrl) {
+    return canvasDataUrl;
+  }
+
+  return resolveUrl(readImageCandidateUrl(image), currentUrl);
+}
+
+function convertImageToDataUrl(image: HTMLImageElement) {
+  const width = image.naturalWidth || image.width || image.clientWidth;
+  const height = image.naturalHeight || image.height || image.clientHeight;
+  if (width <= 0 || height <= 0) {
+    return "";
+  }
+
+  try {
+    const canvas = image.ownerDocument.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return "";
+    }
+    context.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return "";
+  }
+}
+
+function normalizeXiaohongshuMediaKey(rawUrl: string | null | undefined, currentUrl: URL) {
+  const resolved = resolveUrl(rawUrl, currentUrl);
+  if (!resolved) {
+    return "";
+  }
+
+  try {
+    const normalized = new URL(resolved);
+    if (normalized.protocol === "http:") {
+      normalized.protocol = "https:";
+    }
+    normalized.hash = "";
+    return normalized.toString();
+  } catch {
+    return resolved.replace(/^http:\/\//iu, "https://");
+  }
+}
+
+function dedupeXiaohongshuStateImages(images: XiaohongshuStateImage[]) {
+  const seen = new Set<string>();
+  return images.filter((image) => {
+    if (!image.src || seen.has(image.src)) {
+      return false;
+    }
+    seen.add(image.src);
+    return true;
+  });
+}
+
+function readXiaohongshuStateImages(doc: Document, currentUrl: URL) {
+  const state = parseXiaohongshuInitialState(doc);
+  const note = readXiaohongshuNoteRecord(state);
+  const imageList = Array.isArray(note?.imageList) ? note.imageList : [];
+  const images: XiaohongshuStateImage[] = [];
+
+  for (const item of imageList) {
+    const record = isRecord(item) ? item : null;
+    if (!record) {
+      continue;
+    }
+
+    const src = normalizeXiaohongshuMediaKey(
+      readXiaohongshuStateImageUrl(record),
+      currentUrl,
+    );
+    if (!src) {
+      continue;
+    }
+
+    images.push({
+      src,
+      width: typeof record.width === "number" ? record.width : undefined,
+      height: typeof record.height === "number" ? record.height : undefined,
+    });
+  }
+
+  return images;
+}
+
+function readXiaohongshuStateImageUrl(record: Record<string, unknown>) {
+  const infoList = Array.isArray(record.infoList) ? record.infoList : [];
+  const preferredInfo = infoList.find((entry) => {
+    if (!isRecord(entry)) {
+      return false;
+    }
+    return entry.imageScene === "WB_DFT" && typeof entry.url === "string";
+  });
+  if (isRecord(preferredInfo) && typeof preferredInfo.url === "string") {
+    return preferredInfo.url;
+  }
+
+  const fallbackInfo = infoList.find((entry) => isRecord(entry) && typeof entry.url === "string");
+  if (isRecord(fallbackInfo) && typeof fallbackInfo.url === "string") {
+    return fallbackInfo.url;
+  }
+
+  const directCandidates = [record.urlDefault, record.urlPre, record.url];
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function parseXiaohongshuInitialState(doc: Document) {
+  const script = Array.from(doc.querySelectorAll("script"))
+    .map((node) => node.textContent ?? "")
+    .find((text) => text.includes("window.__INITIAL_STATE__="));
+
+  if (!script) {
+    return null;
+  }
+
+  const jsonText = extractAssignedJsonText(script, "window.__INITIAL_STATE__=");
+  if (!jsonText) {
+    return null;
+  }
+
+  return safeJsonParse(jsonText);
+}
+
+function extractAssignedJsonText(scriptText: string, assignmentPrefix: string) {
+  const startIndex = scriptText.indexOf(assignmentPrefix);
+  if (startIndex < 0) {
+    return "";
+  }
+
+  const objectStart = scriptText.indexOf("{", startIndex + assignmentPrefix.length);
+  if (objectStart < 0) {
+    return "";
+  }
+
+  let depth = 0;
+  let quote: "\"" | "'" | "" = "";
+  let escaped = false;
+
+  for (let index = objectStart; index < scriptText.length; index += 1) {
+    const char = scriptText[index];
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return scriptText.slice(objectStart, index + 1);
+      }
+    }
+  }
+
+  return "";
+}
+
+function readXiaohongshuNoteRecord(state: unknown) {
+  if (!isRecord(state) || !isRecord(state.note)) {
+    return null;
+  }
+
+  const noteState = state.note;
+  const noteDetailMap = isRecord(noteState.noteDetailMap) ? noteState.noteDetailMap : null;
+  const currentNoteId = typeof noteState.currentNoteId === "string"
+    ? noteState.currentNoteId
+    : typeof noteState.firstNoteId === "string"
+      ? noteState.firstNoteId
+      : noteDetailMap
+        ? Object.keys(noteDetailMap)[0]
+        : "";
+
+  if (currentNoteId && noteDetailMap && isRecord(noteDetailMap[currentNoteId])) {
+    const detail = noteDetailMap[currentNoteId];
+    if (isRecord(detail.note)) {
+      return detail.note;
+    }
+  }
+
+  return isRecord(noteState.note) ? noteState.note : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function readXiaohongshuElement<T extends Element>(
