@@ -30,6 +30,13 @@ export function extractReaderArchiveHtml(options: ReaderExtractionOptions) {
     return null;
   }
 
+  if (options.liveDocument && isXiaohongshuNotePage(currentUrl)) {
+    const xiaohongshuArchive = buildXiaohongshuNoteArchive(options.liveDocument, currentUrl);
+    if (xiaohongshuArchive) {
+      return xiaohongshuArchive;
+    }
+  }
+
   const parsedDocument = new DOMParser().parseFromString(archiveHtml, "text/html");
   const readerArticle = parseReadableArticle(parsedDocument);
   if (readerArticle) {
@@ -343,6 +350,372 @@ function buildGenericReaderArchive(article: ReaderArticle, currentUrl: URL) {
     </main>
   </body>
 </html>`;
+}
+
+type XiaohongshuMediaItem = {
+  src: string;
+  alt: string;
+  aspectRatio: string;
+};
+
+function isXiaohongshuNotePage(url: URL) {
+  const hostname = url.hostname.replace(/^www\./i, "");
+  return hostname === "xiaohongshu.com" && /^\/explore\/[a-z0-9]+\/?$/i.test(url.pathname);
+}
+
+function buildXiaohongshuNoteArchive(doc: Document, currentUrl: URL) {
+  const title = normalizeText(
+    doc.querySelector<HTMLElement>("#detail-title")?.textContent
+      ?? doc.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content
+      ?? stripXiaohongshuTitleSuffix(doc.title),
+  );
+  const descriptionSource = doc.querySelector<HTMLElement>("#detail-desc");
+  if (!title || !descriptionSource) {
+    return null;
+  }
+
+  const body = descriptionSource.cloneNode(true) as HTMLElement;
+  sanitizeXiaohongshuBody(body, currentUrl);
+  const bodyText = normalizeText(body.textContent);
+  const mediaItems = collectXiaohongshuMediaItems(doc, currentUrl, title);
+  if (bodyText.length < 40 && mediaItems.length === 0) {
+    return null;
+  }
+
+  const author = normalizeText(
+    doc.querySelector<HTMLElement>(".author-container .username, .author-wrapper .username")?.textContent,
+  );
+  const avatarUrl = readImageUrl(
+    doc.querySelector<HTMLImageElement>(".author-container img.avatar-item, .author-wrapper img.avatar-item"),
+    currentUrl,
+  );
+  const publishedMeta = normalizeText(
+    doc.querySelector<HTMLElement>(".bottom-container .date")?.textContent
+      ?? doc.querySelector<HTMLElement>(".note-content .date")?.textContent,
+  );
+  const commentSummary = normalizeText(
+    doc.querySelector<HTMLElement>(".total-comments, .interactions .total")?.textContent
+      ?? Array.from(doc.querySelectorAll<HTMLElement>(".note-content span, .note-content div"))
+        .map((node) => normalizeText(node.textContent))
+        .find((text) => /^共\s*\d+\s*条评论$/u.test(text)),
+  );
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="${escapeHtmlAttribute(currentUrl.toString())}" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f1ee;
+        --surface: rgba(255, 255, 255, 0.92);
+        --surface-strong: #fffaf7;
+        --border: rgba(37, 20, 17, 0.08);
+        --text: #221b19;
+        --muted: #766761;
+        --accent: #e34f6f;
+        --accent-soft: rgba(227, 79, 111, 0.12);
+        --shadow: 0 28px 70px rgba(37, 20, 17, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background:
+          radial-gradient(circle at top left, rgba(255, 215, 218, 0.58), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(255, 240, 221, 0.72), transparent 34%),
+          var(--bg);
+        color: var(--text);
+      }
+
+      body {
+        padding: clamp(12px, 2.4vw, 28px);
+        font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+      }
+
+      .note-shell {
+        max-width: 920px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .media-panel,
+      .content-panel {
+        border: 1px solid var(--border);
+        border-radius: 30px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .media-panel {
+        padding: clamp(16px, 2vw, 22px);
+      }
+
+      .media-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .media-kicker {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .media-count {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .media-track {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+
+      .media-card {
+        border-radius: 24px;
+        overflow: hidden;
+        background: #efe7df;
+        border: 1px solid rgba(34, 27, 25, 0.08);
+      }
+
+      .media-card img {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: var(--aspect-ratio, 4 / 5);
+        object-fit: cover;
+      }
+
+      .content-panel {
+        padding: clamp(22px, 3vw, 30px);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 247, 0.94));
+      }
+
+      .author-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .author-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 999px;
+        flex: 0 0 auto;
+        object-fit: cover;
+        background: rgba(34, 27, 25, 0.08);
+      }
+
+      .author-meta {
+        min-width: 0;
+      }
+
+      .author-name {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .author-subtitle {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 40px);
+        line-height: 1.14;
+        letter-spacing: -0.03em;
+      }
+
+      .meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 10px;
+        margin-top: 16px;
+      }
+
+      .meta-pill {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(34, 27, 25, 0.08);
+        background: var(--surface-strong);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .note-body {
+        margin-top: 24px;
+        font-size: 16px;
+        line-height: 1.95;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .note-body > :first-child {
+        margin-top: 0;
+      }
+
+      .note-body > :last-child {
+        margin-bottom: 0;
+      }
+
+      .note-body a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .source-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 22px;
+        padding: 12px 16px;
+        border-radius: 14px;
+        background: #221b19;
+        color: #fff;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      @media (max-width: 900px) {
+        .note-shell {
+          gap: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="note-shell">
+      <section class="media-panel">
+        <div class="media-header">
+          <p class="media-kicker">KeepPage XiaoHongShu View</p>
+          ${mediaItems.length > 0 ? `<span class="media-count">${mediaItems.length} 张图</span>` : ""}
+        </div>
+        ${
+          mediaItems.length > 0
+            ? `<div class="media-track">${mediaItems.map((item) => `
+              <figure class="media-card" style="--aspect-ratio: ${escapeHtmlAttribute(item.aspectRatio)};">
+                <img src="${escapeHtmlAttribute(item.src)}" alt="${escapeHtmlAttribute(item.alt)}" loading="lazy" />
+              </figure>
+            `).join("")}</div>`
+            : `<div class="media-track"><div class="media-card"><div style="padding: 28px; color: #766761;">这条笔记没有可直接归档的图片。</div></div></div>`
+        }
+      </section>
+      <article class="content-panel">
+        <div class="author-row">
+          ${avatarUrl ? `<img class="author-avatar" src="${escapeHtmlAttribute(avatarUrl)}" alt="${escapeHtmlAttribute(author || "作者头像")}" />` : ""}
+          <div class="author-meta">
+            <p class="author-name">${escapeHtml(author || "小红书作者")}</p>
+            <p class="author-subtitle">小红书笔记归档</p>
+          </div>
+        </div>
+        <h1>${escapeHtml(title)}</h1>
+        <div class="meta-row">
+          ${publishedMeta ? `<span class="meta-pill">${escapeHtml(publishedMeta)}</span>` : ""}
+          ${commentSummary ? `<span class="meta-pill">${escapeHtml(commentSummary)}</span>` : ""}
+          <span class="meta-pill">${escapeHtml(currentUrl.hostname)}</span>
+        </div>
+        <div class="note-body">${body.innerHTML}</div>
+        <a class="source-link" href="${escapeHtmlAttribute(currentUrl.toString())}" target="_blank" rel="noreferrer noopener">打开原始笔记</a>
+      </article>
+    </main>
+  </body>
+</html>`;
+}
+
+function sanitizeXiaohongshuBody(root: HTMLElement, currentUrl: URL) {
+  for (const removable of root.querySelectorAll("button")) {
+    removable.remove();
+  }
+
+  for (const element of root.querySelectorAll<HTMLElement>("*")) {
+    if (!(element instanceof HTMLAnchorElement)) {
+      element.removeAttribute("class");
+    }
+    element.removeAttribute("style");
+
+    for (const attribute of [...element.attributes]) {
+      if (attribute.name.startsWith("data-") || attribute.name.startsWith("aria-")) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+
+    if (element instanceof HTMLAnchorElement) {
+      const resolvedHref = resolveUrl(element.getAttribute("href"), currentUrl);
+      if (resolvedHref) {
+        element.setAttribute("href", resolvedHref);
+      }
+      element.setAttribute("target", "_blank");
+      element.setAttribute("rel", "noreferrer noopener");
+      element.setAttribute("class", "note-tag");
+    }
+  }
+}
+
+function collectXiaohongshuMediaItems(doc: Document, currentUrl: URL, title: string) {
+  const candidates = [
+    ...doc.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
+    ...doc.querySelectorAll<HTMLImageElement>(".media-container .img-container img"),
+  ];
+  const seen = new Set<string>();
+  const items: XiaohongshuMediaItem[] = [];
+
+  for (const image of candidates) {
+    const src = resolveUrl(
+      image.currentSrc
+        || image.getAttribute("src")
+        || image.getAttribute("data-src")
+        || image.getAttribute("data-original"),
+      currentUrl,
+    );
+    if (!src || src.startsWith("data:") || seen.has(src)) {
+      continue;
+    }
+
+    seen.add(src);
+    const width = image.naturalWidth || Number(image.getAttribute("width")) || 4;
+    const height = image.naturalHeight || Number(image.getAttribute("height")) || 5;
+    const aspectRatio = `${width} / ${height}`;
+    items.push({
+      src,
+      alt: `${title} - 第 ${items.length + 1} 张图`,
+      aspectRatio,
+    });
+  }
+
+  return items;
+}
+
+function stripXiaohongshuTitleSuffix(title: string) {
+  return normalizeText(title.replace(/\s*-\s*小红书$/u, ""));
 }
 
 function isSspaiPostPage(url: URL) {

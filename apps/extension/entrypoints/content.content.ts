@@ -304,6 +304,11 @@ function hasScopedMatch(root: HTMLElement, selector: string) {
 }
 
 function readCoverImageUrl(root: ParentNode | HTMLElement) {
+  const xiaohongshuCoverUrl = readXiaohongshuCoverImageUrl(root);
+  if (xiaohongshuCoverUrl) {
+    return xiaohongshuCoverUrl;
+  }
+
   const images = root instanceof HTMLElement
     ? [
         ...(root.matches("img") ? [root as HTMLImageElement] : []),
@@ -313,6 +318,37 @@ function readCoverImageUrl(root: ParentNode | HTMLElement) {
   const firstMeaningfulImage = images.find((image) => isQualifiedCoverImage(image));
 
   return resolveCoverCandidateUrl(firstMeaningfulImage);
+}
+
+function readXiaohongshuCoverImageUrl(root: ParentNode | HTMLElement) {
+  if (!isXiaohongshuNotePage(new URL(location.href))) {
+    return undefined;
+  }
+
+  const scope = root instanceof HTMLElement ? root : document;
+  const candidates = [
+    ...scope.querySelectorAll<HTMLImageElement>(".note-slider .swiper-slide img"),
+    ...scope.querySelectorAll<HTMLImageElement>(".media-container .img-container img"),
+  ];
+  const seen = new Set<string>();
+
+  for (const image of candidates) {
+    const url = resolveCoverCandidateUrl(image);
+    if (!url || seen.has(url)) {
+      continue;
+    }
+    seen.add(url);
+    if (isQualifiedCoverImage(image)) {
+      return url;
+    }
+  }
+
+  return undefined;
+}
+
+function isXiaohongshuNotePage(url: URL) {
+  const hostname = url.hostname.replace(/^www\./i, "");
+  return hostname === "xiaohongshu.com" && /^\/explore\/[a-z0-9]+\/?$/i.test(url.pathname);
 }
 
 function isQualifiedCoverImage(image: HTMLImageElement) {
