@@ -655,13 +655,12 @@ function HomeBookmarkCard({
 
   const summary = summarizeBookmark(bookmark);
   const hasCoverImage = Boolean(bookmark.coverImageUrl) && !coverImageFailed;
-  const hasPreview = hasCoverImage || (bookmark.latestQuality?.archiveSignals.screenshotGenerated ?? false);
   const folderLabel = bookmark.folder?.name ?? "未归类";
   const coverTone = homeCoverTone(bookmark.domain);
+  const coverInitial = (bookmark.title.trim()[0] ?? bookmark.domain.trim()[0] ?? "K").toUpperCase();
 
   const cardClasses = [
     "home-bookmark-card",
-    hasPreview ? "has-preview" : "",
     isContextOpen ? "is-context-open" : "",
     selectionMode ? "is-selection-mode" : "",
     isSelected ? "is-selected" : "",
@@ -688,43 +687,47 @@ function HomeBookmarkCard({
         onClick={() => selectionMode ? onToggleSelect(bookmark.id) : onOpen(bookmark.id)}
         aria-label={selectionMode ? `选择书签：${bookmark.title}` : `打开归档：${bookmark.title}`}
       >
-        {hasPreview ? (
-          <div className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : ""}`}>
-            {hasCoverImage ? (
-              <>
-                <img
-                  className="home-bookmark-cover-media"
-                  src={bookmark.coverImageUrl}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  onError={() => setCoverImageFailed(true)}
-                />
-                <div className="home-bookmark-cover-shade" aria-hidden="true" />
-              </>
-            ) : null}
-            {!hasCoverImage ? (
-              <div className="home-bookmark-paper">
-                <div className="home-bookmark-paper-lines">
-                  <span />
-                  <span />
-                  <span />
-                </div>
+        <div
+          className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : " is-placeholder"}`}
+          aria-hidden="true"
+        >
+          {hasCoverImage ? (
+            <>
+              <img
+                className="home-bookmark-cover-media"
+                src={bookmark.coverImageUrl}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                onError={() => setCoverImageFailed(true)}
+              />
+              <div className="home-bookmark-cover-shade" aria-hidden="true" />
+            </>
+          ) : (
+            <div className="home-bookmark-paper" aria-hidden="true">
+              <div className="home-bookmark-paper-eyebrow">
+                <span>{bookmark.domain}</span>
+                <strong>{coverInitial}</strong>
               </div>
-            ) : null}
-            <div className="home-bookmark-cover-overlay" aria-hidden="true">
-              <div className="home-bookmark-cover-overlay-meta">
-                <span className="home-bookmark-overlay-badge">{folderLabel}</span>
-                <span className="home-bookmark-overlay-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+              <div className="home-bookmark-paper-title">
+                <span>{bookmark.title}</span>
               </div>
-              <strong>{bookmark.title}</strong>
+              <div className="home-bookmark-paper-lines">
+                <span />
+                <span />
+                <span />
+              </div>
             </div>
+          )}
+          <div className="home-bookmark-cover-overlay">
+            <div className="home-bookmark-cover-overlay-meta">
+              <span className="home-bookmark-overlay-badge">{folderLabel}</span>
+              <span className="home-bookmark-overlay-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+            </div>
+            <strong>{bookmark.title}</strong>
           </div>
-        ) : null}
+        </div>
         <div className="home-bookmark-body">
-          {!hasPreview ? (
-            <span className="home-bookmark-chip home-bookmark-chip-inline">{folderLabel}</span>
-          ) : null}
           <div className="home-bookmark-title-row">
             <h2>{bookmark.title}</h2>
             {bookmark.isFavorite ? (
@@ -744,17 +747,12 @@ function HomeBookmarkCard({
   );
 }
 
-function HomeBookmarkSkeleton({
-  withPreview,
-}: {
-  withPreview: boolean;
-}) {
+function HomeBookmarkSkeleton() {
   return (
-    <article className={`home-bookmark-card home-bookmark-card-skeleton${withPreview ? " has-preview" : ""}`}>
+    <article className="home-bookmark-card home-bookmark-card-skeleton">
       <div className="home-bookmark-hitarea is-skeleton">
-        {withPreview ? <div className="home-skeleton-cover" /> : null}
+        <div className="home-skeleton-cover" />
         <div className="home-bookmark-body">
-          {!withPreview ? <span className="home-skeleton-chip" /> : null}
           <span className="home-skeleton-line is-title" />
           <span className="home-skeleton-line" />
           <span className="home-skeleton-line is-short" />
@@ -1317,7 +1315,7 @@ function HomePage({
       {showLoading && items.length === 0 ? (
         <section className="home-grid">
           {Array.from({ length: 6 }).map((_, index) => (
-            <HomeBookmarkSkeleton key={index} withPreview={index % 3 !== 1} />
+            <HomeBookmarkSkeleton key={index} />
           ))}
         </section>
       ) : showError ? (
