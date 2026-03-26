@@ -32,6 +32,17 @@ export function extractReaderArchiveHtml(options: ReaderExtractionOptions) {
 
   const parsedDocument = new DOMParser().parseFromString(archiveHtml, "text/html");
 
+  if (isXPostPage(currentUrl)) {
+    const xPostArchive = buildXPostArchive({
+      archivedDocument: parsedDocument,
+      liveDocument: options.liveDocument,
+      currentUrl,
+    });
+    if (xPostArchive) {
+      return xPostArchive;
+    }
+  }
+
   if (isXiaohongshuNotePage(currentUrl)) {
     const xiaohongshuArchive = buildXiaohongshuNoteArchive({
       archivedDocument: parsedDocument,
@@ -355,6 +366,570 @@ function buildGenericReaderArchive(article: ReaderArticle, currentUrl: URL) {
     </main>
   </body>
 </html>`;
+}
+
+type XPostMediaItem = {
+  src: string;
+  alt: string;
+};
+
+function isXPostPage(url: URL) {
+  const hostname = url.hostname.replace(/^www\./i, "");
+  return (
+    (hostname === "x.com" || hostname === "twitter.com")
+    && /^\/[^/]+\/status\/\d+/i.test(url.pathname)
+  );
+}
+
+function buildXPostArchive(input: {
+  archivedDocument: Document;
+  liveDocument?: Document | null;
+  currentUrl: URL;
+}) {
+  const { archivedDocument, liveDocument, currentUrl } = input;
+  const statusId = readXStatusId(currentUrl);
+  if (!statusId) {
+    return null;
+  }
+
+  const liveArticle = liveDocument ? findXStatusArticle(liveDocument, statusId) : null;
+  const archivedArticle = findXStatusArticle(archivedDocument, statusId);
+  const article = liveArticle ?? archivedArticle;
+  if (!article) {
+    return null;
+  }
+
+  const author = readXPostAuthor({
+    liveArticle,
+    archivedArticle,
+    currentUrl,
+  });
+  const content = readXPostContent({
+    liveArticle,
+    archivedArticle,
+    archivedDocument,
+  });
+  const mediaItems = collectXPostMediaItems({
+    liveArticle,
+    archivedArticle,
+    currentUrl,
+    title: content.title,
+  });
+  if (content.text.length < 12 && mediaItems.length === 0) {
+    return null;
+  }
+
+  const publishedAt = formatPublishedAt(
+    readXPostPublishedAt(article),
+  );
+  const canonicalUrl = resolveUrl(
+    readCanonicalLikeUrl(archivedDocument, currentUrl)
+      ?? readXPostStatusUrl(article, currentUrl)
+      ?? currentUrl.toString(),
+    currentUrl,
+  );
+  const pageTitle = buildXPostPageTitle(content.title, author);
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="${escapeHtmlAttribute(currentUrl.toString())}" />
+    <title>${escapeHtml(pageTitle)}</title>
+    ${content.excerpt ? `<meta name="description" content="${escapeHtmlAttribute(content.excerpt)}" />` : ""}
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef5fb;
+        --surface: rgba(255, 255, 255, 0.94);
+        --surface-strong: #ffffff;
+        --surface-soft: #edf6ff;
+        --border: rgba(18, 53, 84, 0.12);
+        --text: #16212c;
+        --muted: #617282;
+        --accent: #1d9bf0;
+        --accent-strong: #0f6eb0;
+        --shadow: 0 28px 70px rgba(22, 33, 44, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background:
+          radial-gradient(circle at top left, rgba(29, 155, 240, 0.18), transparent 34%),
+          radial-gradient(circle at bottom right, rgba(101, 182, 255, 0.16), transparent 36%),
+          linear-gradient(180deg, #f6fbff 0%, var(--bg) 100%);
+        color: var(--text);
+      }
+
+      body {
+        padding: clamp(12px, 2.8vw, 28px);
+        font-family: "Charter", "Iowan Old Style", "Noto Serif SC", serif;
+      }
+
+      .post-shell {
+        max-width: 820px;
+        margin: 0 auto;
+        border-radius: 30px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .post-header {
+        padding: clamp(22px, 4vw, 38px) clamp(18px, 4vw, 34px) 22px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(237, 246, 255, 0.9));
+      }
+
+      .post-kicker {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .author-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .author-avatar {
+        width: 52px;
+        height: 52px;
+        border-radius: 999px;
+        flex: 0 0 auto;
+        object-fit: cover;
+        background: rgba(22, 33, 44, 0.08);
+        border: 1px solid rgba(18, 53, 84, 0.08);
+      }
+
+      .author-meta {
+        min-width: 0;
+      }
+
+      .author-name {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.3;
+      }
+
+      .author-handle {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      h1 {
+        margin: 20px 0 0;
+        font-size: clamp(28px, 4.2vw, 40px);
+        line-height: 1.18;
+        letter-spacing: -0.03em;
+      }
+
+      .meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 12px;
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .meta-pill,
+      .meta-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(18, 53, 84, 0.08);
+        background: rgba(255, 255, 255, 0.75);
+      }
+
+      .meta-link {
+        color: var(--accent-strong);
+        text-decoration: none;
+      }
+
+      .post-body {
+        padding: 0 clamp(18px, 4vw, 34px) clamp(18px, 4vw, 30px);
+        font-size: 18px;
+        line-height: 1.92;
+      }
+
+      .post-body p {
+        margin: 1.05em 0;
+        white-space: normal;
+      }
+
+      .post-body a {
+        color: var(--accent-strong);
+      }
+
+      .media-section {
+        padding: 0 clamp(18px, 4vw, 34px) clamp(26px, 4vw, 34px);
+      }
+
+      .media-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+
+      .media-card {
+        margin: 0;
+        border-radius: 22px;
+        overflow: hidden;
+        background: var(--surface-strong);
+        border: 1px solid rgba(18, 53, 84, 0.08);
+      }
+
+      .media-card img {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
+        background: rgba(22, 33, 44, 0.05);
+      }
+
+      .media-card figcaption {
+        padding: 10px 12px 12px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 640px) {
+        body {
+          padding: 10px;
+        }
+
+        .post-shell {
+          border-radius: 22px;
+        }
+
+        .author-row {
+          align-items: flex-start;
+        }
+
+        .post-body {
+          font-size: 17px;
+          line-height: 1.82;
+        }
+
+        .media-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="post-shell">
+      <header class="post-header">
+        <p class="post-kicker">KeepPage 阅读归档</p>
+        <div class="author-row">
+          ${author.avatarUrl ? `<img class="author-avatar" src="${escapeHtmlAttribute(author.avatarUrl)}" alt="${escapeHtmlAttribute(author.displayName || author.handle || "作者头像")}" />` : ""}
+          <div class="author-meta">
+            <p class="author-name">${escapeHtml(author.displayName || author.handle || "X 用户")}</p>
+            ${author.handle ? `<p class="author-handle">${escapeHtml(author.handle)}</p>` : ""}
+          </div>
+        </div>
+        <h1>${escapeHtml(content.title)}</h1>
+        <div class="meta-row">
+          ${publishedAt ? `<span class="meta-pill">${escapeHtml(publishedAt)}</span>` : ""}
+          <span class="meta-pill">${escapeHtml(currentUrl.hostname)}</span>
+          ${canonicalUrl ? `<a class="meta-link" href="${escapeHtmlAttribute(canonicalUrl)}" target="_blank" rel="noreferrer noopener">查看原帖</a>` : ""}
+        </div>
+      </header>
+      <article class="post-body">
+        ${content.html}
+      </article>
+      ${mediaItems.length > 0 ? `
+      <section class="media-section">
+        <div class="media-grid">
+          ${mediaItems.map((item, index) => `
+          <figure class="media-card">
+            <img src="${escapeHtmlAttribute(item.src)}" alt="${escapeHtmlAttribute(item.alt)}" />
+            <figcaption>${escapeHtml(item.alt || `帖子图片 ${index + 1}`)}</figcaption>
+          </figure>`).join("")}
+        </div>
+      </section>` : ""}
+    </main>
+  </body>
+</html>`;
+}
+
+function readXStatusId(url: URL) {
+  const matched = url.pathname.match(/\/status\/(\d+)/i);
+  return matched?.[1] ?? "";
+}
+
+function findXStatusArticle(doc: Document, statusId: string) {
+  const statusPathPattern = new RegExp(`/status/${statusId}(?:$|[/?#])`, "i");
+  const statusLinks = [
+    ...doc.querySelectorAll<HTMLAnchorElement>(`a[href*="/status/${statusId}"]`),
+  ];
+
+  for (const link of statusLinks) {
+    const href = link.getAttribute("href") ?? "";
+    if (!statusPathPattern.test(href)) {
+      continue;
+    }
+
+    const article = link.closest<HTMLElement>("article");
+    if (article) {
+      return article;
+    }
+  }
+
+  return doc.querySelector<HTMLElement>('main[role="main"] article');
+}
+
+function readXPostAuthor(input: {
+  liveArticle?: HTMLElement | null;
+  archivedArticle?: HTMLElement | null;
+  currentUrl: URL;
+}) {
+  const article = input.liveArticle ?? input.archivedArticle;
+  const userNameBlock = article?.querySelector<HTMLElement>('[data-testid="User-Name"]');
+  const profileLinks = userNameBlock
+    ? [...userNameBlock.querySelectorAll<HTMLAnchorElement>('a[href^="/"]')]
+    : [];
+
+  let displayName = "";
+  let handle = "";
+  let profileUrl = "";
+
+  for (const link of profileLinks) {
+    const href = link.getAttribute("href") ?? "";
+    if (!/^\/[^/?#]+\/?$/i.test(href)) {
+      continue;
+    }
+
+    profileUrl = profileUrl || resolveUrl(href, input.currentUrl);
+    const text = normalizeText(link.textContent);
+    if (!displayName && text && !text.startsWith("@")) {
+      displayName = text;
+    }
+
+    const hrefHandle = href.split("/").filter(Boolean)[0];
+    if (!handle && hrefHandle) {
+      handle = `@${hrefHandle}`;
+    }
+    if (text.startsWith("@")) {
+      handle = text;
+    }
+  }
+
+  if (!displayName && userNameBlock) {
+    const candidates = normalizeMultilineText(userNameBlock.textContent)
+      .split("\n")
+      .map((entry) => normalizeText(entry))
+      .filter(Boolean);
+    displayName = candidates.find((entry) => !entry.startsWith("@")) ?? "";
+    const fallbackHandle = candidates.find((entry) => entry.startsWith("@")) ?? "";
+    handle = handle || fallbackHandle;
+  }
+
+  const avatarUrl = readImageUrl(
+    article?.querySelector<HTMLImageElement>(
+      '[data-testid="Tweet-User-Avatar"] img, [data-testid="UserAvatar-Container"] img',
+    ) ?? null,
+    input.currentUrl,
+  );
+
+  return {
+    displayName,
+    handle,
+    profileUrl,
+    avatarUrl,
+  };
+}
+
+function readXPostContent(input: {
+  liveArticle?: HTMLElement | null;
+  archivedArticle?: HTMLElement | null;
+  archivedDocument: Document;
+}) {
+  const blocks = readXPostTextBlocks(input.liveArticle)
+    || readXPostTextBlocks(input.archivedArticle)
+    || readXFallbackDescription(input.archivedDocument);
+  const text = blocks.join("\n\n").trim();
+  const title = truncateText(text || "X 帖子", 88);
+  const excerpt = truncateText(text, 160);
+
+  return {
+    title,
+    excerpt,
+    text,
+    html: buildXParagraphHtml(blocks),
+  };
+}
+
+function readXPostTextBlocks(article?: HTMLElement | null) {
+  if (!article) {
+    return null;
+  }
+
+  const candidates = [
+    ...article.querySelectorAll<HTMLElement>('[data-testid="tweetText"]'),
+  ].filter((element) => element.closest("article") === article);
+  const blocks: string[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of candidates) {
+    const text = normalizeMultilineText(
+      candidate.innerText || candidate.textContent,
+    );
+    if (!text || seen.has(text)) {
+      continue;
+    }
+
+    seen.add(text);
+    blocks.push(text);
+  }
+
+  return blocks.length > 0 ? blocks.slice(0, 1) : null;
+}
+
+function readXFallbackDescription(doc: Document) {
+  const description = normalizeText(
+    doc.querySelector<HTMLMetaElement>('meta[property="og:description"]')?.content,
+  );
+  return description ? [description] : [];
+}
+
+function buildXParagraphHtml(blocks: string[]) {
+  const paragraphs = blocks.flatMap((block) =>
+    block
+      .split(/\n{2,}/)
+      .map((entry) => normalizeMultilineText(entry))
+      .filter(Boolean),
+  );
+
+  return paragraphs.length > 0
+    ? paragraphs
+      .map((paragraph) => `<p>${escapeHtml(paragraph).replaceAll("\n", "<br />")}</p>`)
+      .join("")
+    : "<p>这条帖子主要由图片或视频组成。</p>";
+}
+
+function collectXPostMediaItems(input: {
+  liveArticle?: HTMLElement | null;
+  archivedArticle?: HTMLElement | null;
+  currentUrl: URL;
+  title: string;
+}) {
+  const items: XPostMediaItem[] = [];
+  const seen = new Set<string>();
+  const articles = [input.liveArticle, input.archivedArticle].filter(Boolean) as HTMLElement[];
+
+  for (const article of articles) {
+    for (const image of article.querySelectorAll<HTMLImageElement>('[data-testid="tweetPhoto"] img')) {
+      const src = readImageUrl(image, input.currentUrl);
+      if (!src || seen.has(src)) {
+        continue;
+      }
+
+      seen.add(src);
+      items.push({
+        src,
+        alt: normalizeText(image.getAttribute("alt")) || `${input.title} 图片 ${items.length + 1}`,
+      });
+    }
+  }
+
+  for (const article of articles) {
+    const poster = readXVideoPosterUrl(article, input.currentUrl);
+    if (!poster || seen.has(poster)) {
+      continue;
+    }
+
+    seen.add(poster);
+    items.push({
+      src: poster,
+      alt: `${input.title} 视频封面`,
+    });
+  }
+
+  return items.slice(0, 6);
+}
+
+function readXVideoPosterUrl(article: HTMLElement, currentUrl: URL) {
+  const videoPoster = article.querySelector<HTMLVideoElement>("video[poster]")?.poster;
+  if (videoPoster) {
+    return resolveUrl(videoPoster, currentUrl);
+  }
+
+  return readImageUrl(
+    article.querySelector<HTMLImageElement>('[data-testid="videoPlayer"] img'),
+    currentUrl,
+  );
+}
+
+function readXPostPublishedAt(article: HTMLElement) {
+  return article.querySelector("time")?.getAttribute("datetime") ?? "";
+}
+
+function readXPostStatusUrl(article: HTMLElement, currentUrl: URL) {
+  for (const link of article.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    if (!link.querySelector("time")) {
+      continue;
+    }
+    return resolveUrl(link.href, currentUrl);
+  }
+
+  const fallbackLink = article.querySelector<HTMLAnchorElement>('a[href*="/status/"]');
+  return fallbackLink?.href ?? "";
+}
+
+function readCanonicalLikeUrl(doc: Document, currentUrl: URL) {
+  const canonicalUrl = doc.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href;
+  if (canonicalUrl) {
+    return canonicalUrl;
+  }
+
+  const ogUrl = doc.querySelector<HTMLMetaElement>('meta[property="og:url"]')?.content;
+  return ogUrl ? resolveUrl(ogUrl, currentUrl) : "";
+}
+
+function buildXPostPageTitle(title: string, author: {
+  displayName: string;
+  handle: string;
+}) {
+  const subject = truncateText(title, 72);
+  const authorLabel = author.displayName || author.handle;
+  return authorLabel ? `${subject} · ${authorLabel}` : subject;
+}
+
+function truncateText(text: string, maxLength: number) {
+  const normalized = normalizeText(text);
+  if (!normalized || normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+function normalizeMultilineText(text: string | null | undefined) {
+  return (text ?? "")
+    .replaceAll(/\r\n?/g, "\n")
+    .replaceAll(/\u00a0/g, " ")
+    .replaceAll(/[ \t]+\n/g, "\n")
+    .replaceAll(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 type XiaohongshuMediaItem = {
