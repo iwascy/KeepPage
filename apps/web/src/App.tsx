@@ -138,6 +138,7 @@ type ContextMenuGroup = {
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 const API_TOKEN_SECRET_STORAGE_PREFIX = "keeppage.api-token-secrets";
+const BOOKMARKS_PAGE_SIZE = 24;
 const SIDEBAR_COUNT_PAGE_SIZE = 100;
 
 type ApiTokenSecretRecord = {
@@ -1262,9 +1263,13 @@ function HomePage({
   bookmarkView,
   loadState,
   listError,
+  loadMoreError,
   hasActiveFilters,
+  hasMoreItems,
+  loadingMore,
   managerFeedback,
   onOpenBookmark,
+  onLoadMore,
   contextMenuBookmarkId,
   onBookmarkContextMenu,
   selectionMode,
@@ -1275,15 +1280,20 @@ function HomePage({
   bookmarkView: BookmarkListView;
   loadState: LoadState;
   listError: string | null;
+  loadMoreError: string | null;
   hasActiveFilters: boolean;
+  hasMoreItems: boolean;
+  loadingMore: boolean;
   managerFeedback: InlineFeedback | null;
   onOpenBookmark: (bookmarkId: string) => void;
+  onLoadMore: () => void;
   contextMenuBookmarkId: string | null;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   selectionMode: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
   const showEmpty = !showLoading && !showError && items.length === 0;
@@ -1301,6 +1311,40 @@ function HomePage({
       : bookmarkView === "recent"
         ? "最近新归档或编辑过的页面会优先显示在这里。"
         : "扩展同步的网页归档会优先显示在这里。";
+
+  useEffect(() => {
+    if (
+      !hasMoreItems
+      || loadingMore
+      || showLoading
+      || showError
+      || showEmpty
+      || typeof IntersectionObserver === "undefined"
+    ) {
+      return;
+    }
+
+    const target = loadMoreRef.current;
+    if (!target) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onLoadMore();
+        }
+      },
+      {
+        rootMargin: "280px 0px",
+      },
+    );
+
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMoreItems, loadingMore, onLoadMore, showEmpty, showError, showLoading]);
 
   return (
     <>
@@ -1331,20 +1375,31 @@ function HomePage({
           <p>{emptyDescription}</p>
         </section>
       ) : (
-        <section className="home-grid">
-          {items.map((bookmark) => (
-            <HomeBookmarkCard
-              key={bookmark.id}
-              bookmark={bookmark}
-              onOpen={onOpenBookmark}
-              onContextMenu={onBookmarkContextMenu}
-              isContextOpen={contextMenuBookmarkId === bookmark.id}
-              selectionMode={selectionMode}
-              isSelected={selectedIds.has(bookmark.id)}
-              onToggleSelect={onToggleSelect}
-            />
-          ))}
-        </section>
+        <>
+          <section className="home-grid">
+            {items.map((bookmark) => (
+              <HomeBookmarkCard
+                key={bookmark.id}
+                bookmark={bookmark}
+                onOpen={onOpenBookmark}
+                onContextMenu={onBookmarkContextMenu}
+                isContextOpen={contextMenuBookmarkId === bookmark.id}
+                selectionMode={selectionMode}
+                isSelected={selectedIds.has(bookmark.id)}
+                onToggleSelect={onToggleSelect}
+              />
+            ))}
+          </section>
+          {hasMoreItems ? (
+            <div className="home-load-more-anchor" ref={loadMoreRef} aria-hidden="true" />
+          ) : null}
+          {loadingMore ? (
+            <p className="home-loading-note home-loading-note-inline">正在加载更多归档...</p>
+          ) : null}
+          {loadMoreError ? (
+            <p className="home-feedback is-error home-loading-note-inline">{loadMoreError}</p>
+          ) : null}
+        </>
       )}
 
       <footer className="home-footer">
@@ -2668,6 +2723,17 @@ type CloudArchiveDialogState =
   | { step: "progress"; taskId: string; status: CloudArchiveStatus; errorMessage?: string }
   | { step: "done"; bookmarkId: string };
 
+type LocalArchiveDialogState =
+  | { step: "closed" }
+  | { step: "confirm"; bookmarks: Bookmark[] }
+  | {
+      step: "done";
+      totalCount: number;
+      acceptedCount: number;
+      skippedCount: number;
+      queueSize: number;
+    };
+
 function cloudArchiveStatusLabel(status: CloudArchiveStatus) {
   switch (status) {
     case "queued":
@@ -3410,6 +3476,105 @@ function DetailPanel({
   );
 }
 
+function LocalArchiveDialog({
+  state,
+  busy,
+  error,
+  onConfirm,
+  onClose,
+}: {
+  state: LocalArchiveDialogState;
+  busy: boolean;
+  error: string | null;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  if (state.step === "closed") {
+    return null;
+  }
+
+  const totalCount = state.step === "confirm" ? state.bookmarks.length : state.totalCount;
+
+  return (
+    <div
+      aria-hidden="true"
+      className="manager-dialog-backdrop is-create-folder"
+      onClick={() => {
+        if (!busy) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        aria-labelledby="local-archive-title"
+        aria-modal="true"
+        className="create-folder-dialog"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="create-folder-header">
+          <h2 id="local-archive-title" className="create-folder-heading">
+            本地插件存档
+          </h2>
+          <p className="create-folder-description">
+            {state.step === "confirm"
+              ? "任务会发送到本地浏览器插件，按队列顺序逐条存档，避免一次并发过多。"
+              : "任务已经提交到本地插件队列。"}
+          </p>
+          <button
+            className="create-folder-close"
+            type="button"
+            aria-label="关闭"
+            onClick={onClose}
+            disabled={busy}
+          >
+            <DialogCloseIcon />
+          </button>
+        </div>
+
+        {state.step === "confirm" ? (
+          <div className="create-folder-body">
+            {error ? <p className="manager-dialog-error">{error}</p> : null}
+            <div className="manager-dialog-hero">
+              <div className="manager-dialog-heading">
+                <h2>确认发送 {totalCount} 条书签？</h2>
+                <p>扩展会自动排队抓取，并在抓取完成后继续走同步流程。</p>
+              </div>
+            </div>
+            <div className="manager-dialog-actions">
+              <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
+                取消
+              </button>
+              <button className="primary-button" type="button" onClick={onConfirm} disabled={busy}>
+                {busy ? "发送中..." : "发送到本地插件"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="create-folder-body" style={{ textAlign: "center", padding: "24px 0" }}>
+            <p style={{ marginBottom: "8px" }}>
+              已提交 {state.acceptedCount} / {state.totalCount} 条到本地插件队列。
+            </p>
+            <p className="detail-note" style={{ marginBottom: "16px" }}>
+              {state.skippedCount > 0
+                ? `其中 ${state.skippedCount} 条已在队列中，已自动跳过。`
+                : "没有检测到重复任务。"}
+            </p>
+            <p className="detail-note" style={{ marginBottom: "16px" }}>
+              当前队列剩余 {state.queueSize} 条待处理。
+            </p>
+            <div className="manager-dialog-actions">
+              <button className="primary-button" type="button" onClick={onClose}>
+                我知道了
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function App({
   mode = "live",
 }: {
@@ -3436,11 +3601,14 @@ export function App({
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [selectedTagId, setSelectedTagId] = useState("");
   const [items, setItems] = useState<Bookmark[]>([]);
+  const [listTotal, setListTotal] = useState(0);
   const [sidebarCountItems, setSidebarCountItems] = useState<Bookmark[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [listError, setListError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [detail, setDetail] = useState<BookmarkDetailResult | null>(null);
   const [detailLoadState, setDetailLoadState] = useState<DetailLoadState>("idle");
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -3474,6 +3642,9 @@ export function App({
   const [cloudArchiveTargetBookmarkId, setCloudArchiveTargetBookmarkId] = useState<string | null>(null);
   const [cloudArchiveBusy, setCloudArchiveBusy] = useState(false);
   const [cloudArchiveError, setCloudArchiveError] = useState<string | null>(null);
+  const [localArchiveDialog, setLocalArchiveDialog] = useState<LocalArchiveDialogState>({ step: "closed" });
+  const [localArchiveBusy, setLocalArchiveBusy] = useState(false);
+  const [localArchiveError, setLocalArchiveError] = useState<string | null>(null);
   const cloudArchiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -3484,6 +3655,7 @@ export function App({
   const activeBookmarkContextId = contextMenu.kind === "bookmark" ? contextMenu.bookmark.id : null;
   const activeFolderContextId = contextMenu.kind === "folder" ? contextMenu.folder.id : null;
   const activeTagContextId = contextMenu.kind === "tag" ? contextMenu.tag.id : null;
+  const hasMoreItems = items.length < listTotal;
 
   const importAdapter = useMemo<ImportPanelAdapter | undefined>(() => {
     if (!isDemoMode) {
@@ -3646,6 +3818,23 @@ export function App({
     }
     setCloudArchiveTargetBookmarkId(null);
     setCloudArchiveDialog({ step: "closed" });
+  }
+
+  function openLocalArchiveDialog(bookmarks: Bookmark[]) {
+    setLocalArchiveError(null);
+    setLocalArchiveBusy(false);
+    setLocalArchiveDialog({
+      step: "confirm",
+      bookmarks,
+    });
+  }
+
+  function closeLocalArchiveDialog() {
+    if (localArchiveBusy) {
+      return;
+    }
+    setLocalArchiveDialog({ step: "closed" });
+    setLocalArchiveError(null);
   }
 
   function startCloudArchivePolling(taskId: string) {
@@ -3987,22 +4176,29 @@ export function App({
   useEffect(() => {
     if (!authToken) {
       setItems([]);
+      setListTotal(0);
       setLoadState("idle");
       setListError(null);
+      setLoadMoreError(null);
+      setLoadingMore(false);
       return;
     }
 
     if (isDemoMode) {
+      const filteredItems = filterDemoBookmarks(demoState, {
+        search: deferredSearch,
+        quality: qualityFilter,
+        view: bookmarkView,
+        folderId: selectedFolderId || undefined,
+        tagId: selectedTagId || undefined,
+      });
       setLoadState("loading");
       setListError(null);
+      setLoadMoreError(null);
+      setLoadingMore(false);
       startTransition(() => {
-        setItems(filterDemoBookmarks(demoState, {
-          search: deferredSearch,
-          quality: qualityFilter,
-          view: bookmarkView,
-          folderId: selectedFolderId || undefined,
-          tagId: selectedTagId || undefined,
-        }));
+        setItems(filteredItems.slice(0, BOOKMARKS_PAGE_SIZE));
+        setListTotal(filteredItems.length);
         setLoadState("ready");
       });
       return;
@@ -4011,6 +4207,8 @@ export function App({
     let cancelled = false;
     setLoadState("loading");
     setListError(null);
+    setLoadMoreError(null);
+    setLoadingMore(false);
 
     fetchBookmarks(
       {
@@ -4019,6 +4217,8 @@ export function App({
         view: bookmarkView,
         folderId: selectedFolderId || undefined,
         tagId: selectedTagId || undefined,
+        limit: BOOKMARKS_PAGE_SIZE,
+        offset: 0,
       },
       authToken,
     )
@@ -4028,6 +4228,7 @@ export function App({
         }
         startTransition(() => {
           setItems(result.items);
+          setListTotal(result.total);
           setLoadState("ready");
         });
       })
@@ -4037,6 +4238,7 @@ export function App({
         }
         startTransition(() => {
           setItems([]);
+          setListTotal(0);
           setLoadState("error");
           setListError(toErrorMessage(error));
         });
@@ -4336,6 +4538,7 @@ export function App({
   }
 
   async function refreshBookmarksList(currentToken: string) {
+    const limit = Math.max(items.length, BOOKMARKS_PAGE_SIZE);
     const result = await fetchBookmarks(
       {
         search: deferredSearch,
@@ -4343,12 +4546,74 @@ export function App({
         view: bookmarkView,
         folderId: selectedFolderId || undefined,
         tagId: selectedTagId || undefined,
+        limit,
+        offset: 0,
       },
       currentToken,
     );
     setListError(null);
+    setLoadMoreError(null);
     setItems(result.items);
+    setListTotal(result.total);
+    setLoadingMore(false);
     setLoadState("ready");
+  }
+
+  async function loadMoreBookmarks() {
+    if (loadingMore || loadState !== "ready" || !hasMoreItems) {
+      return;
+    }
+
+    setLoadMoreError(null);
+    setLoadingMore(true);
+
+    if (isDemoMode) {
+      const filteredItems = filterDemoBookmarks(demoState, {
+        search: deferredSearch,
+        quality: qualityFilter,
+        view: bookmarkView,
+        folderId: selectedFolderId || undefined,
+        tagId: selectedTagId || undefined,
+      });
+      startTransition(() => {
+        setItems((current) => filteredItems.slice(0, current.length + BOOKMARKS_PAGE_SIZE));
+        setListTotal(filteredItems.length);
+        setLoadingMore(false);
+      });
+      return;
+    }
+
+    if (!authToken) {
+      setLoadingMore(false);
+      return;
+    }
+
+    try {
+      const result = await fetchBookmarks(
+        {
+          search: deferredSearch,
+          quality: qualityFilter,
+          view: bookmarkView,
+          folderId: selectedFolderId || undefined,
+          tagId: selectedTagId || undefined,
+          limit: BOOKMARKS_PAGE_SIZE,
+          offset: items.length,
+        },
+        authToken,
+      );
+      setItems((current) => {
+        const existingIds = new Set(current.map((item) => item.id));
+        const nextItems = result.items.filter((item) => !existingIds.has(item.id));
+        return [...current, ...nextItems];
+      });
+      setListTotal(result.total);
+    } catch (error) {
+      if (!handleProtectedApiError(error)) {
+        setLoadMoreError(toErrorMessage(error));
+      }
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   async function refreshBookmarkDetail(currentToken: string, bookmarkId: string) {
@@ -4497,50 +4762,39 @@ export function App({
     }
   }
 
-  async function handleBatchLocalArchive(ids: Set<string>) {
+  function handleBatchLocalArchive(ids: Set<string>) {
     if (ids.size === 0) return;
-    setSelectionBusy(true);
-    setManagerFeedback(null);
+    const selectedBookmarks = items.filter((bookmark) => ids.has(bookmark.id));
+    openLocalArchiveDialog(selectedBookmarks);
+  }
+
+  async function confirmLocalArchiveDialog() {
+    if (localArchiveDialog.step !== "confirm") {
+      return;
+    }
+    setLocalArchiveBusy(true);
+    setLocalArchiveError(null);
     try {
       if (isDemoMode) {
-        setManagerFeedback({
-          kind: "error",
-          message: "Mock 模式暂不支持本地插件批量存档。",
-        });
+        setLocalArchiveError("Mock 模式暂不支持本地插件批量存档。");
         return;
       }
       if (!authToken) {
         throw new Error("当前未登录，无法发送本地存档任务。");
       }
-
-      const selectedBookmarks = items.filter((bookmark) => ids.has(bookmark.id));
-      const result = await enqueueBookmarksToLocalExtension(selectedBookmarks);
-      const parts = [] as string[];
-      if (result.acceptedCount > 0) {
-        parts.push(`已把 ${result.acceptedCount} 条书签加入本地插件队列`);
-      }
-      if (result.skippedCount > 0) {
-        parts.push(`跳过 ${result.skippedCount} 条已在队列中的任务`);
-      }
-      if (parts.length === 0) {
-        parts.push("所选书签都已在本地插件队列中");
-      }
-      if (result.queueSize > 0) {
-        parts.push(`当前队列剩余 ${result.queueSize} 条待处理`);
-      }
-
-      setManagerFeedback({
-        kind: "success",
-        message: `${parts.join("，")}。`,
+      const result = await enqueueBookmarksToLocalExtension(localArchiveDialog.bookmarks);
+      setLocalArchiveDialog({
+        step: "done",
+        totalCount: localArchiveDialog.bookmarks.length,
+        acceptedCount: result.acceptedCount,
+        skippedCount: result.skippedCount,
+        queueSize: result.queueSize,
       });
       exitSelectionMode();
     } catch (error) {
-      setManagerFeedback({
-        kind: "error",
-        message: toErrorMessage(error),
-      });
+      setLocalArchiveError(toErrorMessage(error));
     } finally {
-      setSelectionBusy(false);
+      setLocalArchiveBusy(false);
     }
   }
 
@@ -5314,6 +5568,7 @@ export function App({
               bookmarkView={bookmarkView}
               loadState={loadState}
               listError={listError}
+              loadMoreError={loadMoreError}
               hasActiveFilters={Boolean(
                 searchInput.trim()
                 || bookmarkView !== "all"
@@ -5321,8 +5576,11 @@ export function App({
                 || selectedFolderId
                 || selectedTagId,
               )}
+              hasMoreItems={hasMoreItems}
+              loadingMore={loadingMore}
               managerFeedback={managerFeedback}
               onOpenBookmark={openBookmark}
+              onLoadMore={() => void loadMoreBookmarks()}
               contextMenuBookmarkId={activeBookmarkContextId}
               onBookmarkContextMenu={openBookmarkContextMenu}
               selectionMode={selectionMode}
@@ -5470,6 +5728,13 @@ export function App({
           closeCloudArchive();
           openBookmark(bookmarkId);
         }}
+      />
+      <LocalArchiveDialog
+        state={localArchiveDialog}
+        busy={localArchiveBusy}
+        error={localArchiveError}
+        onConfirm={() => void confirmLocalArchiveDialog()}
+        onClose={closeLocalArchiveDialog}
       />
       {contextMenu.kind !== "closed" ? (
         <ContextMenu state={contextMenu} groups={contextMenuGroups} onClose={closeContextMenu} />

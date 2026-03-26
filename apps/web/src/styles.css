@@ -2245,6 +2245,12 @@ button {
   color: var(--low);
 }
 
+.home-loading-note-inline {
+  margin: 1rem auto 0;
+  max-width: 20rem;
+  text-align: center;
+}
+
 /* ── Context Menu ── */
 
 .context-menu-layer {
@@ -2785,6 +2791,11 @@ button {
   margin: 0.75rem 0 0;
   color: var(--muted);
   max-width: 32rem;
+}
+
+.home-load-more-anchor {
+  width: 100%;
+  height: 1px;
 }
 
 .home-footer {
