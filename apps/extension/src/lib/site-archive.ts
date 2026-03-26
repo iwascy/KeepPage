@@ -652,21 +652,6 @@ function buildXiaohongshuNoteArchive(input: {
   </head>
   <body>
     <main class="note-shell">
-      <section class="media-panel">
-        <div class="media-header">
-          <p class="media-kicker">KeepPage XiaoHongShu View</p>
-          ${mediaItems.length > 0 ? `<span class="media-count">${mediaItems.length} 张图</span>` : ""}
-        </div>
-        ${
-          mediaItems.length > 0
-            ? `<div class="media-track">${mediaItems.map((item) => `
-              <figure class="media-card" style="--aspect-ratio: ${escapeHtmlAttribute(item.aspectRatio)};">
-                <img src="${escapeHtmlAttribute(item.src)}" alt="${escapeHtmlAttribute(item.alt)}" loading="lazy" />
-              </figure>
-            `).join("")}</div>`
-            : `<div class="media-track"><div class="media-card"><div style="padding: 28px; color: #766761;">这条笔记没有可直接归档的图片。</div></div></div>`
-        }
-      </section>
       <article class="content-panel">
         <div class="author-row">
           ${avatarUrl ? `<img class="author-avatar" src="${escapeHtmlAttribute(avatarUrl)}" alt="${escapeHtmlAttribute(author || "作者头像")}" />` : ""}
@@ -683,6 +668,21 @@ function buildXiaohongshuNoteArchive(input: {
         <div class="note-body">${body.innerHTML}</div>
         <a class="source-link" href="${escapeHtmlAttribute(currentUrl.toString())}" target="_blank" rel="noreferrer noopener">打开原始笔记</a>
       </article>
+      <section class="media-panel">
+        <div class="media-header">
+          <p class="media-kicker">KeepPage XiaoHongShu View</p>
+          ${mediaItems.length > 0 ? `<span class="media-count">${mediaItems.length} 张图</span>` : ""}
+        </div>
+        ${
+          mediaItems.length > 0
+            ? `<div class="media-track">${mediaItems.map((item) => `
+              <figure class="media-card" style="--aspect-ratio: ${escapeHtmlAttribute(item.aspectRatio)};">
+                <img src="${escapeHtmlAttribute(item.src)}" alt="${escapeHtmlAttribute(item.alt)}" loading="lazy" />
+              </figure>
+            `).join("")}</div>`
+            : `<div class="media-track"><div class="media-card"><div style="padding: 28px; color: #766761;">这条笔记没有可直接归档的图片。</div></div></div>`
+        }
+      </section>
     </main>
   </body>
 </html>`;
