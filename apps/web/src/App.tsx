@@ -832,6 +832,7 @@ function AppShell({
 }) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
   const [sidebarView, setSidebarView] = useState<"main" | "settings">("main");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const activeNav = selectedFolderId || selectedTagId ? null : bookmarkView;
 
   const sortedFolders = useMemo(
@@ -933,6 +934,7 @@ function AppShell({
 
   function handleSelectQuickNav(nextNav: BookmarkListView) {
     setSidebarView("main");
+    setMobileSidebarOpen(false);
     onSelectBookmarkView(nextNav);
     onSelectFolder("");
     onSelectTag("");
@@ -940,6 +942,7 @@ function AppShell({
 
   function handleSelectFolderFilter(nextFolderId: string) {
     setSidebarView("main");
+    setMobileSidebarOpen(false);
     onSelectBookmarkView("all");
     onSelectTag("");
     onSelectFolder(nextFolderId);
@@ -947,6 +950,7 @@ function AppShell({
 
   function handleSelectTagFilter(nextTagId: string) {
     setSidebarView("main");
+    setMobileSidebarOpen(false);
     onSelectBookmarkView("all");
     onSelectFolder("");
     onSelectTag(nextTagId);
@@ -971,7 +975,7 @@ function AppShell({
 
   return (
     <main className="home-page">
-      <aside className="home-sidebar">
+      <aside className={mobileSidebarOpen ? "home-sidebar is-mobile-open" : "home-sidebar"}>
         {sidebarView === "settings" ? (
           <div className="home-settings-panel">
             <button
@@ -990,7 +994,10 @@ function AppShell({
               <button
                 className={routePage === "settings-api-tokens" ? "home-settings-item is-active" : "home-settings-item"}
                 type="button"
-                onClick={onOpenApiTokens}
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  onOpenApiTokens();
+                }}
               >
                 <span className="material-symbols-outlined" aria-hidden="true">
                   vpn_key
@@ -1000,7 +1007,11 @@ function AppShell({
               <button
                 className="home-settings-item"
                 type="button"
-                onClick={() => { setSidebarView("main"); onOpenCloudArchive(); }}
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  setSidebarView("main");
+                  onOpenCloudArchive();
+                }}
               >
                 <span className="material-symbols-outlined" aria-hidden="true">
                   cloud_download
@@ -1010,7 +1021,11 @@ function AppShell({
               <button
                 className="home-settings-item"
                 type="button"
-                onClick={() => { setSidebarView("main"); onOpenImportNew(); }}
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  setSidebarView("main");
+                  onOpenImportNew();
+                }}
               >
                 <span className="material-symbols-outlined" aria-hidden="true">
                   add
@@ -1020,7 +1035,11 @@ function AppShell({
               <button
                 className="home-settings-item"
                 type="button"
-                onClick={() => { setSidebarView("main"); onOpenImportHistory(); }}
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  setSidebarView("main");
+                  onOpenImportHistory();
+                }}
               >
                 <span className="material-symbols-outlined" aria-hidden="true">
                   history
@@ -1031,7 +1050,11 @@ function AppShell({
               <button
                 className="home-settings-item is-danger"
                 type="button"
-                onClick={() => { setSidebarView("main"); onLogout(); }}
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  setSidebarView("main");
+                  onLogout();
+                }}
               >
                 <span className="material-symbols-outlined" aria-hidden="true">
                   logout
@@ -1249,6 +1272,102 @@ function AppShell({
 
       <div className="home-shell">
         <header className="home-topbar" />
+
+        <section className="home-mobile-bar">
+          <div className="home-mobile-header">
+            <button className="home-brand-home" type="button" onClick={onGoHome} aria-label="返回主页">
+              <span className="home-brand-title">KeepPage</span>
+            </button>
+            <div className="home-mobile-actions">
+              <button
+                className={mobileSidebarOpen && sidebarView === "main" ? "home-mobile-action is-active" : "home-mobile-action"}
+                type="button"
+                onClick={() => {
+                  setSidebarView("main");
+                  setMobileSidebarOpen((current) => (sidebarView === "main" ? !current : true));
+                }}
+                aria-label="打开筛选与收藏夹"
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  tune
+                </span>
+              </button>
+              <button className="home-mobile-cta" type="button" onClick={onOpenImportNew}>
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  add
+                </span>
+                <span>Add New</span>
+              </button>
+              <button
+                className={mobileSidebarOpen && sidebarView === "settings" ? "home-mobile-action is-active" : "home-mobile-action"}
+                type="button"
+                onClick={() => {
+                  setSidebarView("settings");
+                  setMobileSidebarOpen((current) => (sidebarView === "settings" ? !current : true));
+                }}
+                aria-label="打开设置"
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  settings
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <label className="home-search">
+            <span className="home-search-icon material-symbols-outlined" aria-hidden="true">
+              search
+            </span>
+            <input
+              className="home-search-input"
+              type="search"
+              value={searchInput}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="搜索标题、域名、标签..."
+            />
+          </label>
+
+          <nav className="home-quick-nav home-mobile-quick-nav" aria-label="移动端快捷导航">
+            <button
+              className={activeNav === "all" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
+              type="button"
+              onClick={() => handleSelectQuickNav("all")}
+            >
+              <span
+                className="material-symbols-outlined"
+                aria-hidden="true"
+                style={
+                  activeNav === "all"
+                    ? { fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 20" }
+                    : undefined
+                }
+              >
+                bookmark
+              </span>
+              <span>全部</span>
+            </button>
+            <button
+              className={activeNav === "recent" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
+              type="button"
+              onClick={() => handleSelectQuickNav("recent")}
+            >
+              <span className="material-symbols-outlined" aria-hidden="true">
+                schedule
+              </span>
+              <span>最近</span>
+            </button>
+            <button
+              className={activeNav === "favorites" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
+              type="button"
+              onClick={() => handleSelectQuickNav("favorites")}
+            >
+              <span className="material-symbols-outlined" aria-hidden="true">
+                star
+              </span>
+              <span>星标</span>
+            </button>
+          </nav>
+        </section>
 
         <section className="home-content">
           {children}

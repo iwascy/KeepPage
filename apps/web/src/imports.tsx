@@ -5,6 +5,7 @@ import {
   fetchImportTaskDetail as fetchImportTaskDetailRequest,
   fetchImportTasks as fetchImportTasksRequest,
   previewImport as previewImportRequest,
+  type ImportItemStatus,
   type ImportMode,
   type ImportPreviewRequest,
   type ImportPreviewResult,
@@ -102,6 +103,20 @@ function importTaskStatusLabel(status: ImportTaskStatus) {
   return map[status];
 }
 
+function importItemStatusLabel(status: ImportItemStatus) {
+  const map: Record<ImportItemStatus, string> = {
+    pending: "待处理",
+    deduplicated: "已去重",
+    created_bookmark: "已创建书签",
+    queued_for_archive: "等待归档",
+    archiving: "归档中",
+    archived: "已归档",
+    skipped: "已跳过",
+    failed: "失败",
+  };
+  return map[status];
+}
+
 function getPreviewTotalCount(preview: ImportPreviewResult) {
   return preview.stats.totalCount ?? preview.stats.rawTotal ?? 0;
 }
@@ -124,6 +139,13 @@ function getTaskSuccessCount(task: ImportTaskSummary) {
 
 function getItemReason(item: ImportTaskDetailResult["items"][number]) {
   return item.reason ?? item.errorReason ?? "—";
+}
+
+function formatPercent(numerator: number, denominator: number) {
+  if (denominator <= 0) {
+    return "0%";
+  }
+  return `${Math.round((numerator / denominator) * 100)}%`;
 }
 
 export function ImportNewPanel({
@@ -457,6 +479,16 @@ export function ImportHistoryPanel({
     };
   }, [token, runFetchImportTasks, onApiError]);
 
+  const completedTaskCount = tasks.filter((task) => task.status === "completed").length;
+  const activeTaskCount = tasks.filter((task) => (
+    task.status === "draft"
+    || task.status === "parsing"
+    || task.status === "ready"
+    || task.status === "running"
+    || task.status === "paused"
+  )).length;
+  const archiveCount = tasks.reduce((sum, task) => sum + task.archiveSuccessCount, 0);
+
   return (
     <section className="import-shell">
       <header className="import-header">
@@ -483,36 +515,87 @@ export function ImportHistoryPanel({
           <p>先创建一个导入任务开始吧。</p>
         </section>
       ) : (
-        <section className="import-card">
-          <div className="import-table-wrap">
-            <table className="import-table">
-              <thead>
-                <tr>
-                  <th>任务名</th>
-                  <th>状态</th>
-                  <th>总数</th>
-                  <th>成功</th>
-                  <th>失败</th>
-                  <th>时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((task) => (
-                  <tr key={task.id} className="row-clickable" onClick={() => onOpenTask(task.id)}>
-                    <td>{task.name}</td>
-                    <td>
-                      <span className={`task-status task-status-${task.status}`}>{importTaskStatusLabel(task.status)}</span>
-                    </td>
-                    <td>{task.totalCount}</td>
-                    <td>{getTaskSuccessCount(task)}</td>
-                    <td>{task.failedCount}</td>
-                    <td>{formatWhen(task.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <>
+          <section className="summary import-summary">
+            <article className="metric"><p>任务数</p><h3>{tasks.length}</h3></article>
+            <article className="metric"><p>已完成</p><h3>{completedTaskCount}</h3></article>
+            <article className="metric"><p>进行中</p><h3>{activeTaskCount}</h3></article>
+            <article className="metric"><p>已归档</p><h3>{archiveCount}</h3></article>
+          </section>
+
+          <section className="import-activity-grid" aria-label="导入任务列表">
+            {tasks.map((task) => {
+              const successCount = getTaskSuccessCount(task);
+              const successRate = formatPercent(successCount, task.totalCount);
+              const archiveRate = formatPercent(task.archiveSuccessCount, task.totalCount);
+
+              return (
+                <button
+                  key={task.id}
+                  className="import-activity-card"
+                  type="button"
+                  onClick={() => onOpenTask(task.id)}
+                >
+                  <div className="import-activity-card-head">
+                    <p className="eyebrow">{importSourceLabel(task.sourceType)}</p>
+                    <span className={`task-status task-status-${task.status}`}>{importTaskStatusLabel(task.status)}</span>
+                  </div>
+                  <div className="import-activity-card-copy">
+                    <h3>{task.name}</h3>
+                    <p>{importModeLabel(task.mode)} · 创建于 {formatWhen(task.createdAt)}</p>
+                  </div>
+                  <div className="import-activity-stats">
+                    <span>
+                      <strong>{task.totalCount}</strong>
+                      <small>总数</small>
+                    </span>
+                    <span>
+                      <strong>{successCount}</strong>
+                      <small>成功</small>
+                    </span>
+                    <span>
+                      <strong>{task.failedCount}</strong>
+                      <small>失败</small>
+                    </span>
+                    <span>
+                      <strong>{task.archiveSuccessCount}</strong>
+                      <small>归档</small>
+                    </span>
+                  </div>
+                  <div className="import-activity-progress-grid">
+                    <div className="import-activity-progress-block">
+                      <div className="import-activity-progress-copy">
+                        <span>导入成功率</span>
+                        <strong>{successRate}</strong>
+                      </div>
+                      <span className="import-activity-progress-track" aria-hidden="true">
+                        <span style={{ width: successRate }} />
+                      </span>
+                    </div>
+                    <div className="import-activity-progress-block">
+                      <div className="import-activity-progress-copy">
+                        <span>归档覆盖率</span>
+                        <strong>{archiveRate}</strong>
+                      </div>
+                      <span className="import-activity-progress-track is-archive" aria-hidden="true">
+                        <span style={{ width: archiveRate }} />
+                      </span>
+                    </div>
+                  </div>
+                  <div className="import-activity-card-foot">
+                    <span>最近更新 {formatWhen(task.updatedAt)}</span>
+                    <span className="import-activity-link">
+                      查看任务
+                      <span className="material-symbols-outlined" aria-hidden="true">
+                        arrow_outward
+                      </span>
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </section>
+        </>
       )}
     </section>
   );
@@ -583,6 +666,7 @@ export function ImportDetailPanel({
   }
 
   const { task } = detail;
+  const successCount = getTaskSuccessCount(task);
 
   return (
     <section className="import-shell">
@@ -602,52 +686,96 @@ export function ImportDetailPanel({
 
       <section className="summary import-summary">
         <article className="metric"><p>总数</p><h3>{task.totalCount}</h3></article>
-        <article className="metric"><p>成功</p><h3>{getTaskSuccessCount(task)}</h3></article>
+        <article className="metric"><p>成功</p><h3>{successCount}</h3></article>
         <article className="metric"><p>失败</p><h3>{task.failedCount}</h3></article>
         <article className="metric"><p>归档</p><h3>{task.archiveSuccessCount}</h3></article>
       </section>
 
-      <section className="import-card">
-        <div className="import-table-wrap">
-          <table className="import-table">
-            <thead>
-              <tr>
-                <th>标题</th>
-                <th>URL</th>
-                <th>状态</th>
-                <th>错误原因</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.items.length === 0 ? (
-                <tr><td colSpan={5}>暂无条目明细</td></tr>
-              ) : (
-                detail.items.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.title}</td>
-                    <td><span className="ellipsis-cell">{item.url}</span></td>
-                    <td>{item.status}</td>
-                    <td>{getItemReason(item)}</td>
-                    <td>
-                      {item.bookmarkId ? (
-                        <button
-                          className="secondary-button table-action-button"
-                          type="button"
-                          onClick={() => onOpenBookmark(item.bookmarkId!)}
-                        >
-                          查看
-                        </button>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      <section className="import-card import-detail-meta-card">
+        <div className="import-detail-meta-grid">
+          <article className="import-detail-meta-item">
+            <span>任务状态</span>
+            <strong>{importTaskStatusLabel(task.status)}</strong>
+            <small>最近更新 {formatWhen(task.updatedAt)}</small>
+          </article>
+          <article className="import-detail-meta-item">
+            <span>来源类型</span>
+            <strong>{importSourceLabel(task.sourceType)}</strong>
+            <small>创建于 {formatWhen(task.createdAt)}</small>
+          </article>
+          <article className="import-detail-meta-item">
+            <span>执行模式</span>
+            <strong>{importModeLabel(task.mode)}</strong>
+            <small>成功率 {formatPercent(successCount, task.totalCount)}</small>
+          </article>
+          <article className="import-detail-meta-item">
+            <span>归档表现</span>
+            <strong>{formatPercent(task.archiveSuccessCount, task.totalCount)}</strong>
+            <small>{task.archiveSuccessCount} / {task.totalCount} 已生成归档</small>
+          </article>
         </div>
+      </section>
+
+      <section className="import-item-grid" aria-label="导入条目明细">
+        {detail.items.length === 0 ? (
+          <section className="empty-state">
+            <h2>暂无条目明细</h2>
+            <p>当前任务还没有可展示的处理记录。</p>
+          </section>
+        ) : (
+          detail.items.map((item) => (
+            <article key={item.id} className="import-item-card">
+              <div className="import-item-card-head">
+                <div className="import-item-card-copy">
+                  <p className="eyebrow">{item.domain}</p>
+                  <h3>{item.title}</h3>
+                </div>
+                <span className={`task-status task-status-${item.status === "failed" ? "failed" : item.status === "archived" ? "completed" : "running"}`}>
+                  {importItemStatusLabel(item.status)}
+                </span>
+              </div>
+
+              <div className="import-item-url">
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  link
+                </span>
+                <span className="ellipsis-cell">{item.url}</span>
+              </div>
+
+              <div className="import-item-meta">
+                <div className="import-item-meta-row">
+                  <span>处理结果</span>
+                  <strong>{item.dedupeResult ?? "—"}</strong>
+                </div>
+                <div className="import-item-meta-row">
+                  <span>收藏夹</span>
+                  <strong>{item.folderPath ?? item.sourceFolderPath ?? "—"}</strong>
+                </div>
+              </div>
+
+              <div className="import-item-reason">
+                <span>说明</span>
+                <p>{getItemReason(item)}</p>
+              </div>
+
+              <div className="import-item-card-foot">
+                <div className="import-item-flags">
+                  {item.hasArchive ? <span className="tag">已归档</span> : <span className="tag muted-tag">未归档</span>}
+                  {item.bookmarkId ? <span className="tag">已入库</span> : <span className="tag muted-tag">未入库</span>}
+                </div>
+                {item.bookmarkId ? (
+                  <button
+                    className="secondary-button import-item-action"
+                    type="button"
+                    onClick={() => onOpenBookmark(item.bookmarkId!)}
+                  >
+                    查看书签
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          ))
+        )}
       </section>
     </section>
   );
