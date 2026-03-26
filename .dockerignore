@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+.DS_Store
+node_modules
+**/node_modules
+apps/api/data
+apps/web/dist
+apps/extension/.output
+apps/extension/.wxt
+apps/extension/dist
+docs
+expert-ui
+stitch-keeppage-ui
+single-file-core-1.5.84.tgz
+*.log

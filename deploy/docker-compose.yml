@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: keeppage-postgres
+    restart: unless-stopped
+    env_file: [/data/apps/keeppage/shared/configs/keeppage.env]
+    volumes: [/data/apps/keeppage/shared/postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keeppage -d keeppage"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    container_name: keeppage-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: 8787
+      STORAGE_DRIVER: postgres
+      DATABASE_URL: postgresql://keeppage:${POSTGRES_PASSWORD}@postgres:5432/keeppage
+      OBJECT_STORAGE_ROOT: /app-data/object-storage
+      LOG_LEVEL: info
+      TZ: Asia/Shanghai
+    env_file: [/data/apps/keeppage/shared/configs/keeppage.env]
+    ports: ["127.0.0.1:28787:8787"]
+    volumes:
+      - /data/apps/keeppage/shared/object-storage:/app-data/object-storage
+      - /data/apps/keeppage/shared/logs:/app-logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8787/health >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: keeppage-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports: ["0.0.0.0:28087:80"]
+    volumes: [/data/apps/keeppage/shared/logs/nginx:/var/log/nginx]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/ | grep -q KeepPage"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

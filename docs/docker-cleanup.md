@@ -37,15 +37,15 @@ ops/
 #!/usr/bin/env bash
 set -euo pipefail
 
-source /opt/keeppage/ops/jenkins/docker-cleanup.sh
+source /data/apps/keeppage/repo/ops/jenkins/docker-cleanup.sh
 
-docker compose -f /opt/keeppage/deploy/docker-compose.yml \
-  --project-directory /opt/keeppage/deploy \
+docker compose -f /data/apps/keeppage/repo/deploy/docker-compose.yml \
   up -d --build --remove-orphans
 
-# 清理 72 小时前的 dangling 镜像和 168 小时前的 builder cache，
-# Keeppage repo 镜像保留最近 2 个 tag，web 镜像保留 3 个。
-docker_cleanup_run_suite "72h" "168h" "keeppage/api:2 keeppage/web:3"
+# Keeppage 每次部署都会生成新的 dangling image，
+# 这里直接清理所有 dangling 镜像并把 builder cache 收敛到 1GB。
+export DOCKER_CLEANUP_KEEP_STORAGE=1024MB
+docker_cleanup_run_suite "all" "all" "keeppage-api:2 keeppage-web:2"
 ```
 
 ### telegram-saver-backend-deploy.sh
@@ -67,7 +67,7 @@ docker compose -f /opt/telegram-saver/docker-compose.yml up -d telegram-backend
 docker_cleanup_run_suite "24h" "72h" "telegram-saver/backend:2"
 ```
 
-> `docker_cleanup_run_suite` 内部默认只操作 dangling 镜像层以及超过时间窗口的 builder cache，不会删除仍被 tag 引用的镜像。若需要更激进的策略（例如全量 `docker system prune`），请在调用脚本的上层另行实现。
+> `docker_cleanup_run_suite` 内部不会删除仍被 tag 引用的镜像。对部署频繁的服务，可以把 `max_age` 传成 `all` 或 `0`，表示立即清理所有 dangling image / builder cache。
 
 ## 落地步骤
 
@@ -75,9 +75,10 @@ docker_cleanup_run_suite "24h" "72h" "telegram-saver/backend:2"
    ```bash
    install -m 0755 ops/jenkins/docker-cleanup.sh /opt/keeppage/ops/jenkins/docker-cleanup.sh
    ```
-2. 修改 `/usr/local/bin/keeppage-deploy.sh` 与 `/usr/local/bin/telegram-saver-backend-deploy.sh`，在部署成功后调用 `docker_cleanup_run_suite`。别忘了在脚本顶部 `source` 此文件。
-3. 重新执行两条部署任务，观察 Jenkins 控制台日志是否输出 `docker system df (before/after)` 的统计。
-4. 定期（例如每周）检查 `/var/lib/docker` 的体积，确保新增策略已生效。
+2. 优先直接使用仓库内受管模板 `ops/jenkins/keeppage-deploy.sh`，并让线上 compose / Dockerfile 也引用仓库内的 `deploy/` 目录，避免服务器本地文件与仓库内容漂移。
+3. 修改 `/usr/local/bin/keeppage-deploy.sh` 与 `/usr/local/bin/telegram-saver-backend-deploy.sh`，在部署成功后调用 `docker_cleanup_run_suite`。别忘了在脚本顶部 `source` 此文件。
+4. 重新执行两条部署任务，观察 Jenkins 控制台日志是否输出 `docker system df (before/after)` 的统计。
+5. 定期（例如每周）检查 `/var/lib/docker` 的体积，确保新增策略已生效。
 
 ## 常见调整点
 

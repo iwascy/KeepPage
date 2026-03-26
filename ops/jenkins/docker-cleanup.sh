@@ -24,15 +24,22 @@ docker_cleanup_report_disk_usage() {
 # 仅清理 dangling 镜像层，默认只动 72 小时之前的层，避免误伤刚刚构建的产物。
 docker_cleanup_prune_dangling_images() {
   local max_age="${1:-72h}"
-  _docker_cleanup_log info "docker image prune --force --filter dangling=true --filter until=${max_age}"
-  docker image prune --force --filter "dangling=true" --filter "until=${max_age}" || _docker_cleanup_log warn "跳过 dangling 镜像清理"
+  local args=(--force --filter "dangling=true")
+  if [[ -n "${max_age}" && "${max_age}" != "0" && "${max_age}" != "all" ]]; then
+    args+=(--filter "until=${max_age}")
+  fi
+  _docker_cleanup_log info "docker image prune ${args[*]}"
+  docker image prune "${args[@]}" || _docker_cleanup_log warn "跳过 dangling 镜像清理"
 }
 
 # 清理 BuildKit cache，默认只清理 7 天前的缓存块。
 docker_cleanup_prune_builder_cache() {
   local max_age="${1:-168h}"
   local keep_storage="${2:-0}"
-  local args=(--force --filter "until=${max_age}")
+  local args=(--force)
+  if [[ -n "${max_age}" && "${max_age}" != "0" && "${max_age}" != "all" ]]; then
+    args+=(--filter "until=${max_age}")
+  fi
   if [[ "${keep_storage}" != "0" ]]; then
     args+=("--keep-storage" "${keep_storage}")
   fi
