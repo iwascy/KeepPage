@@ -54,7 +54,10 @@ export async function registerUploadRoutes(
   app.put<{ Params: { encodedObjectKey: string }; Body: Buffer }>(
     "/uploads/:encodedObjectKey",
     async (request, reply) => {
-      const user = await authService.requireUser(request);
+      const user = await authService.requireUser(request, {
+        allowApiToken: true,
+        requiredApiScope: "bookmark:create",
+      });
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = decodeObjectKey(params.encodedObjectKey);
       const canWrite = await repository.userCanWriteObject(user.id, objectKey);
@@ -82,7 +85,10 @@ export async function registerUploadRoutes(
   app.put<{ Params: { encodedObjectKey: string; uploadId: string }; Body: Buffer }>(
     "/uploads/:encodedObjectKey/chunks/:uploadId",
     async (request, reply) => {
-      const user = await authService.requireUser(request);
+      const user = await authService.requireUser(request, {
+        allowApiToken: true,
+        requiredApiScope: "bookmark:create",
+      });
       const params = uploadChunkParamsSchema.parse(request.params);
       const objectKey = decodeObjectKey(params.encodedObjectKey);
       const canWrite = await repository.userCanWriteObject(user.id, objectKey);

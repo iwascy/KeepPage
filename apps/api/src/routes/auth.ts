@@ -24,7 +24,10 @@ export async function registerAuthRoutes(
   });
 
   app.get("/auth/me", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowApiToken: true,
+      requiredApiScope: "bookmark:create",
+    });
     return reply.send(authUserSchema.parse(user));
   });
 }

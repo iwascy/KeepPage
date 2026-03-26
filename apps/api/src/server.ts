@@ -29,11 +29,12 @@ export function buildServer(config: ApiConfig) {
 
   const objectStorage = createObjectStorage(config);
   const repository = createRepository(config, objectStorage);
-  const authService = new AuthService({
-    config,
+  const apiTokenService = new ApiTokenService({
     repository,
   });
-  const apiTokenService = new ApiTokenService({
+  const authService = new AuthService({
+    apiTokenService,
+    config,
     repository,
   });
 

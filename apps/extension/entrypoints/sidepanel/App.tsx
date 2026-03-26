@@ -15,13 +15,15 @@ import {
 } from "../../src/lib/messages";
 import { getStoredAuthToken, getStoredAuthUser } from "../../src/lib/auth-storage";
 import {
-  authSessionSchema,
-  authUserSchema,
   ensureArchiveBaseHref,
 } from "../../src/lib/domain-runtime";
 import {
+  authenticateAccount,
+  clearStoredAuthSession,
   openExtensionAuthPage,
   openSidePanelForCurrentWindow,
+  persistAuthSession,
+  validateStoredAuthSession,
 } from "../../src/lib/auth-flow";
 
 type AsyncState = "idle" | "capturing" | "error";
@@ -503,23 +505,35 @@ export function App() {
       setAuthUser(parsedUser);
     }
 
-    try {
-      const user = await fetchCurrentAccount(normalizedApiBaseUrl, storedToken);
-      setAuthUser(user);
-      await chrome.storage.local.set({ authUser: user });
+    const session = await validateStoredAuthSession();
+    if (session.ok) {
+      setAuthUser(session.user);
       setAuthState("ok");
-      setAuthMessage(`已登录 ${user.email}，后续同步将归到这个账号。`);
+      setAuthMessage(`已登录 ${session.user.email}，后续同步将归到这个账号。`);
       await refreshTasks(detectedInitialSaveMode);
-    } catch (loadError) {
-      await chrome.storage.local.remove(["authToken", "authUser"]);
+      return;
+    }
+
+    if (session.reason === "unreachable" && parsedUser) {
+      setAuthUser(parsedUser);
+      setAuthState("ok");
+      setAuthMessage(`暂时无法验证服务器连接，已保留 ${parsedUser.email} 的本地登录态。`);
+      await refreshTasks(detectedInitialSaveMode);
+      return;
+    }
+
+    if (session.reason === "unauthorized") {
+      await clearStoredAuthSession();
       setAuthUser(null);
       setTasks([]);
       setSelectedTaskId(null);
       setAuthState("error");
-      setAuthMessage(
-        loadError instanceof Error ? loadError.message : "已保存的登录状态失效，请重新登录。",
-      );
+      setAuthMessage(session.message);
+      return;
     }
+
+    setAuthState("error");
+    setAuthMessage(session.message);
   }
 
   async function saveSettings() {
@@ -577,11 +591,8 @@ export function App() {
         password: authPassword,
         name: authName.trim() || undefined,
       });
-      await chrome.storage.local.set({
-        authToken: session.token,
-        authUser: session.user,
-      });
-      setAuthUser(session.user);
+      const storedSession = await persistAuthSession(normalizedApiBaseUrl, session);
+      setAuthUser(storedSession.user);
       setAuthPassword("");
       setAuthState("ok");
       const sidePanelOpened = AUTH_PAGE_VIEW
@@ -589,8 +600,8 @@ export function App() {
         : false;
       setAuthMessage(
         sidePanelOpened
-          ? `已登录 ${session.user.email}，侧边栏已打开，现在可以直接保存当前页面。`
-          : `已登录 ${session.user.email}，新的保存会同步到这个账号。`,
+          ? `已登录 ${storedSession.user.email}，侧边栏已打开，现在可以直接保存当前页面。`
+          : `已登录 ${storedSession.user.email}，新的保存会同步到这个账号。`,
       );
       setConnectionState("idle");
       setConnectionMessage(null);
@@ -604,7 +615,7 @@ export function App() {
   }
 
   async function logoutAuth() {
-    await chrome.storage.local.remove(["authToken", "authUser"]);
+    await clearStoredAuthSession();
     setAuthUser(null);
     setTasks([]);
     setSelectedTaskId(null);
@@ -618,16 +629,23 @@ export function App() {
     setConnectionState("testing");
     setConnectionMessage(null);
     try {
-      const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
       const token = await getStoredAuthToken();
       if (!token) {
         throw new Error("请先登录账号，再测试同步连接。");
       }
-      const user = await fetchCurrentAccount(normalizedApiBaseUrl, token);
-      setAuthUser(user);
-      await chrome.storage.local.set({ authUser: user });
+
+      const session = await validateStoredAuthSession();
+      if (!session.ok) {
+        if (session.reason === "unauthorized") {
+          await clearStoredAuthSession();
+          setAuthUser(null);
+        }
+        throw new Error(session.message);
+      }
+
+      setAuthUser(session.user);
       setConnectionState("ok");
-      setConnectionMessage(`连接正常，当前账号 ${user.email}。`);
+      setConnectionMessage(`连接正常，当前账号 ${session.user.email}。`);
     } catch (testError) {
       setConnectionState("error");
       setConnectionMessage(
@@ -1287,54 +1305,4 @@ function formatDateTime(input: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(input));
-}
-
-async function authenticateAccount(
-  apiBaseUrl: string,
-  mode: AuthMode,
-  payload: {
-    email: string;
-    password: string;
-    name?: string;
-  },
-) {
-  const response = await fetch(`${apiBaseUrl}/auth/${mode === "register" ? "register" : "login"}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response));
-  }
-
-  return authSessionSchema.parse(await response.json());
-}
-
-async function fetchCurrentAccount(apiBaseUrl: string, authToken: string) {
-  const response = await fetch(`${apiBaseUrl}/auth/me`, {
-    headers: {
-      accept: "application/json",
-      authorization: `Bearer ${authToken}`,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response));
-  }
-
-  return authUserSchema.parse(await response.json());
-}
-
-async function readApiErrorMessage(response: Response) {
-  try {
-    const payload = await response.json() as { message?: string };
-    return payload.message ?? `API ${response.status}`;
-  } catch {
-    const text = await response.text();
-    return text || `API ${response.status}`;
-  }
 }

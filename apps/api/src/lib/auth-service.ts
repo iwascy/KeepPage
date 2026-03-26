@@ -9,6 +9,7 @@ import type {
   AuthRegisterRequest,
   AuthSession,
   AuthUser,
+  ApiTokenScope,
 } from "@keeppage/domain";
 import {
   authLoginRequestSchema,
@@ -19,6 +20,7 @@ import type { FastifyRequest } from "fastify";
 import { promisify } from "node:util";
 import type { ApiConfig } from "../config";
 import { HttpError } from "./http-error";
+import type { ApiTokenService } from "./api-token-service";
 import type { BookmarkRepository } from "../repositories";
 
 const scryptAsync = promisify(nodeScrypt);
@@ -31,16 +33,24 @@ type TokenPayload = {
 };
 
 type AuthServiceOptions = {
+  apiTokenService: ApiTokenService;
   config: ApiConfig;
   repository: BookmarkRepository;
 };
 
+type RequireUserOptions = {
+  allowApiToken?: boolean;
+  requiredApiScope?: ApiTokenScope;
+};
+
 export class AuthService {
   private readonly repository: BookmarkRepository;
+  private readonly apiTokenService: ApiTokenService;
   private readonly tokenSecret: string;
   private readonly tokenTtlMs: number;
 
   constructor(options: AuthServiceOptions) {
+    this.apiTokenService = options.apiTokenService;
     this.repository = options.repository;
     this.tokenSecret = options.config.AUTH_TOKEN_SECRET;
     this.tokenTtlMs = options.config.AUTH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
@@ -80,10 +90,15 @@ export class AuthService {
     return this.createSession(existing.user);
   }
 
-  async requireUser(request: FastifyRequest): Promise<AuthUser> {
+  async requireUser(request: FastifyRequest, options: RequireUserOptions = {}): Promise<AuthUser> {
     const token = readBearerToken(request);
     if (!token) {
       throw new HttpError(401, "Unauthorized", "请先登录。");
+    }
+
+    if (options.allowApiToken && isApiToken(token)) {
+      const auth = await this.apiTokenService.authenticateToken(token, options.requiredApiScope);
+      return auth.user;
     }
 
     const payload = verifyToken(token, this.tokenSecret);
@@ -153,6 +168,10 @@ function readBearerToken(request: FastifyRequest) {
     return null;
   }
   return token;
+}
+
+function isApiToken(token: string) {
+  return token.startsWith("kp_");
 }
 
 function signToken(payload: TokenPayload, secret: string) {

@@ -57,12 +57,10 @@ export class ApiTokenService {
     return this.repository.revokeApiToken(userId, tokenId);
   }
 
-  async requireScope(request: FastifyRequest, scope: ApiTokenScope): Promise<ApiTokenAuthContext> {
-    const rawToken = readApiToken(request);
-    if (!rawToken) {
-      throw new HttpError(401, "Unauthorized", "缺少 API token。");
-    }
-
+  async authenticateToken(
+    rawToken: string,
+    requiredScope?: ApiTokenScope,
+  ): Promise<ApiTokenAuthContext> {
     const { tokenId } = parseApiToken(rawToken);
     const stored = await this.repository.getApiTokenAuthRecord(tokenId);
     if (!stored) {
@@ -77,7 +75,7 @@ export class ApiTokenService {
       throw new HttpError(401, "ApiTokenExpired", "API token 已过期。");
     }
 
-    if (!stored.scopes.includes(scope)) {
+    if (requiredScope && !stored.scopes.includes(requiredScope)) {
       throw new HttpError(403, "InsufficientScope", "API token 权限不足。");
     }
 
@@ -93,6 +91,15 @@ export class ApiTokenService {
       user,
       tokenId: stored.id,
     };
+  }
+
+  async requireScope(request: FastifyRequest, scope: ApiTokenScope): Promise<ApiTokenAuthContext> {
+    const rawToken = readApiToken(request);
+    if (!rawToken) {
+      throw new HttpError(401, "Unauthorized", "缺少 API token。");
+    }
+
+    return this.authenticateToken(rawToken, scope);
   }
 }
 

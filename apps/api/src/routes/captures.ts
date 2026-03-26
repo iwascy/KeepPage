@@ -25,7 +25,10 @@ export async function registerCaptureRoutes(
   objectStorage: ObjectStorage,
 ) {
   app.post("/captures/init", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowApiToken: true,
+      requiredApiScope: "bookmark:create",
+    });
     const payload = captureInitRequestSchema.parse(request.body);
     const result = await repository.initCapture(user.id, payload);
     const publicBaseUrl = resolvePublicBaseUrl(request, config);
@@ -37,7 +40,10 @@ export async function registerCaptureRoutes(
   });
 
   app.post("/captures/complete", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowApiToken: true,
+      requiredApiScope: "bookmark:create",
+    });
     const payload = captureCompleteRequestSchema.parse(request.body);
     const result = await repository.completeCapture(user.id, payload);
     const response = captureCompleteResponseSchema.parse({

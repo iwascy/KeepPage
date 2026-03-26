@@ -1,11 +1,22 @@
-import type { AuthUser } from "@keeppage/domain";
+import type { AuthSession, AuthUser } from "@keeppage/domain";
 import { getStoredAuthToken, getStoredAuthUser } from "./auth-storage";
 import { authUserSchema } from "./domain-runtime";
 import { createLogger } from "./logger";
 
 const AUTH_PAGE_FILE = "sidepanel.html";
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
+const EXTENSION_API_TOKEN_NAME = "KeepPage Extension";
 const logger = createLogger("auth-flow");
+
+class ApiResponseError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiResponseError";
+    this.status = status;
+  }
+}
 
 type SessionValidationResult =
   | {
@@ -22,11 +33,8 @@ type SessionValidationResult =
     };
 
 export async function hasStoredAuthSession() {
-  const [token, user] = await Promise.all([
-    getStoredAuthToken(),
-    getStoredAuthUser(),
-  ]);
-  return Boolean(token && user);
+  const token = await getStoredAuthToken();
+  return Boolean(token);
 }
 
 export async function clearStoredAuthSession() {
@@ -51,7 +59,7 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
     getStoredAuthUser(),
   ]);
 
-  if (!token || !storedUser) {
+  if (!token) {
     logger.debug("Stored auth session is incomplete.", {
       hasToken: Boolean(token),
       hasUser: Boolean(storedUser),
@@ -68,21 +76,34 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
   try {
     logger.debug("Validating stored auth session.", {
       apiBaseUrl,
-      userId: storedUser.id,
-      email: storedUser.email,
+      tokenKind: isApiToken(token) ? "api-token" : "session-token",
+      userId: storedUser?.id,
+      email: storedUser?.email,
     });
-    const response = await fetch(`${apiBaseUrl}/auth/me`, {
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${token}`,
-      },
+    const user = await fetchCurrentAccount(apiBaseUrl, token);
+    const persistentToken = await ensurePersistentAuthToken(apiBaseUrl, token);
+    await chrome.storage.local.set({
+      authToken: persistentToken,
+      authUser: user,
     });
-
-    if (response.status === 401 || response.status === 403) {
+    logger.debug("Stored auth session validated successfully.", {
+      apiBaseUrl,
+      userId: user.id,
+      email: user.email,
+      tokenKind: isApiToken(persistentToken) ? "api-token" : "session-token",
+    });
+    return {
+      ok: true,
+      token: persistentToken,
+      user,
+      apiBaseUrl,
+    };
+  } catch (error) {
+    if (error instanceof ApiResponseError && (error.status === 401 || error.status === 403)) {
       logger.warn("Stored auth session is unauthorized.", {
         apiBaseUrl,
-        status: response.status,
-        userId: storedUser.id,
+        status: error.status,
+        userId: storedUser?.id,
       });
       return {
         ok: false,
@@ -92,35 +113,6 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
       };
     }
 
-    if (!response.ok) {
-      const text = await response.text();
-      logger.warn("Stored auth session validation hit non-success response.", {
-        apiBaseUrl,
-        status: response.status,
-        body: text,
-      });
-      return {
-        ok: false,
-        reason: "unreachable",
-        message: text ? `API ${response.status}: ${text}` : `API ${response.status}`,
-        apiBaseUrl,
-      };
-    }
-
-    const user = authUserSchema.parse(await response.json());
-    await chrome.storage.local.set({ authUser: user });
-    logger.debug("Stored auth session validated successfully.", {
-      apiBaseUrl,
-      userId: user.id,
-      email: user.email,
-    });
-    return {
-      ok: true,
-      token,
-      user,
-      apiBaseUrl,
-    };
-  } catch (error) {
     logger.warn("Stored auth session validation failed due to fetch error.", {
       apiBaseUrl,
       error: error instanceof Error ? error.message : "无法验证当前登录状态。",
@@ -132,6 +124,54 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
       apiBaseUrl,
     };
   }
+}
+
+export async function authenticateAccount(
+  apiBaseUrl: string,
+  mode: "login" | "register",
+  payload: {
+    email: string;
+    password: string;
+    name?: string;
+  },
+) {
+  const response = await fetch(`${apiBaseUrl}/auth/${mode === "register" ? "register" : "login"}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response));
+  }
+
+  const session = await response.json() as AuthSession;
+  const token = typeof session.token === "string" ? session.token.trim() : "";
+  if (!token) {
+    throw new Error("登录成功，但服务端没有返回有效的登录令牌。");
+  }
+  const user = authUserSchema.parse(session.user);
+
+  return {
+    token,
+    user,
+  } satisfies AuthSession;
+}
+
+export async function persistAuthSession(apiBaseUrl: string, session: AuthSession) {
+  const user = authUserSchema.parse(session.user);
+  const persistentToken = await ensurePersistentAuthToken(apiBaseUrl, session.token);
+  await chrome.storage.local.set({
+    authToken: persistentToken,
+    authUser: user,
+  });
+  return {
+    token: persistentToken,
+    user,
+  };
 }
 
 export async function recoverUnauthorizedSession(reason = "session-expired") {
@@ -195,6 +235,75 @@ function buildExtensionAuthPageUrl(reason: string) {
 
 function normalizeApiBaseUrl(input: string) {
   return input.trim().replace(/\/$/, "");
+}
+
+async function fetchCurrentAccount(apiBaseUrl: string, authToken: string) {
+  const response = await fetch(`${apiBaseUrl}/auth/me`, {
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${authToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new ApiResponseError(response.status, await readApiErrorMessage(response));
+  }
+
+  return authUserSchema.parse(await response.json());
+}
+
+async function ensurePersistentAuthToken(apiBaseUrl: string, authToken: string) {
+  if (isApiToken(authToken)) {
+    return authToken;
+  }
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api-tokens`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        name: EXTENSION_API_TOKEN_NAME,
+        scopes: ["bookmark:create"],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new ApiResponseError(response.status, await readApiErrorMessage(response));
+    }
+
+    const payload = await response.json() as { token?: unknown };
+    const persistentToken = typeof payload.token === "string" ? payload.token.trim() : "";
+    if (!persistentToken || !isApiToken(persistentToken)) {
+      throw new Error("服务端没有返回有效的扩展长期令牌。");
+    }
+
+    logger.info("Upgraded extension auth session to long-lived API token.");
+    return persistentToken;
+  } catch (error) {
+    logger.warn("Failed to upgrade session token to long-lived API token, keeping current token.", {
+      apiBaseUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return authToken;
+  }
+}
+
+async function readApiErrorMessage(response: Response) {
+  try {
+    const payload = await response.json() as { message?: string };
+    return payload.message ?? `API ${response.status}`;
+  } catch {
+    const text = await response.text();
+    return text || `API ${response.status}`;
+  }
+}
+
+function isApiToken(token: string) {
+  return token.startsWith("kp_");
 }
 
 async function openExtensionPage(pageUrl: string) {
