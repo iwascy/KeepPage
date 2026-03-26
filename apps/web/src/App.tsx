@@ -2811,154 +2811,146 @@ function CloudArchiveDialog({
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="create-folder-header">
-          <h2 id="cloud-archive-title" className="create-folder-heading">
-            {isUpdateMode ? "云端更新存档" : "云端存档"}
-          </h2>
-          <p className="create-folder-description">
-            {state.step === "form"
-              ? (isUpdateMode
-                  ? "重新抓取当前网页并为这条书签追加新版本。"
-                  : "输入网页 URL，服务端将自动抓取并生成存档。")
-              : state.step === "progress"
-                ? cloudArchiveStatusLabel(state.status)
-                : (isUpdateMode ? "存档已更新完成。" : "存档已完成。")}
-          </p>
-          <button
-            className="create-folder-close"
-            type="button"
-            aria-label="关闭"
-            onClick={onClose}
-            disabled={busy}
-          >
-            <DialogCloseIcon />
-          </button>
-        </div>
+        <div className="create-folder-dialog-shell">
+          <div className="create-folder-dialog-header">
+            <div className="create-folder-dialog-heading">
+              <h2 id="cloud-archive-title">{isUpdateMode ? "云端更新存档" : "云端存档"}</h2>
+              <p>
+                {state.step === "form"
+                  ? (isUpdateMode
+                      ? "重新抓取当前网页并为这条书签追加新版本。"
+                      : "输入网页 URL，服务端将自动抓取并生成存档。")
+                  : state.step === "progress"
+                    ? cloudArchiveStatusLabel(state.status)
+                    : (isUpdateMode ? "存档已更新完成。" : "存档已完成。")}
+              </p>
+            </div>
+            <button
+              className="create-folder-dialog-close"
+              type="button"
+              aria-label="关闭"
+              onClick={onClose}
+              disabled={busy}
+            >
+              <DialogCloseIcon />
+            </button>
+          </div>
 
-        {state.step === "form" ? (
-          <form className="create-folder-body" onSubmit={onSubmit}>
-            {error ? <p className="manager-dialog-error">{error}</p> : null}
-            <label className="create-folder-field">
-              <span className="create-folder-label">URL</span>
-              <input
-                className="create-folder-input"
-                type="url"
-                value={url}
-                onChange={(event) => onUrlChange(event.target.value)}
-                placeholder="https://example.com/article"
-                required
-                autoFocus
-              />
-            </label>
-            <label className="create-folder-field">
-              <span className="create-folder-label">标题（可选）</span>
-              <input
-                className="create-folder-input"
-                type="text"
-                value={title}
-                onChange={(event) => onTitleChange(event.target.value)}
-                placeholder="留空则自动从页面提取"
-              />
-            </label>
-            {folders.length > 0 ? (
-              <label className="create-folder-field">
-                <span className="create-folder-label">文件夹</span>
-                <select
-                  className="create-folder-input"
-                  value={folderId}
-                  onChange={(event) => onFolderChange(event.target.value)}
-                >
-                  <option value="">不指定</option>
-                  {folders.map((folder) => (
-                    <option key={folder.id} value={folder.id}>{folder.path}</option>
-                  ))}
-                </select>
+          {state.step === "form" ? (
+            <form className="create-folder-dialog-form" onSubmit={onSubmit}>
+              {error ? <p className="manager-dialog-error create-folder-dialog-error">{error}</p> : null}
+              <label className="create-folder-dialog-section">
+                <span className="create-folder-dialog-label">URL</span>
+                <input
+                  className="create-folder-dialog-input"
+                  type="url"
+                  value={url}
+                  onChange={(event) => onUrlChange(event.target.value)}
+                  placeholder="https://example.com/article"
+                  required
+                  autoFocus
+                />
               </label>
-            ) : null}
-            {tags.length > 0 ? (
-              <div className="create-folder-field">
-                <span className="create-folder-label">标签</span>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "4px" }}>
-                  {tags.map((tag) => (
-                    <button
-                      key={tag.id}
-                      type="button"
-                      className={selectedTagIds.includes(tag.id) ? "tag-chip is-active" : "tag-chip"}
-                      onClick={() => onTagToggle(tag.id)}
-                      style={{
-                        padding: "2px 10px",
-                        borderRadius: "12px",
-                        border: selectedTagIds.includes(tag.id) ? "1px solid var(--accent)" : "1px solid var(--border)",
-                        background: selectedTagIds.includes(tag.id) ? "var(--accent-bg, rgba(99,102,241,0.1))" : "transparent",
-                        fontSize: "13px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {tag.name}
-                    </button>
-                  ))}
+              <label className="create-folder-dialog-section">
+                <span className="create-folder-dialog-label">标题（可选）</span>
+                <input
+                  className="create-folder-dialog-input"
+                  type="text"
+                  value={title}
+                  onChange={(event) => onTitleChange(event.target.value)}
+                  placeholder="留空则自动从页面提取"
+                />
+              </label>
+              {folders.length > 0 ? (
+                <label className="create-folder-dialog-section">
+                  <span className="create-folder-dialog-label">文件夹</span>
+                  <select
+                    className="create-folder-dialog-input"
+                    value={folderId}
+                    onChange={(event) => onFolderChange(event.target.value)}
+                  >
+                    <option value="">不指定</option>
+                    {folders.map((folder) => (
+                      <option key={folder.id} value={folder.id}>{folder.path}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {tags.length > 0 ? (
+                <div className="create-folder-dialog-section">
+                  <span className="create-folder-dialog-label">标签</span>
+                  <div className="archive-dialog-tag-list">
+                    {tags.map((tag) => {
+                      const selected = selectedTagIds.includes(tag.id);
+
+                      return (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          className={selected ? "archive-dialog-tag-button is-active" : "archive-dialog-tag-button"}
+                          onClick={() => onTagToggle(tag.id)}
+                        >
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
+              ) : null}
+              <div className="create-folder-dialog-actions">
+                <button className="create-folder-action-button is-secondary" type="button" onClick={onClose} disabled={busy}>
+                  取消
+                </button>
+                <button className="create-folder-action-button is-primary" type="submit" disabled={busy || !url.trim()}>
+                  {busy ? "提交中..." : isUpdateMode ? "更新存档" : "开始存档"}
+                </button>
               </div>
-            ) : null}
-            <div className="manager-dialog-actions">
-              <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
-                取消
-              </button>
-              <button className="primary-button" type="submit" disabled={busy || !url.trim()}>
-                {busy ? "提交中..." : isUpdateMode ? "更新存档" : "开始存档"}
-              </button>
-            </div>
-          </form>
-        ) : state.step === "progress" ? (
-          <div className="create-folder-body" style={{ textAlign: "center", padding: "24px 0" }}>
-            {state.status === "failed" ? (
-              <>
-                <p style={{ color: "var(--danger, #ef4444)", marginBottom: "8px" }}>
-                  {state.errorMessage ?? "存档失败，请稍后重试。"}
-                </p>
-                <div className="manager-dialog-actions">
-                  <button className="secondary-button" type="button" onClick={onClose}>
-                    关闭
-                  </button>
-                  <button className="primary-button" type="button" onClick={onRetry}>
-                    重试
-                  </button>
+            </form>
+          ) : state.step === "progress" ? (
+            <div className="archive-dialog-panel">
+              {state.status === "failed" ? (
+                <>
+                  <p className="manager-dialog-error create-folder-dialog-error">
+                    {state.errorMessage ?? "存档失败，请稍后重试。"}
+                  </p>
+                  <div className="create-folder-dialog-actions">
+                    <button className="create-folder-action-button is-secondary" type="button" onClick={onClose}>
+                      关闭
+                    </button>
+                    <button className="create-folder-action-button is-primary" type="button" onClick={onRetry}>
+                      重试
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="archive-dialog-status" aria-live="polite">
+                  <div className="archive-dialog-spinner" aria-hidden="true" />
+                  <p className="archive-dialog-status-text">{cloudArchiveStatusLabel(state.status)}</p>
                 </div>
-              </>
-            ) : (
-              <>
-                <div style={{
-                  width: "32px",
-                  height: "32px",
-                  margin: "0 auto 12px",
-                  border: "3px solid var(--border)",
-                  borderTopColor: "var(--accent, #6366f1)",
-                  borderRadius: "50%",
-                  animation: "spin 0.8s linear infinite",
-                }} />
-                <p>{cloudArchiveStatusLabel(state.status)}</p>
-              </>
-            )}
-          </div>
-        ) : state.step === "done" ? (
-          <div className="create-folder-body" style={{ textAlign: "center", padding: "24px 0" }}>
-            <p style={{ marginBottom: "16px" }}>
-              {isUpdateMode ? "当前书签已成功更新存档。" : "网页已成功存档！"}
-            </p>
-            <div className="manager-dialog-actions">
-              <button className="secondary-button" type="button" onClick={onClose}>
-                关闭
-              </button>
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => onOpenBookmark(state.bookmarkId)}
-              >
-                查看书签
-              </button>
+              )}
             </div>
-          </div>
-        ) : null}
+          ) : state.step === "done" ? (
+            <div className="archive-dialog-panel">
+              <div className="archive-dialog-status">
+                <p className="archive-dialog-status-text">
+                  {isUpdateMode ? "当前书签已成功更新存档。" : "网页已成功存档！"}
+                </p>
+              </div>
+              <div className="create-folder-dialog-actions">
+                <button className="create-folder-action-button is-secondary" type="button" onClick={onClose}>
+                  关闭
+                </button>
+                <button
+                  className="create-folder-action-button is-primary"
+                  type="button"
+                  onClick={() => onOpenBookmark(state.bookmarkId)}
+                >
+                  查看书签
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -3512,64 +3504,66 @@ function LocalArchiveDialog({
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="create-folder-header">
-          <h2 id="local-archive-title" className="create-folder-heading">
-            本地插件存档
-          </h2>
-          <p className="create-folder-description">
-            {state.step === "confirm"
-              ? "任务会发送到本地浏览器插件，按队列顺序逐条存档，避免一次并发过多。"
-              : "任务已经提交到本地插件队列。"}
-          </p>
-          <button
-            className="create-folder-close"
-            type="button"
-            aria-label="关闭"
-            onClick={onClose}
-            disabled={busy}
-          >
-            <DialogCloseIcon />
-          </button>
-        </div>
+        <div className="create-folder-dialog-shell">
+          <div className="create-folder-dialog-header">
+            <div className="create-folder-dialog-heading">
+              <h2 id="local-archive-title">本地插件存档</h2>
+              <p>
+                {state.step === "confirm"
+                  ? "任务会发送到本地浏览器插件，按队列顺序逐条存档，避免一次并发过多。"
+                  : "任务已经提交到本地插件队列。"}
+              </p>
+            </div>
+            <button
+              className="create-folder-dialog-close"
+              type="button"
+              aria-label="关闭"
+              onClick={onClose}
+              disabled={busy}
+            >
+              <DialogCloseIcon />
+            </button>
+          </div>
 
-        {state.step === "confirm" ? (
-          <div className="create-folder-body">
-            {error ? <p className="manager-dialog-error">{error}</p> : null}
-            <div className="manager-dialog-hero">
-              <div className="manager-dialog-heading">
-                <h2>确认发送 {totalCount} 条书签？</h2>
-                <p>扩展会自动排队抓取，并在抓取完成后继续走同步流程。</p>
+          {state.step === "confirm" ? (
+            <div className="archive-dialog-panel">
+              {error ? <p className="manager-dialog-error create-folder-dialog-error">{error}</p> : null}
+              <div className="manager-dialog-hero">
+                <div className="manager-dialog-heading">
+                  <h2>确认发送 {totalCount} 条书签？</h2>
+                  <p>扩展会自动排队抓取，并在抓取完成后继续走同步流程。</p>
+                </div>
+              </div>
+              <div className="create-folder-dialog-actions">
+                <button className="create-folder-action-button is-secondary" type="button" onClick={onClose} disabled={busy}>
+                  取消
+                </button>
+                <button className="create-folder-action-button is-primary" type="button" onClick={onConfirm} disabled={busy}>
+                  {busy ? "发送中..." : "发送到本地插件"}
+                </button>
               </div>
             </div>
-            <div className="manager-dialog-actions">
-              <button className="secondary-button" type="button" onClick={onClose} disabled={busy}>
-                取消
-              </button>
-              <button className="primary-button" type="button" onClick={onConfirm} disabled={busy}>
-                {busy ? "发送中..." : "发送到本地插件"}
-              </button>
+          ) : (
+            <div className="archive-dialog-panel">
+              <div className="archive-dialog-status">
+                <p className="archive-dialog-status-text">
+                  已提交 {state.acceptedCount} / {state.totalCount} 条到本地插件队列。
+                </p>
+                <p className="archive-dialog-note">
+                  {state.skippedCount > 0
+                    ? `其中 ${state.skippedCount} 条已在队列中，已自动跳过。`
+                    : "没有检测到重复任务。"}
+                </p>
+                <p className="archive-dialog-note">当前队列剩余 {state.queueSize} 条待处理。</p>
+              </div>
+              <div className="create-folder-dialog-actions is-single">
+                <button className="create-folder-action-button is-primary" type="button" onClick={onClose}>
+                  我知道了
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="create-folder-body" style={{ textAlign: "center", padding: "24px 0" }}>
-            <p style={{ marginBottom: "8px" }}>
-              已提交 {state.acceptedCount} / {state.totalCount} 条到本地插件队列。
-            </p>
-            <p className="detail-note" style={{ marginBottom: "16px" }}>
-              {state.skippedCount > 0
-                ? `其中 ${state.skippedCount} 条已在队列中，已自动跳过。`
-                : "没有检测到重复任务。"}
-            </p>
-            <p className="detail-note" style={{ marginBottom: "16px" }}>
-              当前队列剩余 {state.queueSize} 条待处理。
-            </p>
-            <div className="manager-dialog-actions">
-              <button className="primary-button" type="button" onClick={onClose}>
-                我知道了
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
