@@ -13,6 +13,7 @@ import { createLogger } from "./logger";
 
 const CHUNK_SIZE_BYTES = 256 * 1024;
 const CHUNK_UPLOAD_THRESHOLD_BYTES = 512 * 1024;
+const MEDIA_DOWNLOAD_TIMEOUT_MS = 20_000;
 const logger = createLogger("sync-api");
 
 type SyncResult = {
@@ -56,6 +57,13 @@ class ApiRequestError extends Error {
     this.name = "ApiRequestError";
     this.status = status;
     this.responseBody = responseBody;
+  }
+}
+
+class MediaUploadSkippedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MediaUploadSkippedError";
   }
 }
 
@@ -509,6 +517,7 @@ async function uploadDownloadableMediaFiles(input: {
   }
 
   const uploaded: BookmarkVersionMediaFile[] = [];
+  let skippedCount = 0;
   await logSync("info", input.debugTabId, "Uploading downloadable media files.", {
     taskId: input.taskId,
     htmlObjectKey: input.htmlObjectKey,
@@ -516,35 +525,60 @@ async function uploadDownloadableMediaFiles(input: {
   });
 
   for (const media of deduplicatedMedia) {
-    const downloaded = await downloadMediaBinary(media, input.sourceUrl);
-    const extension = resolveMediaFileExtension(downloaded.contentType, media.url, media.kind);
-    const objectKey = createMediaObjectKey(input.htmlObjectKey, media.id, extension);
-    const uploadUrl = `${input.apiBaseUrl}/uploads/${encodeURIComponent(objectKey)}`;
-    const uploadResult = await withUnauthorizedAuthRecovery(
-      () => uploadBinaryObject(uploadUrl, input.authHeaders, downloaded.body, downloaded.contentType),
-      input.debugTabId,
-      input.taskId,
-    );
-    await logSync("info", input.debugTabId, "Media upload completed.", {
+    try {
+      const skipReason = resolveMediaSkipReason(media);
+      if (skipReason) {
+        throw new MediaUploadSkippedError(skipReason);
+      }
+
+      const downloaded = await downloadMediaBinary(media, input.sourceUrl);
+      const extension = resolveMediaFileExtension(downloaded.contentType, media.url, media.kind);
+      const objectKey = createMediaObjectKey(input.htmlObjectKey, media.id, extension);
+      const uploadUrl = `${input.apiBaseUrl}/uploads/${encodeURIComponent(objectKey)}`;
+      const uploadResult = await withUnauthorizedAuthRecovery(
+        () => uploadBinaryObject(uploadUrl, input.authHeaders, downloaded.body, downloaded.contentType),
+        input.debugTabId,
+        input.taskId,
+      );
+      await logSync("info", input.debugTabId, "Media upload completed.", {
+        taskId: input.taskId,
+        mediaId: media.id,
+        mediaKind: media.kind,
+        mediaUrl: media.url,
+        objectKey,
+        fileSize: downloaded.body.byteLength,
+        contentType: downloaded.contentType,
+        uploadMode: uploadResult.mode,
+        uploadChunkCount: uploadResult.chunkCount,
+      });
+      uploaded.push({
+        id: media.id,
+        kind: media.kind,
+        objectKey,
+        originalUrl: media.url,
+        mimeType: downloaded.contentType,
+        fileSize: downloaded.body.byteLength,
+        width: media.width,
+        height: media.height,
+      });
+    } catch (error) {
+      skippedCount += 1;
+      await logSync("warn", input.debugTabId, "Skipping downloadable media after sync-side failure.", {
+        taskId: input.taskId,
+        mediaId: media.id,
+        mediaKind: media.kind,
+        mediaUrl: media.url,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (skippedCount > 0) {
+    await logSync("warn", input.debugTabId, "Some downloadable media were skipped, continuing capture sync.", {
       taskId: input.taskId,
-      mediaId: media.id,
-      mediaKind: media.kind,
-      mediaUrl: media.url,
-      objectKey,
-      fileSize: downloaded.body.byteLength,
-      contentType: downloaded.contentType,
-      uploadMode: uploadResult.mode,
-      uploadChunkCount: uploadResult.chunkCount,
-    });
-    uploaded.push({
-      id: media.id,
-      kind: media.kind,
-      objectKey,
-      originalUrl: media.url,
-      mimeType: downloaded.contentType,
-      fileSize: downloaded.body.byteLength,
-      width: media.width,
-      height: media.height,
+      uploadedCount: uploaded.length,
+      skippedCount,
+      requestedCount: deduplicatedMedia.length,
     });
   }
 
@@ -554,13 +588,13 @@ async function uploadDownloadableMediaFiles(input: {
 async function downloadMediaBinary(media: CaptureDownloadableMedia, sourceUrl: string) {
   let response: Response;
   try {
-    response = await fetch(media.url, {
+    response = await fetchMediaWithTimeout(media.url, {
       cache: "no-store",
       referrer: sourceUrl,
       referrerPolicy: "strict-origin-when-cross-origin",
     });
   } catch {
-    response = await fetch(media.url, {
+    response = await fetchMediaWithTimeout(media.url, {
       cache: "no-store",
       referrerPolicy: "no-referrer",
     });
@@ -576,6 +610,10 @@ async function downloadMediaBinary(media: CaptureDownloadableMedia, sourceUrl: s
     media.url,
     media.kind,
   );
+  const unsupportedReason = resolveUnsupportedMediaContentReason(contentType, media);
+  if (unsupportedReason) {
+    throw new MediaUploadSkippedError(unsupportedReason);
+  }
   const buffer = new Uint8Array(await response.arrayBuffer());
   if (buffer.byteLength === 0) {
     throw new Error(`下载到的媒体内容为空：${media.url}`);
@@ -597,6 +635,14 @@ function deduplicateMedia(media: CaptureDownloadableMedia[]) {
     seen.add(key);
     return true;
   });
+}
+
+function resolveMediaSkipReason(media: CaptureDownloadableMedia) {
+  const pathname = safeParseUrl(media.url)?.pathname.toLowerCase() ?? media.url.toLowerCase();
+  if (media.kind === "video" && pathname.endsWith(".m3u8")) {
+    return "暂不上传 HLS/m3u8 流媒体地址。";
+  }
+  return null;
 }
 
 function createMediaObjectKey(htmlObjectKey: string, mediaId: string, extension: string) {
@@ -682,11 +728,58 @@ function normalizeContentType(
   }
 }
 
+function resolveUnsupportedMediaContentReason(
+  contentType: string,
+  media: CaptureDownloadableMedia,
+) {
+  if (media.kind === "video") {
+    if (
+      contentType === "application/vnd.apple.mpegurl"
+      || contentType === "application/x-mpegurl"
+    ) {
+      return "媒体响应是 HLS 播放清单，暂不上传。";
+    }
+    if (!contentType.startsWith("video/") && contentType !== "application/octet-stream") {
+      return `媒体响应类型异常：${contentType}`;
+    }
+    return null;
+  }
+
+  if (!contentType.startsWith("image/") && contentType !== "application/octet-stream") {
+    return `媒体响应类型异常：${contentType}`;
+  }
+
+  return null;
+}
+
 function safeParseUrl(rawUrl: string) {
   try {
     return new URL(rawUrl);
   } catch {
     return null;
+  }
+}
+
+async function fetchMediaWithTimeout(input: string, init: RequestInit) {
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const timeoutId = controller
+    ? globalThis.setTimeout(() => controller.abort(), MEDIA_DOWNLOAD_TIMEOUT_MS)
+    : null;
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller?.signal,
+    });
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new Error(`下载媒体超时（${MEDIA_DOWNLOAD_TIMEOUT_MS}ms）：${input}`);
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) {
+      globalThis.clearTimeout(timeoutId);
+    }
   }
 }
 
