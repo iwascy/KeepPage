@@ -725,7 +725,6 @@ function HomeBookmarkCard({
                 <span className="home-bookmark-overlay-badge">{folderLabel}</span>
                 <span className="home-bookmark-overlay-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
               </div>
-              <strong>{bookmark.title}</strong>
             </div>
           ) : null}
         </div>

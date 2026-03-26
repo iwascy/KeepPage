@@ -2680,16 +2680,6 @@ button {
   font-weight: 700;
 }
 
-.home-bookmark-cover-overlay strong {
-  max-width: 18rem;
-  color: #ffffff;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.25;
-  text-shadow: 0 8px 18px rgba(0, 0, 0, 0.2);
-}
-
 .home-bookmark-card:hover .home-bookmark-cover-overlay {
   opacity: 1;
   transform: translateY(0);
