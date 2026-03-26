@@ -401,7 +401,7 @@ async function captureTab(
   }
 }
 
-async function captureSourceUrl(
+export async function captureSourceUrl(
   url: string,
   profile: CaptureProfile,
   saveMode: SaveMode = "standard",

@@ -74,6 +74,30 @@ type ActiveSelection = {
   textPreview: string;
 };
 
+type KeepPageBridgeRequest =
+  | {
+      source: "keeppage-web";
+      target: "keeppage-extension";
+      requestId: string;
+      type: "enqueue-local-archive";
+      payload: {
+        items: Array<{
+          url: string;
+          title?: string;
+          bookmarkId?: string;
+        }>;
+      };
+    };
+
+type KeepPageBridgeResponse = {
+  source: "keeppage-extension";
+  target: "keeppage-web";
+  requestId: string;
+  ok: boolean;
+  payload?: unknown;
+  error?: string;
+};
+
 type SelectionSession = {
   profile: CaptureProfile;
   saveMode: SaveMode;
@@ -232,8 +256,133 @@ export default defineContentScript({
 
       return true;
     });
+
+    installKeepPageWebBridge(logger);
   },
 });
+
+function installKeepPageWebBridge(logger: ReturnType<typeof createLogger>) {
+  if (!isKeepPageAppOrigin(location.origin)) {
+    return;
+  }
+
+  window.addEventListener("message", (event: MessageEvent<unknown>) => {
+    if (event.source !== window) {
+      return;
+    }
+
+    const request = parseKeepPageBridgeRequest(event.data);
+    if (!request) {
+      return;
+    }
+
+    void (async () => {
+      logger.info("Received KeepPage web bridge request.", {
+        requestId: request.requestId,
+        requestType: request.type,
+        url: location.href,
+      });
+
+      if (request.type === "enqueue-local-archive") {
+        const response = await chrome.runtime.sendMessage({
+          type: MESSAGE_TYPE.EnqueueLocalArchiveQueue,
+          items: request.payload.items,
+        });
+        postKeepPageBridgeResponse({
+          source: "keeppage-extension",
+          target: "keeppage-web",
+          requestId: request.requestId,
+          ok: Boolean(response?.ok),
+          payload: response?.ok ? response : undefined,
+          error: response?.ok ? undefined : response?.error ?? "本地插件队列提交失败。",
+        });
+      }
+    })().catch((error) => {
+      const reason = error instanceof Error ? error.message : String(error);
+      logger.error("KeepPage web bridge request failed.", {
+        requestId: request.requestId,
+        requestType: request.type,
+        error: reason,
+      });
+      postKeepPageBridgeResponse({
+        source: "keeppage-extension",
+        target: "keeppage-web",
+        requestId: request.requestId,
+        ok: false,
+        error: reason,
+      });
+    });
+  });
+}
+
+function isKeepPageAppOrigin(origin: string) {
+  return (
+    origin === "https://keeppage.cccy.fun"
+    || origin === "http://localhost:5173"
+    || origin === "http://127.0.0.1:5173"
+  );
+}
+
+function parseKeepPageBridgeRequest(input: unknown): KeepPageBridgeRequest | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+
+  const maybe = input as Record<string, unknown>;
+  if (
+    maybe.source !== "keeppage-web"
+    || maybe.target !== "keeppage-extension"
+    || maybe.type !== "enqueue-local-archive"
+    || typeof maybe.requestId !== "string"
+  ) {
+    return null;
+  }
+
+  const payload = maybe.payload;
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const payloadRecord = payload as Record<string, unknown>;
+  if (!Array.isArray(payloadRecord.items)) {
+    return null;
+  }
+
+  return {
+    source: "keeppage-web",
+    target: "keeppage-extension",
+    requestId: maybe.requestId,
+    type: "enqueue-local-archive",
+    payload: {
+      items: normalizeBridgeItems(payloadRecord.items),
+    },
+  };
+}
+
+function postKeepPageBridgeResponse(response: KeepPageBridgeResponse) {
+  window.postMessage(response, location.origin);
+}
+
+function normalizeBridgeItems(input: unknown[]) {
+  const items: Array<{ url: string; title?: string; bookmarkId?: string }> = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const url = typeof row.url === "string" ? row.url.trim() : "";
+    if (!url) {
+      continue;
+    }
+    items.push({
+      url,
+      title: typeof row.title === "string" ? row.title.trim() || undefined : undefined,
+      bookmarkId: typeof row.bookmarkId === "string"
+        ? row.bookmarkId.trim() || undefined
+        : undefined,
+    });
+  }
+  return items;
+}
 
 function collectSourcePatch(captureScope: CaptureScope): Partial<CaptureSource> {
   const selection = captureScope === "selection"

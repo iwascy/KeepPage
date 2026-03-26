@@ -5,6 +5,7 @@ import {
   openTaskPreview,
   retryTask,
 } from "../src/lib/capture-pipeline";
+import { drainLocalArchiveQueue, enqueueLocalArchiveQueue } from "../src/lib/local-archive-queue";
 import {
   MESSAGE_TYPE,
   isBackgroundRequest,
@@ -47,6 +48,12 @@ export default defineBackground(() => {
       title: "保存到 KeepPage",
       contexts: ["page", "action"],
     });
+    void drainLocalArchiveQueue();
+  });
+
+  chrome.runtime.onStartup?.addListener(() => {
+    logger.info("Extension startup detected, resuming local archive queue.");
+    void drainLocalArchiveQueue();
   });
 
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -181,6 +188,21 @@ export default defineBackground(() => {
         sendResponse({ ok: true, task });
         return;
       }
+      if (message.type === MESSAGE_TYPE.EnqueueLocalArchiveQueue) {
+        if (!await ensureAuthenticated("web-local-archive-queue")) {
+          sendResponse({ ok: false, error: "请先在本地插件里登录 KeepPage。" });
+          return;
+        }
+        const items = normalizeLocalArchiveQueueItems(message.items);
+        const result = await enqueueLocalArchiveQueue(items);
+        sendResponse({
+          ok: true,
+          acceptedCount: result.acceptedCount,
+          skippedCount: result.skippedCount,
+          queueSize: result.queueSize,
+        });
+        return;
+      }
       if (message.type === MESSAGE_TYPE.RetryTask) {
         if (!await ensureAuthenticated("retry-task")) {
           sendResponse({ ok: false, error: "请先登录 KeepPage。" });
@@ -301,6 +323,32 @@ async function attemptQuickCapture(windowId: number | undefined) {
       await openSidePanelForWindow(windowId);
     }
   }
+}
+
+function normalizeLocalArchiveQueueItems(
+  input: Array<{ url: string; title?: string; bookmarkId?: string }> | undefined,
+) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  const normalized: Array<{ url: string; title?: string; bookmarkId?: string }> = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const url = typeof item.url === "string" ? item.url.trim() : "";
+    if (!url) {
+      continue;
+    }
+    normalized.push({
+      url,
+      title: typeof item.title === "string" ? item.title.trim() || undefined : undefined,
+      bookmarkId: typeof item.bookmarkId === "string"
+        ? item.bookmarkId.trim() || undefined
+        : undefined,
+    });
+  }
+  return normalized;
 }
 
 function isSingleFileRuntimeMessage(message: unknown): message is {

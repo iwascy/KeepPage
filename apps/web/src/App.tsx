@@ -73,6 +73,7 @@ import {
   updateDemoTag,
   type DemoWorkspace,
 } from "./demoData";
+import { enqueueBookmarksToLocalExtension } from "./local-archive-bridge";
 
 type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -1367,6 +1368,7 @@ function SelectionToolbar({
   onSelectAll,
   onDeselectAll,
   onBatchFavorite,
+  onBatchLocalArchive,
   onBatchMoveTo,
   onBatchSetTags,
   onBatchDelete,
@@ -1382,6 +1384,7 @@ function SelectionToolbar({
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onBatchFavorite: (isFavorite: boolean) => void;
+  onBatchLocalArchive: () => void;
   onBatchMoveTo: (folderId: string | null) => void;
   onBatchSetTags: (tagIds: string[]) => void;
   onBatchDelete: () => void;
@@ -1439,6 +1442,15 @@ function SelectionToolbar({
           title="取消收藏"
         >
           取消收藏
+        </button>
+        <button
+          type="button"
+          className="selection-toolbar-btn"
+          disabled={!hasSelection || busy}
+          onClick={onBatchLocalArchive}
+          title="发送到本地插件队列"
+        >
+          本地存档
         </button>
         <div className="selection-toolbar-dropdown-wrapper">
           <button
@@ -3611,6 +3623,22 @@ export function App({
     setCloudArchiveDialog({ step: "form" });
   }
 
+  function openCloudArchiveForBookmark(bookmark: Bookmark) {
+    if (cloudArchiveTimerRef.current) {
+      clearInterval(cloudArchiveTimerRef.current);
+      cloudArchiveTimerRef.current = null;
+    }
+    setCloudArchiveUrl(bookmark.sourceUrl);
+    setCloudArchiveTitle(bookmark.title);
+    setCloudArchiveFolderId(bookmark.folder?.id ?? "");
+    setCloudArchiveTagIds(bookmark.tags.map((tag) => tag.id));
+    setCloudArchiveTargetBookmarkId(bookmark.id);
+    setCloudArchiveBusy(false);
+    setCloudArchiveError(null);
+    setCloudArchiveDialog({ step: "form" });
+    closeContextMenu();
+  }
+
   function closeCloudArchive() {
     if (cloudArchiveTimerRef.current) {
       clearInterval(cloudArchiveTimerRef.current);
@@ -4469,6 +4497,53 @@ export function App({
     }
   }
 
+  async function handleBatchLocalArchive(ids: Set<string>) {
+    if (ids.size === 0) return;
+    setSelectionBusy(true);
+    setManagerFeedback(null);
+    try {
+      if (isDemoMode) {
+        setManagerFeedback({
+          kind: "error",
+          message: "Mock 模式暂不支持本地插件批量存档。",
+        });
+        return;
+      }
+      if (!authToken) {
+        throw new Error("当前未登录，无法发送本地存档任务。");
+      }
+
+      const selectedBookmarks = items.filter((bookmark) => ids.has(bookmark.id));
+      const result = await enqueueBookmarksToLocalExtension(selectedBookmarks);
+      const parts = [] as string[];
+      if (result.acceptedCount > 0) {
+        parts.push(`已把 ${result.acceptedCount} 条书签加入本地插件队列`);
+      }
+      if (result.skippedCount > 0) {
+        parts.push(`跳过 ${result.skippedCount} 条已在队列中的任务`);
+      }
+      if (parts.length === 0) {
+        parts.push("所选书签都已在本地插件队列中");
+      }
+      if (result.queueSize > 0) {
+        parts.push(`当前队列剩余 ${result.queueSize} 条待处理`);
+      }
+
+      setManagerFeedback({
+        kind: "success",
+        message: `${parts.join("，")}。`,
+      });
+      exitSelectionMode();
+    } catch (error) {
+      setManagerFeedback({
+        kind: "error",
+        message: toErrorMessage(error),
+      });
+    } finally {
+      setSelectionBusy(false);
+    }
+  }
+
   async function handleBatchMoveTo(ids: Set<string>, folderId: string | null) {
     if (ids.size === 0) return;
     setSelectionBusy(true);
@@ -4917,6 +4992,8 @@ export function App({
 
     if (contextMenu.kind === "bookmark") {
       const bookmark = contextMenu.bookmark;
+      const cloudArchiveInFlight = cloudArchiveTargetBookmarkId === bookmark.id
+        && (cloudArchiveBusy || cloudArchiveDialog.step === "progress");
       const detailHash = buildDetailHash(bookmark.id);
       const detailUrl = buildAppUrl(detailHash);
       return [
@@ -4975,6 +5052,13 @@ export function App({
               label: "前往详情编辑",
               icon: "ED",
               onSelect: () => openBookmark(bookmark.id),
+            },
+            {
+              id: "cloud-archive-bookmark",
+              label: bookmark.versionCount > 0 ? "云端更新存档" : "云端存档",
+              icon: "CA",
+              disabled: cloudArchiveInFlight,
+              onSelect: () => openCloudArchiveForBookmark(bookmark),
             },
             {
               id: "delete-bookmark",
@@ -5083,7 +5167,15 @@ export function App({
         ],
       },
     ];
-  }, [contextMenu, managerBusy, selectedFolderId, selectedTagId, route, authToken, demoState, isDemoMode, bookmarkView]);
+  }, [
+    cloudArchiveBusy,
+    cloudArchiveDialog.step,
+    cloudArchiveTargetBookmarkId,
+    contextMenu,
+    managerBusy,
+    selectedFolderId,
+    selectedTagId,
+  ]);
 
   const detailCloudArchiveUpdating = Boolean(
     detail
@@ -5210,6 +5302,7 @@ export function App({
                 onSelectAll={selectAllBookmarks}
                 onDeselectAll={deselectAllBookmarks}
                 onBatchFavorite={(fav) => void handleBatchToggleFavorite(selectedIds, fav)}
+                onBatchLocalArchive={() => void handleBatchLocalArchive(selectedIds)}
                 onBatchMoveTo={(folderId) => void handleBatchMoveTo(selectedIds, folderId)}
                 onBatchSetTags={(tagIds) => void handleBatchSetTags(selectedIds, tagIds)}
                 onBatchDelete={() => openManagerDialog({ kind: "delete-bookmarks-batch", bookmarkIds: [...selectedIds], count: selectedIds.size })}
