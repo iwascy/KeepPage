@@ -1,5 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block");
 
 /* Global Material Symbols configuration for refined look */
 .material-symbols-outlined {
@@ -2193,12 +2193,15 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .home-mobile-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .home-mobile-action,
@@ -2207,6 +2210,7 @@ button {
   border: 0;
   cursor: pointer;
   transition: all 160ms ease;
+  min-width: 0;
 }
 
 .home-mobile-action {
@@ -2255,6 +2259,7 @@ button {
   font-size: 0.82rem;
   font-weight: 700;
   box-shadow: 0 16px 30px rgba(82, 82, 82, 0.18);
+  width: 100%;
 }
 
 .home-mobile-cta:active {
@@ -4718,12 +4723,15 @@ button {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.45rem;
     margin-bottom: 0;
+    width: 100%;
   }
 
   .home-mobile-quick-nav .home-quick-nav-item {
     justify-content: center;
     padding: 0.78rem 0.55rem;
     border-radius: 1rem;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .import-activity-stats,
@@ -4934,11 +4942,11 @@ button {
   }
 
   .home-mobile-actions {
-    justify-content: space-between;
+    width: 100%;
   }
 
   .home-mobile-cta {
-    flex: 1 1 auto;
+    flex: none;
   }
 
   .home-grid {
@@ -4983,6 +4991,41 @@ button {
 
   .source-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .home-mobile-bar {
+    margin: 0.75rem 0.75rem 0;
+    padding: 0.9rem;
+    border-radius: 26px;
+  }
+
+  .home-content {
+    padding: 0.85rem 0.75rem 2rem;
+  }
+
+  .home-mobile-actions {
+    gap: 0.4rem;
+  }
+
+  .home-mobile-action {
+    width: 2.6rem;
+    height: 2.6rem;
+  }
+
+  .home-mobile-cta {
+    padding: 0 0.85rem;
+    font-size: 0.78rem;
+  }
+
+  .home-mobile-quick-nav {
+    gap: 0.35rem;
+  }
+
+  .home-mobile-quick-nav .home-quick-nav-item {
+    gap: 0.3rem;
+    padding: 0.72rem 0.3rem;
   }
 }
 
