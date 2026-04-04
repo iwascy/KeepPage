@@ -2560,6 +2560,7 @@ function ManagerDialog({
   const isDeleteDialog = state.kind === "delete-bookmark" || state.kind === "delete-bookmarks-batch" || state.kind === "delete-folder" || state.kind === "delete-tag";
   const isBookmarkDialog = state.kind === "delete-bookmark";
   const isBatchDeleteDialog = state.kind === "delete-bookmarks-batch";
+  const useBookmarkDeleteStyle = isBookmarkDialog || isBatchDeleteDialog;
   const bookmarkDeleteTarget = state.kind === "delete-bookmark" ? state.bookmark : null;
   const bookmarkDeleteFaviconSrc = bookmarkDeleteTarget
     ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(bookmarkDeleteTarget.domain)}&sz=64`
@@ -2608,7 +2609,7 @@ function ManagerDialog({
   return (
     <div
       aria-hidden="true"
-      className={isBookmarkDialog ? "manager-dialog-backdrop is-bookmark-delete" : isBatchDeleteDialog ? "manager-dialog-backdrop" : "manager-dialog-backdrop"}
+      className={useBookmarkDeleteStyle ? "manager-dialog-backdrop is-bookmark-delete" : "manager-dialog-backdrop"}
       onClick={() => {
         if (!busy) {
           onClose();
@@ -2618,23 +2619,54 @@ function ManagerDialog({
       <div
         aria-labelledby="manager-dialog-title"
         aria-modal="true"
-        className={isBookmarkDialog ? "manager-dialog bookmark-delete-dialog" : isDeleteDialog ? "manager-dialog is-danger" : "manager-dialog"}
+        className={useBookmarkDeleteStyle ? "manager-dialog bookmark-delete-dialog" : isDeleteDialog ? "manager-dialog is-danger" : "manager-dialog"}
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
         {isBatchDeleteDialog ? (
           <>
-            <p className="eyebrow">{eyebrow}</p>
-            <h2 id="manager-dialog-title">{title}</h2>
-            <p className="manager-dialog-description">{description}</p>
-            {error ? <p className="manager-dialog-error">{error}</p> : null}
-            <div className="manager-dialog-footer">
-              <button className="manager-dialog-cancel" type="button" onClick={onClose} disabled={busy}>
-                取消
-              </button>
-              <button className="manager-dialog-submit is-danger" type="button" onClick={onConfirmDelete} disabled={busy}>
-                {busy ? "删除中..." : submitLabel}
-              </button>
+            <div className="bookmark-delete-dialog-shell">
+              <div className="bookmark-delete-dialog-header">
+                <div className="bookmark-delete-dialog-heading">
+                  <p className="eyebrow">{eyebrow}</p>
+                  <h2 id="manager-dialog-title">{title}</h2>
+                  <p>{description}</p>
+                </div>
+                <button
+                  aria-label="关闭"
+                  className="bookmark-delete-dialog-close"
+                  type="button"
+                  onClick={onClose}
+                  disabled={busy}
+                >
+                  <DialogCloseIcon />
+                </button>
+              </div>
+
+              <section className="bookmark-delete-card batch-delete-card">
+                <div className="batch-delete-card-count" aria-hidden="true">
+                  {state.count}
+                </div>
+                <div className="bookmark-delete-card-body batch-delete-card-body">
+                  <strong>即将删除 {state.count} 条归档</strong>
+                  <span className="bookmark-delete-card-domain">关联的版本记录也会一起清除</span>
+                </div>
+              </section>
+
+              <div className="bookmark-delete-warning">
+                <p>删除后，所选书签和它们的归档版本会一起从列表中移除。</p>
+              </div>
+
+              {error ? <p className="manager-dialog-error bookmark-delete-dialog-error">{error}</p> : null}
+
+              <div className="bookmark-delete-dialog-actions">
+                <button className="bookmark-delete-action is-secondary" type="button" onClick={onClose} disabled={busy}>
+                  取消
+                </button>
+                <button className="bookmark-delete-action is-danger" type="button" onClick={onConfirmDelete} disabled={busy}>
+                  {busy ? "处理中..." : submitLabel}
+                </button>
+              </div>
             </div>
           </>
         ) : isBookmarkDialog && bookmarkDeleteTarget ? (

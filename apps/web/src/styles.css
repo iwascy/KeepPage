@@ -480,6 +480,26 @@ select {
     0 12px 28px rgba(45, 51, 56, 0.05);
 }
 
+.batch-delete-card {
+  align-items: stretch;
+}
+
+.batch-delete-card-count {
+  flex: none;
+  min-width: 58px;
+  min-height: 58px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0 0.5rem;
+  background: linear-gradient(145deg, #f0f2f5, #f8fafc);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  color: #434a51;
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
 .bookmark-delete-card-favicon {
   flex: none;
   width: 28px;
@@ -495,6 +515,13 @@ select {
   display: flex;
   align-items: baseline;
   gap: 0.55rem;
+}
+
+.batch-delete-card-body {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.2rem;
 }
 
 .bookmark-delete-card-body strong {
@@ -4901,6 +4928,12 @@ button {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.18rem;
+  }
+
+  .batch-delete-card-count {
+    min-width: 52px;
+    min-height: 52px;
+    font-size: 1.05rem;
   }
 
   .manager-dialog-header,

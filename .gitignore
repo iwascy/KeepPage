@@ -5,6 +5,7 @@ dist/
 .turbo/
 .output/
 **/dist/
+**/dist-standalone/
 **/.wxt/
 **/.output/
 *.tsbuildinfo
