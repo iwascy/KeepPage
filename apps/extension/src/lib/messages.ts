@@ -95,6 +95,12 @@ export interface TriggerCaptureActiveTabRequest {
   captureScope?: CaptureScope;
 }
 
+export interface TriggerCaptureActiveTabResponse {
+  ok: boolean;
+  task?: CaptureTask;
+  error?: string;
+}
+
 export interface EnqueueLocalArchiveQueueRequest {
   type: typeof MESSAGE_TYPE.EnqueueLocalArchiveQueue;
   items: Array<{

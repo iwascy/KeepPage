@@ -26,7 +26,6 @@ import {
 import {
   recoverUnauthorizedSession,
   openExtensionAuthPage,
-  openWorkspaceUi,
   openSidePanelForWindow,
   validateStoredAuthSession,
 } from "../src/lib/auth-flow";
@@ -69,22 +68,6 @@ export default defineBackground(() => {
         return;
       }
       await attemptQuickCapture(tab.windowId);
-    }
-  });
-
-  chrome.action.onClicked.addListener(async (tab) => {
-    if (!tab.id) {
-      return;
-    }
-    logger.info("Toolbar action clicked.", {
-      tabId: tab.id,
-      url: tab.url,
-    });
-    if (tab.windowId != null) {
-      if (!await ensureAuthenticated("toolbar-action")) {
-        return;
-      }
-      await openWorkspaceUi(tab.windowId);
     }
   });
 
