@@ -1,5 +1,5 @@
 import type { AuthSession, AuthUser } from "@keeppage/domain";
-import { getStoredAuthToken, getStoredAuthUser } from "./auth-storage";
+import { getStoredAuthToken, getStoredAuthUser, getStoredSyncToken } from "./auth-storage";
 import { authUserSchema } from "./domain-runtime";
 import { createLogger } from "./logger";
 
@@ -38,7 +38,7 @@ export async function hasStoredAuthSession() {
 }
 
 export async function clearStoredAuthSession() {
-  await chrome.storage.local.remove(["authToken", "authUser"]);
+  await chrome.storage.local.remove(["authToken", "authApiToken", "authUser"]);
 }
 
 export async function getConfiguredApiBaseUrl() {
@@ -53,9 +53,10 @@ export async function getConfiguredApiBaseUrl() {
 }
 
 export async function validateStoredAuthSession(): Promise<SessionValidationResult> {
-  const [apiBaseUrl, token, storedUser] = await Promise.all([
+  const [apiBaseUrl, token, syncToken, storedUser] = await Promise.all([
     getConfiguredApiBaseUrl(),
     getStoredAuthToken(),
+    getStoredSyncToken(),
     getStoredAuthUser(),
   ]);
 
@@ -81,9 +82,10 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
       email: storedUser?.email,
     });
     const user = await fetchCurrentAccount(apiBaseUrl, token);
-    const persistentToken = await ensurePersistentAuthToken(apiBaseUrl, token);
-    await chrome.storage.local.set({
-      authToken: persistentToken,
+    const persistentToken = syncToken || await ensurePersistentAuthToken(apiBaseUrl, token);
+    await persistStoredTokens({
+      authToken: token,
+      authApiToken: persistentToken !== token && isApiToken(persistentToken) ? persistentToken : "",
       authUser: user,
     });
     logger.debug("Stored auth session validated successfully.", {
@@ -94,7 +96,7 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
     });
     return {
       ok: true,
-      token: persistentToken,
+      token,
       user,
       apiBaseUrl,
     };
@@ -164,12 +166,13 @@ export async function authenticateAccount(
 export async function persistAuthSession(apiBaseUrl: string, session: AuthSession) {
   const user = authUserSchema.parse(session.user);
   const persistentToken = await ensurePersistentAuthToken(apiBaseUrl, session.token);
-  await chrome.storage.local.set({
-    authToken: persistentToken,
+  await persistStoredTokens({
+    authToken: session.token,
+    authApiToken: persistentToken !== session.token && isApiToken(persistentToken) ? persistentToken : "",
     authUser: user,
   });
   return {
-    token: persistentToken,
+    token: session.token,
     user,
   };
 }
@@ -290,6 +293,24 @@ async function ensurePersistentAuthToken(apiBaseUrl: string, authToken: string) 
     });
     return authToken;
   }
+}
+
+async function persistStoredTokens(input: {
+  authToken: string;
+  authApiToken: string;
+  authUser: AuthUser;
+}) {
+  await chrome.storage.local.set({
+    authToken: input.authToken,
+    authUser: input.authUser,
+  });
+  if (input.authApiToken) {
+    await chrome.storage.local.set({
+      authApiToken: input.authApiToken,
+    });
+    return;
+  }
+  await chrome.storage.local.remove("authApiToken");
 }
 
 async function readApiErrorMessage(response: Response) {

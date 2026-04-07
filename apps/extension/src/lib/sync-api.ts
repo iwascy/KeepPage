@@ -5,7 +5,7 @@ import type {
   CaptureInitRequest,
   CaptureTask,
 } from "@keeppage/domain";
-import { getStoredAuthUser } from "./auth-storage";
+import { getStoredAuthUser, getStoredSyncToken } from "./auth-storage";
 import { getConfiguredApiBaseUrl, recoverUnauthorizedSession } from "./auth-flow";
 import { emitDebugLogToTab } from "./debug-log";
 import { captureInitResponseSchema } from "./domain-runtime";
@@ -277,8 +277,7 @@ async function getApiBaseUrl() {
 }
 
 async function getAuthToken() {
-  const result = await chrome.storage.local.get("authToken");
-  const configured = typeof result.authToken === "string" ? result.authToken.trim() : "";
+  const configured = await getStoredSyncToken();
   return configured || "";
 }
 

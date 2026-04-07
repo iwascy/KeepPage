@@ -3,7 +3,19 @@ import { authUserSchema } from "./domain-runtime";
 
 export async function getStoredAuthToken() {
   const result = await chrome.storage.local.get("authToken");
-  return typeof result.authToken === "string" ? result.authToken.trim() : "";
+  const token = typeof result.authToken === "string" ? result.authToken.trim() : "";
+  return token.startsWith("kp_") ? "" : token;
+}
+
+export async function getStoredSyncToken() {
+  const result = await chrome.storage.local.get(["authApiToken", "authToken"]);
+  const authApiToken = typeof result.authApiToken === "string" ? result.authApiToken.trim() : "";
+  if (authApiToken) {
+    return authApiToken;
+  }
+
+  const authToken = typeof result.authToken === "string" ? result.authToken.trim() : "";
+  return authToken;
 }
 
 export async function getStoredAuthUser(): Promise<AuthUser | null> {
