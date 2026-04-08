@@ -245,6 +245,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       bookmark.canonicalUrl = input.source.canonicalUrl;
       bookmark.title = input.source.title;
       bookmark.domain = input.source.domain;
+      bookmark.faviconUrl = input.source.faviconUrl;
       bookmark.coverImageUrl = input.source.coverImageUrl;
       bookmark.latestVersionId = existingByObjectKey.id;
       bookmark.latestQuality = input.quality;
@@ -287,6 +288,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       bookmark.canonicalUrl = input.source.canonicalUrl;
       bookmark.title = input.source.title;
       bookmark.domain = input.source.domain;
+      bookmark.faviconUrl = input.source.faviconUrl;
       bookmark.coverImageUrl = input.source.coverImageUrl;
       bookmark.latestVersionId = matchedVersion.id;
       bookmark.latestQuality = input.quality;
@@ -334,6 +336,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     bookmark.canonicalUrl = input.source.canonicalUrl;
     bookmark.title = input.source.title;
     bookmark.domain = input.source.domain;
+    bookmark.faviconUrl = input.source.faviconUrl;
     bookmark.coverImageUrl = input.source.coverImageUrl;
     bookmark.versionCount = versions.length;
     bookmark.updatedAt = now;
@@ -1109,6 +1112,7 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
       canonicalUrl: input.source.canonicalUrl,
       title: input.source.title,
       domain: input.source.domain,
+      faviconUrl: input.source.faviconUrl,
       coverImageUrl: input.source.coverImageUrl,
       note: "",
       isFavorite: false,

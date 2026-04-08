@@ -623,6 +623,42 @@ function userInitials(user: AuthUser) {
   return source.slice(0, 2).toUpperCase();
 }
 
+function buildBookmarkSiteIconCandidates(
+  bookmark: Pick<Bookmark, "domain" | "faviconUrl">,
+  size: number,
+) {
+  const fallbackDomain = bookmark.domain.trim();
+  return Array.from(
+    new Set(
+      [
+        bookmark.faviconUrl?.trim() || "",
+        fallbackDomain
+          ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(fallbackDomain)}&sz=${size}`
+          : "",
+      ].filter(Boolean),
+    ),
+  );
+}
+
+function useBookmarkSiteIcon(bookmark: Pick<Bookmark, "id" | "domain" | "faviconUrl">, size: number) {
+  const candidates = useMemo(
+    () => buildBookmarkSiteIconCandidates(bookmark, size),
+    [bookmark.domain, bookmark.faviconUrl, size],
+  );
+  const [candidateIndex, setCandidateIndex] = useState(0);
+
+  useEffect(() => {
+    setCandidateIndex(0);
+  }, [bookmark.id, bookmark.domain, bookmark.faviconUrl, size]);
+
+  return {
+    siteIconSrc: candidates[candidateIndex] ?? null,
+    handleSiteIconError: () => {
+      setCandidateIndex((current) => Math.min(current + 1, candidates.length));
+    },
+  };
+}
+
 function homeCoverTone(domain: string) {
   const tones = ["peach", "mist", "sand", "sky"] as const;
   let hash = 0;
@@ -650,6 +686,7 @@ function HomeBookmarkCard({
   onToggleSelect: (bookmarkId: string) => void;
 }) {
   const [coverImageFailed, setCoverImageFailed] = useState(false);
+  const { siteIconSrc, handleSiteIconError } = useBookmarkSiteIcon(bookmark, 192);
 
   useEffect(() => {
     setCoverImageFailed(false);
@@ -657,6 +694,7 @@ function HomeBookmarkCard({
 
   const summary = summarizeBookmark(bookmark);
   const hasCoverImage = Boolean(bookmark.coverImageUrl) && !coverImageFailed;
+  const hasSiteIcon = !hasCoverImage && Boolean(siteIconSrc);
   const folderLabel = bookmark.folder?.name ?? "未归类";
   const coverTone = homeCoverTone(bookmark.domain);
   const coverInitial = (bookmark.title.trim()[0] ?? bookmark.domain.trim()[0] ?? "K").toUpperCase();
@@ -690,7 +728,7 @@ function HomeBookmarkCard({
         aria-label={selectionMode ? `选择书签：${bookmark.title}` : `打开归档：${bookmark.title}`}
       >
         <div
-          className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : " is-placeholder"}`}
+          className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : hasSiteIcon ? " has-favicon" : " is-placeholder"}`}
           aria-hidden="true"
         >
           {hasCoverImage ? (
@@ -705,6 +743,28 @@ function HomeBookmarkCard({
               />
               <div className="home-bookmark-cover-shade" aria-hidden="true" />
             </>
+          ) : hasSiteIcon ? (
+            <div className="home-bookmark-favicon-cover" aria-hidden="true">
+              <div className="home-bookmark-favicon-aura" />
+              <div className="home-bookmark-favicon-card">
+                <span className="home-bookmark-favicon-domain">{bookmark.domain}</span>
+                <div className="home-bookmark-favicon-frame">
+                  <img
+                    className="home-bookmark-favicon-image"
+                    src={siteIconSrc ?? undefined}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    onError={handleSiteIconError}
+                  />
+                </div>
+                <div className="home-bookmark-favicon-lines" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="home-bookmark-paper" aria-hidden="true">
               <div className="home-bookmark-paper-eyebrow">
@@ -2563,7 +2623,7 @@ function ManagerDialog({
   const useBookmarkDeleteStyle = isBookmarkDialog || isBatchDeleteDialog;
   const bookmarkDeleteTarget = state.kind === "delete-bookmark" ? state.bookmark : null;
   const bookmarkDeleteFaviconSrc = bookmarkDeleteTarget
-    ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(bookmarkDeleteTarget.domain)}&sz=64`
+    ? buildBookmarkSiteIconCandidates(bookmarkDeleteTarget, 64)[0] ?? ""
     : "";
   const isFolderDialog = state.kind === "edit-folder" || state.kind === "delete-folder";
   const isTagDialog = state.kind === "edit-tag" || state.kind === "delete-tag";

@@ -12,3 +12,5 @@ dist/
 single-file-core-*.tgz
 tasks/cron_tasks/FeishuApprovalPull/output/
 data/
+.codex/*
+!.codex/config.toml

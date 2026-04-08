@@ -2139,6 +2139,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
       canonicalUrl: row.canonicalUrl ?? undefined,
       title: row.title,
       domain: row.domain,
+      faviconUrl: this.readFaviconUrl(row.latestSourceMeta),
       coverImageUrl: this.readCoverImageUrl(row.latestSourceMeta),
       note: row.note,
       isFavorite: row.isFavorite,
@@ -2160,6 +2161,16 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
   }
 
   private readCoverImageUrl(sourceMeta: unknown) {
+    const source = this.readCaptureSource(sourceMeta);
+    return source?.coverImageUrl;
+  }
+
+  private readFaviconUrl(sourceMeta: unknown) {
+    const source = this.readCaptureSource(sourceMeta);
+    return source?.faviconUrl;
+  }
+
+  private readCaptureSource(sourceMeta: unknown) {
     if (!sourceMeta || typeof sourceMeta !== "object") {
       return undefined;
     }
@@ -2169,7 +2180,7 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
     if (!parsed.success) {
       return undefined;
     }
-    return parsed.data.coverImageUrl;
+    return parsed.data;
   }
 
   private readMediaFiles(sourceMeta: unknown): BookmarkVersion["mediaFiles"] {

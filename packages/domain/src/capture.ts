@@ -215,6 +215,7 @@ export const bookmarkSchema = z.object({
   canonicalUrl: z.url().optional(),
   title: z.string().min(1),
   domain: z.string().min(1),
+  faviconUrl: z.url().optional(),
   coverImageUrl: z.url().optional(),
   note: z.string().default(""),
   isFavorite: z.boolean().default(false),
