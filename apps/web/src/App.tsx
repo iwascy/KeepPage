@@ -672,18 +672,22 @@ function HomeBookmarkCard({
   bookmark,
   onOpen,
   onContextMenu,
+  onOpenContextMenuAt,
   isContextOpen,
   selectionMode,
   isSelected,
   onToggleSelect,
+  mobileVariant,
 }: {
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
   onContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
+  onOpenContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
   isContextOpen: boolean;
   selectionMode: boolean;
   isSelected: boolean;
   onToggleSelect: (bookmarkId: string) => void;
+  mobileVariant: "featured" | "compact";
 }) {
   const [coverImageFailed, setCoverImageFailed] = useState(false);
   const { siteIconSrc, handleSiteIconError } = useBookmarkSiteIcon(bookmark, 192);
@@ -704,6 +708,7 @@ function HomeBookmarkCard({
     isContextOpen ? "is-context-open" : "",
     selectionMode ? "is-selection-mode" : "",
     isSelected ? "is-selected" : "",
+    mobileVariant === "featured" ? "is-mobile-featured" : "is-mobile-compact",
   ].filter(Boolean).join(" ");
 
   return (
@@ -719,6 +724,23 @@ function HomeBookmarkCard({
         >
           {isSelected ? "✓" : ""}
         </span>
+      ) : null}
+      {!selectionMode ? (
+        <button
+          className="home-bookmark-menu-button"
+          type="button"
+          aria-label={`打开归档菜单：${bookmark.title}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            onOpenContextMenuAt(bookmark, rect.right - 8, rect.bottom + 8);
+          }}
+        >
+          <span className="material-symbols-outlined" aria-hidden="true">
+            more_vert
+          </span>
+        </button>
       ) : null}
       <button
         className="home-bookmark-hitarea"
@@ -893,7 +915,17 @@ function AppShell({
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
   const [sidebarView, setSidebarView] = useState<"main" | "settings">("main");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const mobileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const activeNav = selectedFolderId || selectedTagId ? null : bookmarkView;
+  const selectedFolder = useMemo(
+    () => folders.find((folder) => folder.id === selectedFolderId) ?? null,
+    [folders, selectedFolderId],
+  );
+  const selectedTag = useMemo(
+    () => tags.find((tag) => tag.id === selectedTagId) ?? null,
+    [selectedTagId, tags],
+  );
 
   const sortedFolders = useMemo(
     () => [...folders].sort((left, right) => left.path.localeCompare(right.path, "zh-CN")),
@@ -991,10 +1023,41 @@ function AppShell({
   }, [sortedFolders]);
 
   const displayName = displayUserName(user);
+  const mobileListTitle = selectedFolder?.name
+    ?? (selectedTag ? `#${selectedTag.name}` : bookmarkView === "favorites" ? "星标" : bookmarkView === "recent" ? "最近" : "归档");
+  const mobileListSubtitle = selectedFolder
+    ? "当前收藏夹"
+    : selectedTag
+      ? "当前标签"
+      : bookmarkView === "favorites"
+        ? "Favorite Archive"
+        : bookmarkView === "recent"
+          ? "Recent Updates"
+          : "KeepPage Archive";
+
+  useEffect(() => {
+    if (!mobileSearchOpen) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      mobileSearchInputRef.current?.focus();
+      mobileSearchInputRef.current?.select();
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [mobileSearchOpen]);
+
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+    setMobileSearchOpen(false);
+    setSidebarView("main");
+  }, [routePage]);
 
   function handleSelectQuickNav(nextNav: BookmarkListView) {
     setSidebarView("main");
     setMobileSidebarOpen(false);
+    setMobileSearchOpen(false);
     onSelectBookmarkView(nextNav);
     onSelectFolder("");
     onSelectTag("");
@@ -1003,6 +1066,7 @@ function AppShell({
   function handleSelectFolderFilter(nextFolderId: string) {
     setSidebarView("main");
     setMobileSidebarOpen(false);
+    setMobileSearchOpen(false);
     onSelectBookmarkView("all");
     onSelectTag("");
     onSelectFolder(nextFolderId);
@@ -1011,6 +1075,7 @@ function AppShell({
   function handleSelectTagFilter(nextTagId: string) {
     setSidebarView("main");
     setMobileSidebarOpen(false);
+    setMobileSearchOpen(false);
     onSelectBookmarkView("all");
     onSelectFolder("");
     onSelectTag(nextTagId);
@@ -1035,6 +1100,15 @@ function AppShell({
 
   return (
     <main className="home-page">
+      <button
+        className={mobileSidebarOpen ? "home-mobile-sidebar-backdrop is-visible" : "home-mobile-sidebar-backdrop"}
+        type="button"
+        aria-label="关闭移动端侧边栏"
+        onClick={() => {
+          setMobileSidebarOpen(false);
+          setSidebarView("main");
+        }}
+      />
       <aside className={mobileSidebarOpen ? "home-sidebar is-mobile-open" : "home-sidebar"}>
         {sidebarView === "settings" ? (
           <div className="home-settings-panel">
@@ -1330,108 +1404,173 @@ function AppShell({
         )}
       </aside>
 
-      <div className="home-shell">
+      <div className={routePage === "list" ? "home-shell has-mobile-list-chrome" : "home-shell"}>
         <header className="home-topbar" />
 
-        <section className="home-mobile-bar">
-          <div className="home-mobile-header">
-            <button className="home-brand-home" type="button" onClick={onGoHome} aria-label="返回主页">
-              <span className="home-brand-title">KeepPage</span>
-            </button>
-            <div className="home-mobile-actions">
+        {routePage === "list" ? (
+          <section className="home-mobile-bar home-mobile-bar--list" aria-label="移动端顶栏">
+            <div className="home-mobile-topbar">
               <button
-                className={mobileSidebarOpen && sidebarView === "main" ? "home-mobile-action is-active" : "home-mobile-action"}
+                className={mobileSidebarOpen && sidebarView === "main" ? "home-mobile-icon-button is-active" : "home-mobile-icon-button"}
                 type="button"
                 onClick={() => {
+                  setMobileSearchOpen(false);
                   setSidebarView("main");
                   setMobileSidebarOpen((current) => (sidebarView === "main" ? !current : true));
                 }}
                 aria-label="打开筛选与收藏夹"
               >
                 <span className="material-symbols-outlined" aria-hidden="true">
-                  tune
+                  menu
                 </span>
               </button>
-              <button className="home-mobile-cta" type="button" onClick={onOpenImportNew}>
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  add
-                </span>
-                <span>Add New</span>
+
+              <button className="home-mobile-title-wrap" type="button" onClick={onGoHome} aria-label="返回归档首页">
+                <span className="home-mobile-title-eyebrow">{mobileListSubtitle}</span>
+                <span className="home-mobile-title">{mobileListTitle}</span>
               </button>
+
               <button
-                className={mobileSidebarOpen && sidebarView === "settings" ? "home-mobile-action is-active" : "home-mobile-action"}
+                className={mobileSearchOpen || searchInput.trim() ? "home-mobile-icon-button is-active" : "home-mobile-icon-button"}
                 type="button"
                 onClick={() => {
-                  setSidebarView("settings");
-                  setMobileSidebarOpen((current) => (sidebarView === "settings" ? !current : true));
+                  setMobileSidebarOpen(false);
+                  setSidebarView("main");
+                  setMobileSearchOpen((current) => !current);
                 }}
-                aria-label="打开设置"
+                aria-label="打开搜索"
+                aria-expanded={mobileSearchOpen}
               >
                 <span className="material-symbols-outlined" aria-hidden="true">
-                  settings
+                  search
                 </span>
               </button>
             </div>
-          </div>
 
-          <label className="home-search">
-            <span className="home-search-icon material-symbols-outlined" aria-hidden="true">
-              search
-            </span>
-            <input
-              className="home-search-input"
-              type="search"
-              value={searchInput}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="搜索标题、域名、标签..."
-            />
-          </label>
-
-          <nav className="home-quick-nav home-mobile-quick-nav" aria-label="移动端快捷导航">
-            <button
-              className={activeNav === "all" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
-              type="button"
-              onClick={() => handleSelectQuickNav("all")}
+            <div
+              className={mobileSearchOpen || searchInput.trim() ? "home-mobile-search-panel is-open" : "home-mobile-search-panel"}
             >
-              <span
-                className="material-symbols-outlined"
-                aria-hidden="true"
-                style={
-                  activeNav === "all"
-                    ? { fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 20" }
-                    : undefined
-                }
-              >
-                bookmark
-              </span>
-              <span>全部</span>
-            </button>
-            <button
-              className={activeNav === "recent" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
-              type="button"
-              onClick={() => handleSelectQuickNav("recent")}
-            >
-              <span className="material-symbols-outlined" aria-hidden="true">
-                schedule
-              </span>
-              <span>最近</span>
-            </button>
-            <button
-              className={activeNav === "favorites" ? "home-quick-nav-item is-active" : "home-quick-nav-item"}
-              type="button"
-              onClick={() => handleSelectQuickNav("favorites")}
-            >
-              <span className="material-symbols-outlined" aria-hidden="true">
-                star
-              </span>
-              <span>星标</span>
-            </button>
-          </nav>
-        </section>
+              <label className="home-search">
+                <span className="home-search-icon material-symbols-outlined" aria-hidden="true">
+                  search
+                </span>
+                <input
+                  ref={mobileSearchInputRef}
+                  className="home-search-input"
+                  type="search"
+                  value={searchInput}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  placeholder="搜索标题、域名、标签..."
+                />
+              </label>
+            </div>
+          </section>
+        ) : (
+          <section className="home-mobile-bar home-mobile-bar--default">
+            <div className="home-mobile-header">
+              <button className="home-brand-home" type="button" onClick={onGoHome} aria-label="返回主页">
+                <span className="home-brand-title">KeepPage</span>
+              </button>
+              <div className="home-mobile-actions">
+                <button
+                  className={mobileSidebarOpen && sidebarView === "main" ? "home-mobile-action is-active" : "home-mobile-action"}
+                  type="button"
+                  onClick={() => {
+                    setMobileSearchOpen(false);
+                    setSidebarView("main");
+                    setMobileSidebarOpen((current) => (sidebarView === "main" ? !current : true));
+                  }}
+                  aria-label="打开筛选与收藏夹"
+                >
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    tune
+                  </span>
+                </button>
+                <button className="home-mobile-cta" type="button" onClick={onOpenImportNew}>
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    add
+                  </span>
+                  <span>Add New</span>
+                </button>
+                <button
+                  className={mobileSidebarOpen && sidebarView === "settings" ? "home-mobile-action is-active" : "home-mobile-action"}
+                  type="button"
+                  onClick={() => {
+                    setMobileSearchOpen(false);
+                    setSidebarView("settings");
+                    setMobileSidebarOpen((current) => (sidebarView === "settings" ? !current : true));
+                  }}
+                  aria-label="打开设置"
+                >
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    settings
+                  </span>
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="home-content">
           {children}
         </section>
+
+        {routePage === "list" ? (
+          <>
+            <button className="home-mobile-fab" type="button" onClick={onOpenImportNew} aria-label="新建归档导入">
+              <span className="material-symbols-outlined" aria-hidden="true">
+                add
+              </span>
+            </button>
+
+            <nav className="home-mobile-bottom-nav" aria-label="移动端主导航">
+              <button
+                className={activeNav === "all" ? "home-mobile-bottom-nav-item is-active" : "home-mobile-bottom-nav-item"}
+                type="button"
+                onClick={() => handleSelectQuickNav("all")}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  bookmarks
+                </span>
+                <span>全部</span>
+              </button>
+              <button
+                className={activeNav === "recent" ? "home-mobile-bottom-nav-item is-active" : "home-mobile-bottom-nav-item"}
+                type="button"
+                onClick={() => handleSelectQuickNav("recent")}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  schedule
+                </span>
+                <span>最近</span>
+              </button>
+              <button
+                className={activeNav === "favorites" ? "home-mobile-bottom-nav-item is-active" : "home-mobile-bottom-nav-item"}
+                type="button"
+                onClick={() => handleSelectQuickNav("favorites")}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  star
+                </span>
+                <span>星标</span>
+              </button>
+              <button
+                className={selectedFolderId || selectedTagId || (mobileSidebarOpen && sidebarView === "main") ? "home-mobile-bottom-nav-item is-active" : "home-mobile-bottom-nav-item"}
+                type="button"
+                onClick={() => {
+                  setMobileSearchOpen(false);
+                  setSidebarView("main");
+                  setMobileSidebarOpen((current) => !current);
+                }}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  folder_open
+                </span>
+                <span>收藏夹</span>
+              </button>
+            </nav>
+          </>
+        ) : null}
       </div>
     </main>
   );
@@ -1451,6 +1590,7 @@ function HomePage({
   onLoadMore,
   contextMenuBookmarkId,
   onBookmarkContextMenu,
+  onOpenBookmarkContextMenuAt,
   selectionMode,
   selectedIds,
   onToggleSelect,
@@ -1468,6 +1608,7 @@ function HomePage({
   onLoadMore: () => void;
   contextMenuBookmarkId: string | null;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
+  onOpenBookmarkContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
   selectionMode: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (bookmarkId: string) => void;
@@ -1488,8 +1629,23 @@ function HomePage({
     : bookmarkView === "favorites"
       ? "把常看的页面加入收藏后，会显示在这里。"
       : bookmarkView === "recent"
-        ? "最近新归档或编辑过的页面会优先显示在这里。"
-        : "扩展同步的网页归档会优先显示在这里。";
+      ? "最近新归档或编辑过的页面会优先显示在这里。"
+      : "扩展同步的网页归档会优先显示在这里。";
+  const mobileHeroKicker = hasActiveFilters
+    ? "FILTERED ARCHIVE"
+    : bookmarkView === "favorites"
+      ? "STARRED PICKS"
+      : bookmarkView === "recent"
+        ? "RECENT UPDATES"
+        : "TODAY'S COLLECTIONS";
+  const mobileHeroTitle = hasActiveFilters
+    ? "筛选结果"
+    : bookmarkView === "favorites"
+      ? "星标归档"
+      : bookmarkView === "recent"
+        ? "最近更新"
+        : "归档总览";
+  const mobileHeroCount = `${items.length} 条${bookmarkView === "recent" ? "更新" : "归档"}`;
 
   useEffect(() => {
     if (
@@ -1533,6 +1689,16 @@ function HomePage({
         </p>
       ) : null}
 
+      <section className="home-mobile-hero" aria-label="移动端归档概览">
+        <div className="home-mobile-hero-copy">
+          <p className="home-mobile-hero-kicker">{mobileHeroKicker}</p>
+          <div className="home-mobile-hero-title-row">
+            <h1 className="home-mobile-hero-title">{mobileHeroTitle}</h1>
+            <span className="home-mobile-hero-count">{mobileHeroCount}</span>
+          </div>
+        </div>
+      </section>
+
       {showLoading && items.length > 0 ? (
         <p className="home-loading-note">正在刷新归档列表...</p>
       ) : null}
@@ -1562,10 +1728,12 @@ function HomePage({
                 bookmark={bookmark}
                 onOpen={onOpenBookmark}
                 onContextMenu={onBookmarkContextMenu}
+                onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
                 isContextOpen={contextMenuBookmarkId === bookmark.id}
                 selectionMode={selectionMode}
                 isSelected={selectedIds.has(bookmark.id)}
                 onToggleSelect={onToggleSelect}
+                mobileVariant={!selectionMode && bookmark.id === items[0]?.id ? "featured" : "compact"}
               />
             ))}
           </section>
@@ -4169,11 +4337,15 @@ export function App({
   function openBookmarkContextMenu(bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
+    openBookmarkContextMenuAt(bookmark, event.clientX, event.clientY);
+  }
+
+  function openBookmarkContextMenuAt(bookmark: Bookmark, x: number, y: number) {
     setContextMenu({
       kind: "bookmark",
       bookmark,
-      x: event.clientX,
-      y: event.clientY,
+      x,
+      y,
     });
   }
 
@@ -5788,6 +5960,7 @@ export function App({
               onLoadMore={() => void loadMoreBookmarks()}
               contextMenuBookmarkId={activeBookmarkContextId}
               onBookmarkContextMenu={openBookmarkContextMenu}
+              onOpenBookmarkContextMenuAt={openBookmarkContextMenuAt}
               selectionMode={selectionMode}
               selectedIds={selectedIds}
               onToggleSelect={toggleSelected}
