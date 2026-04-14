@@ -16,14 +16,17 @@ import {
   openSidePanelForCurrentWindow,
 } from "../../src/lib/auth-flow";
 
-const NONE_FOLDER_VALUE = "__none__";
 const TASK_MATCH_GRACE_MS = 10_000;
+const FOLDER_SUGGESTION_LIMIT = 6;
+const TAG_SUGGESTION_LIMIT = 12;
 
 type MetadataState = "idle" | "loading" | "saving" | "saved" | "error";
 
 export function App() {
   const captureStartedRef = useRef(false);
   const trackedTaskIdRef = useRef<string | null>(null);
+  const folderPickerRef = useRef<HTMLDivElement | null>(null);
+  const tagPickerRef = useRef<HTMLDivElement | null>(null);
   const captureContextRef = useRef<{
     sourceUrl: string | null;
     startedAt: number;
@@ -39,9 +42,12 @@ export function App() {
 
   const [folders, setFolders] = useState<Folder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState<string>(NONE_FOLDER_VALUE);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [folderInput, setFolderInput] = useState("");
   const [selectedTagNames, setSelectedTagNames] = useState<string[]>([]);
-  const [customTagsInput, setCustomTagsInput] = useState("");
+  const [tagInput, setTagInput] = useState("");
+  const [isFolderMenuOpen, setIsFolderMenuOpen] = useState(false);
+  const [isTagMenuOpen, setIsTagMenuOpen] = useState(false);
   const [metadataState, setMetadataState] = useState<MetadataState>("idle");
   const [metadataMessage, setMetadataMessage] = useState<string | null>(null);
 
@@ -99,6 +105,26 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (folderPickerRef.current && !folderPickerRef.current.contains(target)) {
+        setIsFolderMenuOpen(false);
+      }
+      if (tagPickerRef.current && !tagPickerRef.current.contains(target)) {
+        setIsTagMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
+
+  useEffect(() => {
     const bookmarkId = captureTask?.bookmarkId;
     if (!bookmarkId || captureState !== "success") {
       return;
@@ -115,10 +141,27 @@ export function App() {
     ? "保存失败"
     : "保存中";
   const statusDescription = getStatusDescription(captureTask, captureState, captureError);
-  const mergedTagNames = useMemo(
-    () => dedupeTagNames([...selectedTagNames, ...parseTagNames(customTagsInput)]),
-    [customTagsInput, selectedTagNames],
+  const progressValue = getTaskProgressValue(captureTask, captureState);
+  const normalizedFolderInput = normalizeFolderPath(folderInput);
+  const suggestedFolders = useMemo(
+    () => filterFolders(folders, folderInput).slice(0, FOLDER_SUGGESTION_LIMIT),
+    [folderInput, folders],
   );
+  const canCreateFolder = normalizedFolderInput.length > 0
+    && !folders.some((folder) => folder.path === normalizedFolderInput);
+  const tagDraftNames = useMemo(() => parseTagNames(tagInput), [tagInput]);
+  const filteredTagSuggestions = useMemo(
+    () => filterTagSuggestions(tags, selectedTagNames, tagInput).slice(0, TAG_SUGGESTION_LIMIT),
+    [selectedTagNames, tagInput, tags],
+  );
+  const normalizedSingleTagDraft = getSingleDraftTagName(tagInput);
+  const canCreateTag = Boolean(
+    normalizedSingleTagDraft
+      && !selectedTagNames.includes(normalizedSingleTagDraft)
+      && !tags.some((tag) => tag.name === normalizedSingleTagDraft),
+  );
+  const showFolderMenu = isFolderMenuOpen && (suggestedFolders.length > 0 || canCreateFolder || folderInput.trim().length > 0);
+  const showTagMenu = isTagMenuOpen && (filteredTagSuggestions.length > 0 || canCreateTag || tagInput.trim().length > 0);
 
   async function startCapture() {
     try {
@@ -177,11 +220,12 @@ export function App() {
   }
 
   function applyBookmarkMetadata(bookmark: Bookmark, availableFolders: Folder[], availableTags: Tag[]) {
-    setFolders(availableFolders);
+    setFolders(mergeFolders(availableFolders, bookmark.folder));
     setTags(mergeTags(availableTags, bookmark.tags));
-    setSelectedFolderId(bookmark.folder?.id ?? NONE_FOLDER_VALUE);
+    setSelectedFolderId(bookmark.folder?.id ?? null);
+    setFolderInput(bookmark.folder?.path ?? "");
     setSelectedTagNames(bookmark.tags.map((tag) => tag.name));
-    setCustomTagsInput("");
+    setTagInput("");
   }
 
   async function handleSubmitMetadata() {
@@ -190,12 +234,18 @@ export function App() {
       return;
     }
 
+    const nextTagNames = commitPendingTags();
+    const nextFolderPath = normalizeFolderPath(folderInput);
     setMetadataState("saving");
     setMetadataMessage(null);
     try {
       const bookmark = await updateBookmarkMetadata(bookmarkId, {
-        folderId: selectedFolderId === NONE_FOLDER_VALUE ? null : selectedFolderId,
-        tags: mergedTagNames,
+        ...(nextFolderPath
+          ? selectedFolderId
+            ? { folderId: selectedFolderId }
+            : { folderPath: nextFolderPath }
+          : { folderId: null }),
+        tags: nextTagNames,
       });
       applyBookmarkMetadata(bookmark, folders, tags);
       setMetadataState("saved");
@@ -222,18 +272,112 @@ export function App() {
         ? current.filter((item) => item !== tagName)
         : [...current, tagName]
     ));
+    if (getSingleDraftTagName(tagInput) === tagName) {
+      setTagInput("");
+    }
     setMetadataState("idle");
     setMetadataMessage(null);
+  }
+
+  function handleFolderInputChange(value: string) {
+    setFolderInput(value);
+    const normalizedValue = normalizeFolderPath(value);
+    const matchedFolder = folders.find((folder) => folder.path === normalizedValue);
+    setSelectedFolderId(matchedFolder?.id ?? null);
+    setIsFolderMenuOpen(true);
+    setMetadataState("idle");
+    setMetadataMessage(null);
+  }
+
+  function selectFolder(folder: Folder) {
+    setSelectedFolderId(folder.id);
+    setFolderInput(folder.path);
+    setIsFolderMenuOpen(false);
+    setMetadataState("idle");
+    setMetadataMessage(null);
+  }
+
+  function clearFolderSelection() {
+    setSelectedFolderId(null);
+    setFolderInput("");
+    setIsFolderMenuOpen(false);
+    setMetadataState("idle");
+    setMetadataMessage(null);
+  }
+
+  function createFolderFromInput() {
+    if (!normalizedFolderInput) {
+      return;
+    }
+    setSelectedFolderId(null);
+    setFolderInput(normalizedFolderInput);
+    setIsFolderMenuOpen(false);
+    setMetadataState("idle");
+    setMetadataMessage(null);
+  }
+
+  function addTag(tagName: string) {
+    const normalizedName = tagName.trim();
+    if (!normalizedName) {
+      return;
+    }
+    setSelectedTagNames((current) => dedupeTagNames([...current, normalizedName]));
+    if (tagInput.trim()) {
+      setTagInput("");
+    }
+    setIsTagMenuOpen(false);
+    setMetadataState("idle");
+    setMetadataMessage(null);
+  }
+
+  function commitPendingTags() {
+    const next = dedupeTagNames([...selectedTagNames, ...tagDraftNames]);
+    if (next.length !== selectedTagNames.length) {
+      setSelectedTagNames(next);
+    }
+    if (tagDraftNames.length > 0) {
+      setTagInput("");
+    }
+    return next;
+  }
+
+  function handleAddDraftTags() {
+    const next = commitPendingTags();
+    if (next.length === selectedTagNames.length && tagDraftNames.length === 0 && normalizedSingleTagDraft) {
+      addTag(normalizedSingleTagDraft);
+      return;
+    }
+    setIsTagMenuOpen(false);
+  }
+
+  function handleTagInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter" && event.key !== ",") {
+      return;
+    }
+    event.preventDefault();
+    handleAddDraftTags();
   }
 
   return (
     <main className="popup-shell">
       <section className={`status-card ${captureState}`}>
-        <div className="status-dot" aria-hidden="true" />
         <div className="status-copy">
           <p className="eyebrow">KeepPage</p>
+          <div className="status-pill">
+            <span className="status-dot" aria-hidden="true" />
+            <span>{captureState === "success" ? "保存成功" : captureState === "error" ? "保存失败" : "保存进行中"}</span>
+          </div>
           <h1>{statusTitle}</h1>
           <p className="status-description">{statusDescription}</p>
+          <div className="status-progress" aria-hidden="true">
+            <div className="status-progress-track">
+              <span style={{ width: `${progressValue}%` }} />
+            </div>
+            <div className="status-progress-meta">
+              <span>{captureTask ? getTaskStepLabel(captureTask.status) : "准备开始"}</span>
+              <span>{progressValue}%</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -257,70 +401,168 @@ export function App() {
         <section className="editor-card">
           <div className="section-heading">
             <h2>保存后整理</h2>
-            <p>成功后可直接归入收藏夹并补充 tag。</p>
+            <p>现在就可以选择已有收藏夹、直接新建路径，并把 tag 一次补齐。</p>
           </div>
 
           <label className="field">
             <span>收藏夹</span>
-            <select
-              value={selectedFolderId}
-              onChange={(event) => {
-                setSelectedFolderId(event.target.value);
-                setMetadataState("idle");
-                setMetadataMessage(null);
-              }}
-              disabled={metadataState === "loading" || metadataState === "saving"}
-            >
-              <option value={NONE_FOLDER_VALUE}>不放入收藏夹</option>
-              {folders.map((folder) => (
-                <option key={folder.id} value={folder.id}>{folder.path}</option>
-              ))}
-            </select>
+            <div className="picker-shell" ref={folderPickerRef}>
+              <div className="picker-input">
+                <span className="picker-icon" aria-hidden="true">
+                  <SearchIcon />
+                </span>
+                <input
+                  type="text"
+                  value={folderInput}
+                  onFocus={() => setIsFolderMenuOpen(true)}
+                  onChange={(event) => handleFolderInputChange(event.target.value)}
+                  placeholder="搜索或选择收藏夹，留空则不加入"
+                  disabled={metadataState === "loading" || metadataState === "saving"}
+                />
+                {folderInput ? (
+                  <button
+                    type="button"
+                    className="picker-clear"
+                    onClick={clearFolderSelection}
+                    disabled={metadataState === "loading" || metadataState === "saving"}
+                  >
+                    清空
+                  </button>
+                ) : null}
+              </div>
+              {showFolderMenu ? (
+                <div className="picker-menu">
+                  {canCreateFolder ? (
+                    <button
+                      type="button"
+                      className="folder-create-card"
+                      onClick={createFolderFromInput}
+                      disabled={metadataState === "loading" || metadataState === "saving"}
+                    >
+                      <span className="folder-create-icon" aria-hidden="true">
+                        <PlusIcon />
+                      </span>
+                      <span className="folder-create-copy">
+                        <strong>新建并加入 “{normalizedFolderInput}”</strong>
+                      </span>
+                    </button>
+                  ) : null}
+                  {suggestedFolders.length > 0 ? (
+                    <div className="picker-list">
+                      {suggestedFolders.map((folder) => (
+                        <button
+                          key={folder.id}
+                          type="button"
+                          className={`picker-list-item ${selectedFolderId === folder.id ? "selected" : ""}`}
+                          onClick={() => selectFolder(folder)}
+                          disabled={metadataState === "loading" || metadataState === "saving"}
+                        >
+                          <span className="picker-list-icon" aria-hidden="true">
+                            <FolderIcon />
+                          </span>
+                          <span className="picker-list-copy">
+                            <strong>{folder.path}</strong>
+                          </span>
+                          {selectedFolderId === folder.id ? (
+                            <span className="picker-list-check" aria-hidden="true">
+                              <CheckIcon />
+                            </span>
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </label>
 
           <div className="field">
             <span>tag</span>
-            <div className="tag-grid">
-              {tags.length === 0 ? (
-                <p className="empty-text">当前还没有可选 tag，可以直接输入新的 tag。</p>
-              ) : (
-                tags.map((tag) => (
-                  <label key={tag.id} className={`tag-chip ${selectedTagNames.includes(tag.name) ? "selected" : ""}`}>
-                    <input
-                      type="checkbox"
-                      checked={selectedTagNames.includes(tag.name)}
-                      onChange={() => toggleTag(tag.name)}
-                      disabled={metadataState === "loading" || metadataState === "saving"}
-                    />
-                    <span>{tag.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          </div>
-
-          <label className="field">
-            <span>新增 tag</span>
-            <input
-              type="text"
-              value={customTagsInput}
-              onChange={(event) => {
-                setCustomTagsInput(event.target.value);
-                setMetadataState("idle");
-                setMetadataMessage(null);
-              }}
-              placeholder="多个 tag 用逗号分隔"
-              disabled={metadataState === "loading" || metadataState === "saving"}
-            />
-          </label>
-
-          {mergedTagNames.length > 0 ? (
-            <div className="selected-tags">
-              {mergedTagNames.map((tagName) => (
-                <span key={tagName} className="selected-tag">{tagName}</span>
+            <div className="tag-chip-list">
+              {selectedTagNames.map((tagName) => (
+                <button
+                  key={tagName}
+                  type="button"
+                  className="selected-tag"
+                  onClick={() => toggleTag(tagName)}
+                  disabled={metadataState === "loading" || metadataState === "saving"}
+                >
+                  <span>{tagName}</span>
+                  <strong>x</strong>
+                </button>
               ))}
             </div>
-          ) : null}
+
+            <div className="picker-shell" ref={tagPickerRef}>
+              <div className="picker-input tag-input-shell">
+                <input
+                  type="text"
+                  value={tagInput}
+                  onFocus={() => setIsTagMenuOpen(true)}
+                  onChange={(event) => {
+                    setTagInput(event.target.value);
+                    setIsTagMenuOpen(true);
+                    setMetadataState("idle");
+                    setMetadataMessage(null);
+                  }}
+                  onKeyDown={handleTagInputKeyDown}
+                  placeholder="输入 tag，回车或点击 + 添加"
+                  disabled={metadataState === "loading" || metadataState === "saving"}
+                />
+                <button
+                  type="button"
+                  className="tag-add-button"
+                  onClick={handleAddDraftTags}
+                  disabled={metadataState === "loading" || metadataState === "saving" || tagInput.trim().length === 0}
+                >
+                  <PlusIcon />
+                </button>
+              </div>
+              {showTagMenu ? (
+                <div className="picker-menu">
+                  {canCreateTag ? (
+                    <button
+                      type="button"
+                      className="picker-list-item create"
+                      onClick={() => addTag(normalizedSingleTagDraft!)}
+                      disabled={metadataState === "loading" || metadataState === "saving"}
+                    >
+                      <span className="picker-list-icon" aria-hidden="true">
+                        <PlusIcon />
+                      </span>
+                      <span className="picker-list-copy">
+                        <strong>新增 tag “{normalizedSingleTagDraft}”</strong>
+                      </span>
+                    </button>
+                  ) : null}
+                  {filteredTagSuggestions.length > 0 ? (
+                    <div className="picker-list">
+                      {filteredTagSuggestions.map((tag) => (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          className="picker-list-item"
+                          onClick={() => addTag(tag.name)}
+                          disabled={metadataState === "loading" || metadataState === "saving"}
+                        >
+                          <span className="picker-list-icon tag" aria-hidden="true">
+                            #
+                          </span>
+                          <span className="picker-list-copy">
+                            <strong>{tag.name}</strong>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {tagDraftNames.length > 0 ? (
+              <p className="inline-message">待添加：{tagDraftNames.join("、")}</p>
+            ) : null}
+          </div>
 
           {metadataMessage ? (
             <p className={`inline-message ${metadataState === "error" ? "error-text" : "success-text"}`}>
@@ -460,6 +702,45 @@ function getTaskStepDescription(status: CaptureTask["status"]) {
   }
 }
 
+function getTaskProgressValue(
+  task: CaptureTask | null,
+  captureState: "saving" | "success" | "error",
+): number {
+  if (captureState === "success") {
+    return 100;
+  }
+  if (captureState === "error") {
+    return task ? getTaskProgressValue(task, "saving") : 0;
+  }
+  if (!task) {
+    return 8;
+  }
+  switch (task.status) {
+    case "queued":
+      return 16;
+    case "capturing":
+      return 32;
+    case "validating":
+      return 54;
+    case "local_ready":
+      return 70;
+    case "upload_pending":
+      return 78;
+    case "uploading":
+      return 88;
+    case "uploaded":
+      return 95;
+    case "indexed":
+      return 98;
+    case "synced":
+      return 100;
+    case "failed":
+      return 0;
+    default:
+      return 24;
+  }
+}
+
 function parseTagNames(input: string) {
   return input
     .split(/[,\n，]+/)
@@ -471,11 +752,55 @@ function dedupeTagNames(names: string[]) {
   return [...new Set(names.map((item) => item.trim()).filter(Boolean))];
 }
 
+function getSingleDraftTagName(input: string) {
+  if (/[,\n，]/.test(input)) {
+    return "";
+  }
+  return input.trim();
+}
+
 function looksLikeAuthError(message?: string | null) {
   if (!message) {
     return false;
   }
   return message.includes("登录") || message.includes("未登录") || message.includes("账号");
+}
+
+function normalizeFolderPath(input: string) {
+  return input
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join("/");
+}
+
+function filterFolders(folders: Folder[], keyword: string) {
+  const normalizedKeyword = normalizeFolderPath(keyword).toLocaleLowerCase("zh-CN");
+  if (!normalizedKeyword) {
+    return folders;
+  }
+  return folders.filter((folder) => folder.path.toLocaleLowerCase("zh-CN").includes(normalizedKeyword));
+}
+
+function filterTagSuggestions(tags: Tag[], selectedTagNames: string[], keyword: string) {
+  const selected = new Set(selectedTagNames);
+  const normalizedKeyword = keyword.trim().toLocaleLowerCase("zh-CN");
+  const available = tags.filter((tag) => !selected.has(tag.name));
+  if (!normalizedKeyword) {
+    return available;
+  }
+  return available.filter((tag) => tag.name.toLocaleLowerCase("zh-CN").includes(normalizedKeyword));
+}
+
+function mergeFolders(availableFolders: Folder[], bookmarkFolder?: Bookmark["folder"]) {
+  const merged = new Map<string, Folder>();
+  for (const folder of availableFolders) {
+    merged.set(folder.id, folder);
+  }
+  if (bookmarkFolder) {
+    merged.set(bookmarkFolder.id, bookmarkFolder);
+  }
+  return [...merged.values()].sort((left, right) => left.path.localeCompare(right.path, "zh-CN"));
 }
 
 function mergeTags(availableTags: Tag[], bookmarkTags: Tag[]) {
@@ -487,4 +812,53 @@ function mergeTags(availableTags: Tag[], bookmarkTags: Tag[]) {
     merged.set(tag.id, tag);
   }
   return [...merged.values()].sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12.5 12.5L17 17" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path
+        d="M2.5 6.5C2.5 5.4 3.4 4.5 4.5 4.5H8L9.5 6H15.5C16.6 6 17.5 6.9 17.5 8V13.5C17.5 14.6 16.6 15.5 15.5 15.5H4.5C3.4 15.5 2.5 14.6 2.5 13.5V6.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 6V14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+      <path d="M6 10H14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="10" cy="10" r="8" fill="currentColor" />
+      <path
+        d="M6.6 10.2L8.8 12.4L13.4 7.8"
+        fill="none"
+        stroke="#f8f4ec"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
 }
