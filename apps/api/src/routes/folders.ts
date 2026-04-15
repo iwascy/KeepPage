@@ -6,8 +6,8 @@ import {
 } from "@keeppage/domain";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { AuthService } from "../lib/auth-service";
-import type { BookmarkRepository } from "../repositories";
+import type { TaxonomyRepository } from "../repositories";
+import type { AuthService } from "../services/auth/auth-service";
 
 const folderParamsSchema = z.object({
   folderId: z.string().min(1),
@@ -16,7 +16,7 @@ const folderParamsSchema = z.object({
 export async function registerFolderRoutes(
   app: FastifyInstance,
   authService: AuthService,
-  repository: BookmarkRepository,
+  repository: TaxonomyRepository,
 ) {
   app.get("/folders", async (request, reply) => {
     const user = await authService.requireUser(request);

@@ -11,6 +11,6 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App mode="mock" />
+    <App dataSourceKind="demo" />
   </StrictMode>,
 );

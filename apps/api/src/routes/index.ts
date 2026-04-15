@@ -1,10 +1,12 @@
-import type { ApiTokenService } from "../lib/api-token-service";
-import type { CloudArchiveManager } from "../lib/cloud-archive-manager";
 import type { FastifyInstance } from "fastify";
 import type { ApiConfig } from "../config";
-import type { AuthService } from "../lib/auth-service";
 import type { BookmarkRepository } from "../repositories";
-import type { ObjectStorage } from "../storage/object-storage";
+import type { ApiTokenService } from "../services/api-tokens/api-token-service";
+import type { AuthService } from "../services/auth/auth-service";
+import type { BookmarkService } from "../services/bookmarks/bookmark-service";
+import type { CloudArchiveManager } from "../services/cloud-archive/cloud-archive-manager";
+import type { ImportService } from "../services/imports/import-service";
+import type { UploadService } from "../services/uploads/upload-service";
 import { registerApiTokenRoutes } from "./api-tokens";
 import { registerAuthRoutes } from "./auth";
 import { registerBookmarkRoutes } from "./bookmarks";
@@ -23,19 +25,21 @@ export async function registerRoutes(
   authService: AuthService,
   apiTokenService: ApiTokenService,
   repository: BookmarkRepository,
-  objectStorage: ObjectStorage,
   cloudArchiveManager: CloudArchiveManager | null,
+  bookmarkService: BookmarkService,
+  importService: ImportService,
+  uploadService: UploadService,
 ) {
   await registerAuthRoutes(app, authService);
   await registerApiTokenRoutes(app, authService, apiTokenService);
   await registerHealthRoutes(app, repository);
-  await registerCaptureRoutes(app, config, authService, repository, objectStorage);
+  await registerCaptureRoutes(app, config, authService, repository);
   await registerIngestRoutes(app, apiTokenService, repository);
-  await registerUploadRoutes(app, config, authService, repository, objectStorage);
-  await registerBookmarkRoutes(app, authService, repository, objectStorage);
+  await registerUploadRoutes(app, authService, uploadService);
+  await registerBookmarkRoutes(app, authService, bookmarkService);
   await registerFolderRoutes(app, authService, repository);
   await registerTagRoutes(app, authService, repository);
-  await registerImportRoutes(app, authService, repository, cloudArchiveManager);
+  await registerImportRoutes(app, authService, importService);
   if (cloudArchiveManager) {
     await registerCloudArchiveRoutes(app, authService, cloudArchiveManager);
   }

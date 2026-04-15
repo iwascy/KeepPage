@@ -20,4 +20,15 @@ export function createRepository(
   return new InMemoryBookmarkRepository({ objectStorage });
 }
 
-export type { BookmarkRepository } from "./bookmark-repository";
+export type {
+  ApiTokenRepository,
+  AuthRepository,
+  BookmarkReadRepository,
+  BookmarkRepository,
+  BookmarkWriteRepository,
+  CaptureRepository,
+  ImportRepository,
+  IngestRepository,
+  ObjectAccessRepository,
+  TaxonomyRepository,
+} from "./bookmark-repository";

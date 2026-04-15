@@ -3,13 +3,13 @@ import {
   ingestBookmarkResponseSchema,
 } from "@keeppage/domain";
 import type { FastifyInstance } from "fastify";
-import type { ApiTokenService } from "../lib/api-token-service";
-import type { BookmarkRepository } from "../repositories";
+import type { IngestRepository } from "../repositories";
+import type { ApiTokenService } from "../services/api-tokens/api-token-service";
 
 export async function registerIngestRoutes(
   app: FastifyInstance,
   apiTokenService: ApiTokenService,
-  repository: BookmarkRepository,
+  repository: IngestRepository,
 ) {
   app.post("/ingest/bookmarks", async (request, reply) => {
     const auth = await apiTokenService.requireScope(request, "bookmark:create");

@@ -4,8 +4,8 @@ import {
 } from "@keeppage/domain";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { AuthService } from "../lib/auth-service";
-import type { ApiTokenService } from "../lib/api-token-service";
+import type { AuthService } from "../services/auth/auth-service";
+import type { ApiTokenService } from "../services/api-tokens/api-token-service";
 
 const apiTokenParamsSchema = z.object({
   tokenId: z.string().uuid(),

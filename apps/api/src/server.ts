@@ -1,12 +1,15 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import { type ApiConfig } from "./config";
-import { ApiTokenService } from "./lib/api-token-service";
-import { AuthService } from "./lib/auth-service";
-import { CloudArchiveManager } from "./lib/cloud-archive-manager";
 import { isHttpError } from "./lib/http-error";
 import { createRepository } from "./repositories";
 import { registerRoutes } from "./routes";
+import { ApiTokenService } from "./services/api-tokens/api-token-service";
+import { AuthService } from "./services/auth/auth-service";
+import { BookmarkService } from "./services/bookmarks/bookmark-service";
+import { CloudArchiveManager } from "./services/cloud-archive/cloud-archive-manager";
+import { ImportService } from "./services/imports/import-service";
+import { UploadService } from "./services/uploads/upload-service";
 import { createObjectStorage } from "./storage/object-storage";
 
 export function buildServer(config: ApiConfig) {
@@ -36,6 +39,15 @@ export function buildServer(config: ApiConfig) {
     apiTokenService,
     config,
     repository,
+  });
+  const bookmarkService = new BookmarkService({
+    repository,
+    objectStorage,
+  });
+  const uploadService = new UploadService({
+    config,
+    repository,
+    objectStorage,
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -101,9 +113,23 @@ export function buildServer(config: ApiConfig) {
   const cloudArchiveManager = config.CLOUD_ARCHIVE_ENABLED
     ? new CloudArchiveManager(config, repository, objectStorage)
     : null;
+  const importService = new ImportService({
+    repository,
+    cloudArchiveManager,
+  });
 
   app.register(async (instance) => {
-    await registerRoutes(instance, config, authService, apiTokenService, repository, objectStorage, cloudArchiveManager);
+    await registerRoutes(
+      instance,
+      config,
+      authService,
+      apiTokenService,
+      repository,
+      cloudArchiveManager,
+      bookmarkService,
+      importService,
+      uploadService,
+    );
   });
 
   return app;

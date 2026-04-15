@@ -18,10 +18,10 @@ import {
 } from "@keeppage/domain";
 import type { FastifyRequest } from "fastify";
 import { promisify } from "node:util";
-import type { ApiConfig } from "../config";
-import { HttpError } from "./http-error";
-import type { ApiTokenService } from "./api-token-service";
-import type { BookmarkRepository } from "../repositories";
+import type { ApiConfig } from "../../config";
+import { HttpError } from "../../lib/http-error";
+import type { ApiTokenService } from "../api-tokens/api-token-service";
+import type { AuthRepository } from "../../repositories";
 
 const scryptAsync = promisify(nodeScrypt);
 
@@ -35,7 +35,7 @@ type TokenPayload = {
 type AuthServiceOptions = {
   apiTokenService: ApiTokenService;
   config: ApiConfig;
-  repository: BookmarkRepository;
+  repository: AuthRepository;
 };
 
 type RequireUserOptions = {
@@ -44,7 +44,7 @@ type RequireUserOptions = {
 };
 
 export class AuthService {
-  private readonly repository: BookmarkRepository;
+  private readonly repository: AuthRepository;
   private readonly apiTokenService: ApiTokenService;
   private readonly tokenSecret: string;
   private readonly tokenTtlMs: number;

@@ -7,9 +7,9 @@ import {
   type CapturePageSignals,
   type CaptureSource,
 } from "@keeppage/domain";
-import type { ApiConfig } from "../config";
-import type { BookmarkRepository } from "../repositories";
-import type { ObjectStorage } from "../storage/object-storage";
+import type { ApiConfig } from "../../config";
+import type { BookmarkWriteRepository, CaptureRepository } from "../../repositories";
+import type { ObjectStorage } from "../../storage/object-storage";
 
 const extensionBuildRootUrl = new URL("../../../extension/.output/chrome-mv3/", import.meta.url);
 const extensionBuildManifestPath = fileURLToPath(new URL("manifest.json", extensionBuildRootUrl));
@@ -254,7 +254,7 @@ export async function processCloudArchive(input: {
   tagIds?: string[];
   tags?: string[];
   config: ApiConfig;
-  repository: BookmarkRepository;
+  repository: CaptureRepository & BookmarkWriteRepository;
   objectStorage: ObjectStorage;
 }): Promise<{
   bookmarkId: string;

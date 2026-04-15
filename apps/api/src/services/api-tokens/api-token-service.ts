@@ -7,8 +7,8 @@ import type {
 } from "@keeppage/domain";
 import { apiTokenCreateResponseSchema } from "@keeppage/domain";
 import type { FastifyRequest } from "fastify";
-import { HttpError } from "./http-error";
-import type { BookmarkRepository } from "../repositories";
+import { HttpError } from "../../lib/http-error";
+import type { ApiTokenRepository, AuthRepository } from "../../repositories";
 
 type ApiTokenAuthContext = {
   user: AuthUser;
@@ -16,11 +16,11 @@ type ApiTokenAuthContext = {
 };
 
 type ApiTokenServiceOptions = {
-  repository: BookmarkRepository;
+  repository: ApiTokenRepository & Pick<AuthRepository, "getUserById">;
 };
 
 export class ApiTokenService {
-  private readonly repository: BookmarkRepository;
+  private readonly repository: ApiTokenRepository & Pick<AuthRepository, "getUserById">;
 
   constructor(options: ApiTokenServiceOptions) {
     this.repository = options.repository;

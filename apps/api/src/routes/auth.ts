@@ -5,7 +5,7 @@ import {
   authUserSchema,
 } from "@keeppage/domain";
 import type { FastifyInstance } from "fastify";
-import type { AuthService } from "../lib/auth-service";
+import type { AuthService } from "../services/auth/auth-service";
 
 export async function registerAuthRoutes(
   app: FastifyInstance,

@@ -1,16 +1,12 @@
 import {
   bookmarkListViewSchema,
   bookmarkMetadataUpdateRequestSchema,
-  bookmarkDetailResponseSchema,
-  bookmarkSchema,
-  bookmarkSearchResponseSchema,
   qualityGradeSchema,
 } from "@keeppage/domain";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { AuthService } from "../lib/auth-service";
-import type { BookmarkRepository } from "../repositories";
-import type { ObjectStorage } from "../storage/object-storage";
+import type { AuthService } from "../services/auth/auth-service";
+import type { BookmarkService } from "../services/bookmarks/bookmark-service";
 
 const searchQuerySchema = z.object({
   q: z.string().optional(),
@@ -30,84 +26,24 @@ const bookmarkParamsSchema = z.object({
 export async function registerBookmarkRoutes(
   app: FastifyInstance,
   authService: AuthService,
-  repository: BookmarkRepository,
-  objectStorage: ObjectStorage,
+  bookmarkService: BookmarkService,
 ) {
   app.get("/bookmarks", async (request, reply) => {
     const user = await authService.requireUser(request);
     const query = searchQuerySchema.parse(request.query);
-    const result = await repository.searchBookmarks(user.id, query);
-    const payload = bookmarkSearchResponseSchema.parse(result);
-    return reply.send(payload);
+    return reply.send(await bookmarkService.searchBookmarks(user.id, query));
   });
 
   app.get<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId", async (request, reply) => {
     const user = await authService.requireUser(request);
     const params = bookmarkParamsSchema.parse(request.params);
-    const detail = await repository.getBookmarkDetail(user.id, params.bookmarkId);
-    if (!detail) {
-      return reply.status(404).send({
-        error: "BookmarkNotFound",
-        message: "Bookmark not found.",
-      });
-    }
-
-    const versions = await Promise.all(
-      detail.versions.map(async (version) => {
-        const [objectStat, readerObjectStat] = await Promise.all([
-          objectStorage.statObject(version.htmlObjectKey),
-          version.readerHtmlObjectKey
-            ? objectStorage.statObject(version.readerHtmlObjectKey)
-            : Promise.resolve(null),
-        ]);
-        return {
-          ...version,
-          archiveAvailable: objectStat !== null,
-          archiveSizeBytes: objectStat?.size,
-          readerArchiveAvailable: readerObjectStat !== null,
-          readerArchiveSizeBytes: readerObjectStat?.size,
-        };
-      }),
-    );
-
-    const payload = bookmarkDetailResponseSchema.parse({
-      bookmark: detail.bookmark,
-      versions,
-    });
-    return reply.send(payload);
+    return reply.send(await bookmarkService.getBookmarkDetail(user.id, params.bookmarkId));
   });
 
   app.delete<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId", async (request, reply) => {
     const user = await authService.requireUser(request);
     const params = bookmarkParamsSchema.parse(request.params);
-    const detail = await repository.getBookmarkDetail(user.id, params.bookmarkId);
-    if (!detail) {
-      return reply.status(404).send({
-        error: "BookmarkNotFound",
-        message: "Bookmark not found.",
-      });
-    }
-
-    const deleted = await repository.deleteBookmark(user.id, params.bookmarkId);
-    if (!deleted) {
-      return reply.status(404).send({
-        error: "BookmarkNotFound",
-        message: "Bookmark not found.",
-      });
-    }
-
-    await Promise.allSettled(
-      detail.versions.flatMap((version) => (
-        [
-          objectStorage.deleteObject(version.htmlObjectKey),
-          version.readerHtmlObjectKey
-            ? objectStorage.deleteObject(version.readerHtmlObjectKey)
-            : Promise.resolve(),
-          ...(version.mediaFiles ?? []).map((mediaFile) => objectStorage.deleteObject(mediaFile.objectKey)),
-        ]
-      )),
-    );
-
+    await bookmarkService.deleteBookmark(user.id, params.bookmarkId);
     return reply.status(204).send();
   });
 
@@ -115,14 +51,6 @@ export async function registerBookmarkRoutes(
     const user = await authService.requireUser(request);
     const params = bookmarkParamsSchema.parse(request.params);
     const body = bookmarkMetadataUpdateRequestSchema.parse(request.body);
-    const bookmark = await repository.updateBookmarkMetadata(user.id, params.bookmarkId, body);
-    if (!bookmark) {
-      return reply.status(404).send({
-        error: "BookmarkNotFound",
-        message: "Bookmark not found.",
-      });
-    }
-
-    return reply.send(bookmarkSchema.parse(bookmark));
+    return reply.send(await bookmarkService.updateBookmarkMetadata(user.id, params.bookmarkId, body));
   });
 }

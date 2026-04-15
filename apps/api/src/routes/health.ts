@@ -10,7 +10,7 @@ import {
 } from "@keeppage/db";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { BookmarkRepository } from "../repositories";
+import type { RepositoryInfo } from "../repositories/bookmark-repository";
 
 const healthResponseSchema = z.object({
   status: z.literal("ok"),
@@ -22,7 +22,7 @@ const healthResponseSchema = z.object({
 
 export async function registerHealthRoutes(
   app: FastifyInstance,
-  repository: BookmarkRepository,
+  repository: RepositoryInfo,
 ) {
   // 通过显式触达 schema 导出，确保 API 与 @keeppage/db 的表定义保持编译期关联。
   void users;

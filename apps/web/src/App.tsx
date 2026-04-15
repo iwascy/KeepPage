@@ -24,56 +24,16 @@ import type {
 } from "@keeppage/domain";
 import {
   ApiError,
-  createApiToken,
   type BookmarkDetailResult,
   type BookmarkViewerVersion,
-  createFolder,
-  createTag,
-  createArchiveObjectUrl,
-  fetchApiTokens,
-  fetchCloudArchiveTask,
-  deleteBookmark,
-  deleteFolder,
-  deleteTag,
-  fetchBookmarkDetail,
-  fetchBookmarks,
-  fetchCurrentUser,
-  fetchFolders,
-  fetchTags,
-  loginAccount,
-  revokeApiToken,
-  registerAccount,
-  submitCloudArchive,
-  updateBookmarkMetadata,
-  updateFolder,
-  updateTag,
 } from "./api";
 import {
   ImportDetailPanel,
   ImportHistoryPanel,
   ImportNewPanel,
   type ImportPanelAdapter,
-} from "./imports";
-import {
-  createDemoFolder,
-  createDemoImportTask,
-  createDemoTag,
-  createDemoWorkspace,
-  deleteDemoBookmark,
-  deleteDemoFolder,
-  deleteDemoTag,
-  filterDemoBookmarks,
-  getDemoArchiveHtml,
-  getDemoBookmarkDetail,
-  getDemoImportTaskDetail,
-  listDemoImportTasks,
-  previewDemoImport,
-  updateDemoBookmarkMetadata,
-  updateDemoFolder,
-  updateDemoTag,
-  type DemoWorkspace,
-} from "./demoData";
-import { enqueueBookmarksToLocalExtension } from "./local-archive-bridge";
+} from "./features/imports";
+import { type AppDataSource, useAppDataSource } from "./data-sources/use-app-data-source";
 
 type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -279,32 +239,6 @@ function formatDateTimeInputValue(input?: string) {
   }
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
-}
-
-function createDemoApiTokens(): ApiToken[] {
-  const now = Date.now();
-  return [
-    {
-      id: "demo-token-active",
-      name: "Raycast Inbox",
-      tokenPreview: "kp_demo-rayc.3f28ab",
-      scopes: ["bookmark:create"],
-      lastUsedAt: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
-      expiresAt: undefined,
-      revokedAt: undefined,
-      createdAt: new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "demo-token-revoked",
-      name: "Zapier Legacy",
-      tokenPreview: "kp_demo-zapi.8b91c4",
-      scopes: ["bookmark:create"],
-      lastUsedAt: new Date(now - 12 * 24 * 60 * 60 * 1000).toISOString(),
-      expiresAt: undefined,
-      revokedAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      createdAt: new Date(now - 24 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  ];
 }
 
 function isApiTokenExpired(token: ApiToken) {
@@ -1975,20 +1909,20 @@ function EmptyState({
 function ApiTokensPanel({
   token,
   userId,
-  isDemoMode,
+  dataSource,
   onApiError,
   onBack,
 }: {
   token: string;
   userId: string;
-  isDemoMode: boolean;
+  dataSource: AppDataSource;
   onApiError: (error: unknown) => boolean;
   onBack: () => void;
 }) {
+  const isDemoMode = dataSource.kind === "demo";
   const storageUserId = isDemoMode ? "demo" : userId;
-  const [loadState, setLoadState] = useState<LoadState>(isDemoMode ? "ready" : "idle");
-  const [items, setItems] = useState<ApiToken[]>(() => (isDemoMode ? createDemoApiTokens() : []));
-  const [demoItems, setDemoItems] = useState<ApiToken[]>(() => createDemoApiTokens());
+  const [loadState, setLoadState] = useState<LoadState>("idle");
+  const [items, setItems] = useState<ApiToken[]>([]);
   const [storedTokenSecrets, setStoredTokenSecrets] = useState<Record<string, ApiTokenSecretRecord>>(
     () => readApiTokenSecrets(storageUserId),
   );
@@ -2011,16 +1945,9 @@ function ApiTokensPanel({
 
   useEffect(() => {
     setFeedback(null);
-    if (isDemoMode) {
-      setItems(demoItems);
-      setLoadError(null);
-      setLoadState("ready");
-      return;
-    }
-
     let cancelled = false;
     setLoadState("loading");
-    fetchApiTokens(token)
+    dataSource.fetchApiTokens(token)
       .then((nextItems) => {
         if (cancelled) {
           return;
@@ -2040,7 +1967,7 @@ function ApiTokensPanel({
     return () => {
       cancelled = true;
     };
-  }, [demoItems, isDemoMode, token]);
+  }, [dataSource, token]);
 
   const activeCount = useMemo(
     () => items.filter((item) => isApiTokenActive(item)).length,
@@ -2164,55 +2091,24 @@ function ApiTokensPanel({
     setCreateError(null);
 
     try {
-      if (isDemoMode) {
-        const now = new Date().toISOString();
-        const secret = crypto.randomUUID().replace(/-/g, "").slice(0, 24);
-        const demoToken = `kp_${crypto.randomUUID()}.${secret}`;
-        const preview = demoToken.slice(0, 18);
-        const createdItem: ApiToken = {
-          id: crypto.randomUUID(),
-          name: trimmedName,
-          tokenPreview: preview,
-          scopes: ["bookmark:create"],
-          lastUsedAt: undefined,
-          expiresAt,
-          revokedAt: undefined,
-          createdAt: now,
-        };
-        setDemoItems((current) => [createdItem, ...current]);
-        setItems((current) => [createdItem, ...current]);
-        updateStoredTokenSecrets((current) => ({
-          ...current,
-          [createdItem.id]: {
-            value: demoToken,
-            savedAt: now,
-          },
-        }));
-        setRevealedToken({
-          id: createdItem.id,
-          name: trimmedName,
-          value: demoToken,
-        });
-      } else {
-        const result = await createApiToken({
-          name: trimmedName,
-          scopes: ["bookmark:create"],
-          expiresAt,
-        }, token);
-        setItems((current) => [result.item, ...current]);
-        updateStoredTokenSecrets((current) => ({
-          ...current,
-          [result.item.id]: {
-            value: result.token,
-            savedAt: new Date().toISOString(),
-          },
-        }));
-        setRevealedToken({
-          id: result.item.id,
-          name: result.item.name,
+      const result = await dataSource.createApiToken({
+        name: trimmedName,
+        scopes: ["bookmark:create"],
+        expiresAt,
+      }, token);
+      setItems((current) => [result.item, ...current]);
+      updateStoredTokenSecrets((current) => ({
+        ...current,
+        [result.item.id]: {
           value: result.token,
-        });
-      }
+          savedAt: new Date().toISOString(),
+        },
+      }));
+      setRevealedToken({
+        id: result.item.id,
+        name: result.item.name,
+        value: result.token,
+      });
 
       setCreateOpen(false);
       setCreateName("");
@@ -2222,7 +2118,7 @@ function ApiTokensPanel({
         message: `已创建 API 密钥：${trimmedName}。完整明文已保存在当前浏览器，下面可以直接复制 curl 测试。`,
       });
     } catch (error) {
-      if (!isDemoMode && onApiError(error)) {
+      if (onApiError(error)) {
         return;
       }
       setCreateError(toErrorMessage(error));
@@ -2240,25 +2136,12 @@ function ApiTokensPanel({
     setRevokeError(null);
     try {
       const revokedAt = new Date().toISOString();
-      if (isDemoMode) {
-        setDemoItems((current) => current.map((item) => (
-          item.id === revokeTarget.id
-            ? { ...item, revokedAt }
-            : item
-        )));
-        setItems((current) => current.map((item) => (
-          item.id === revokeTarget.id
-            ? { ...item, revokedAt }
-            : item
-        )));
-      } else {
-        await revokeApiToken(revokeTarget.id, token);
-        setItems((current) => current.map((item) => (
-          item.id === revokeTarget.id
-            ? { ...item, revokedAt }
-            : item
-        )));
-      }
+      await dataSource.revokeApiToken(revokeTarget.id, token);
+      setItems((current) => current.map((item) => (
+        item.id === revokeTarget.id
+          ? { ...item, revokedAt }
+          : item
+      )));
 
       updateStoredTokenSecrets((current) => {
         if (!current[revokeTarget.id]) {
@@ -2278,7 +2161,7 @@ function ApiTokensPanel({
       });
       setRevokeTarget(null);
     } catch (error) {
-      if (!isDemoMode && onApiError(error)) {
+      if (onApiError(error)) {
         return;
       }
       setRevokeError(toErrorMessage(error));
@@ -3949,13 +3832,13 @@ function LocalArchiveDialog({
 }
 
 export function App({
-  mode = "live",
+  dataSourceKind = "live",
 }: {
-  mode?: "live" | "mock";
+  dataSourceKind?: "live" | "demo";
 }) {
-  const isDemoMode = mode === "mock";
+  const appDataSource = useAppDataSource(dataSourceKind);
+  const isDemoMode = appDataSource.kind === "demo";
   const [route, setRoute] = useState<ViewRoute>(() => parseRoute(window.location.hash));
-  const [demoState, setDemoState] = useState<DemoWorkspace>(() => createDemoWorkspace());
   const [session, setSession] = useState<SessionState>({
     status: "booting",
     token: null,
@@ -4023,39 +3906,26 @@ export function App({
 
   const deferredSearch = useDeferredValue(searchInput);
   const authToken = session.status === "authenticated" ? session.token : null;
-  const logoutLabel = isDemoMode ? "重置 Mock 数据" : "退出登录";
+  const logoutLabel = appDataSource.logoutLabel;
   const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
   const activeBookmarkContextId = contextMenu.kind === "bookmark" ? contextMenu.bookmark.id : null;
   const activeFolderContextId = contextMenu.kind === "folder" ? contextMenu.folder.id : null;
   const activeTagContextId = contextMenu.kind === "tag" ? contextMenu.tag.id : null;
   const hasMoreItems = items.length < listTotal;
-
-  const importAdapter = useMemo<ImportPanelAdapter | undefined>(() => {
-    if (!isDemoMode) {
-      return undefined;
-    }
-    return {
-      previewImport: async (input) => previewDemoImport(demoState, input),
-      createImportTask: async (input) => {
-        const result = createDemoImportTask(demoState, input);
-        setDemoState(result.workspace);
-        return { taskId: result.taskId };
-      },
-      fetchImportTasks: async () => listDemoImportTasks(demoState),
-      fetchImportTaskDetail: async (taskId) => getDemoImportTaskDetail(demoState, taskId),
-    };
-  }, [demoState, isDemoMode]);
+  const importAdapter = appDataSource.importAdapter;
 
   function logout(message?: string) {
     if (isDemoMode) {
-      const nextWorkspace = createDemoWorkspace();
-      setDemoState(nextWorkspace);
+      const nextSession = appDataSource.resetSession();
       goToList();
       startTransition(() => {
+        if (!nextSession) {
+          return;
+        }
         setSession({
           status: "authenticated",
-          token: "demo-token",
-          user: nextWorkspace.user,
+          token: nextSession.token,
+          user: nextSession.user,
           error: null,
         });
         setSearchInput("");
@@ -4219,7 +4089,7 @@ export function App({
         return;
       }
       try {
-        const task = await fetchCloudArchiveTask(taskId, authToken);
+        const task = await appDataSource.fetchCloudArchiveTask(taskId, authToken);
         if (!task) {
           return;
         }
@@ -4277,14 +4147,8 @@ export function App({
     setCloudArchiveTargetBookmarkId(options?.targetBookmarkId ?? null);
     setCloudArchiveBusy(true);
     setCloudArchiveError(null);
-    if (isDemoMode) {
-      setCloudArchiveDialog({ step: "form" });
-      setCloudArchiveError("Mock 模式暂不支持云端存档，请切换到真实 API 环境后使用。");
-      setCloudArchiveBusy(false);
-      return;
-    }
     try {
-      const result = await submitCloudArchive(input, authToken);
+      const result = await appDataSource.submitCloudArchive(input, authToken);
       setCloudArchiveDialog({
         step: "progress",
         taskId: result.taskId,
@@ -4418,39 +4282,16 @@ export function App({
   }, []);
 
   useEffect(() => {
-    if (isDemoMode) {
-      setSession({
-        status: "authenticated",
-        token: "demo-token",
-        user: demoState.user,
-        error: null,
-      });
-      return;
-    }
-
     let cancelled = false;
-    const storedToken = getStoredToken();
-    if (!storedToken) {
-      setSession({
-        status: "anonymous",
-        token: null,
-        user: null,
-        error: null,
-      });
-      return;
-    }
-
-    fetchCurrentUser(storedToken)
-      .then((user) => {
+    appDataSource.restoreSession(getStoredToken())
+      .then((nextSession) => {
         if (cancelled) {
           return;
         }
-        setSession({
-          status: "authenticated",
-          token: storedToken,
-          user,
-          error: null,
-        });
+        if (nextSession.status === "anonymous") {
+          clearStoredToken();
+        }
+        setSession(nextSession);
       })
       .catch((error) => {
         if (cancelled) {
@@ -4468,7 +4309,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [demoState.user, isDemoMode]);
+  }, [appDataSource]);
 
   useEffect(() => {
     if (!authToken) {
@@ -4478,20 +4319,8 @@ export function App({
       return;
     }
 
-    if (isDemoMode) {
-      setFolders(demoState.folders);
-      setTags(demoState.tags);
-      setSelectedFolderId((current) => (
-        current && !demoState.folders.some((folder) => folder.id === current) ? "" : current
-      ));
-      setSelectedTagId((current) => (
-        current && !demoState.tags.some((tag) => tag.id === current) ? "" : current
-      ));
-      return;
-    }
-
     let cancelled = false;
-    Promise.all([fetchFolders(authToken), fetchTags(authToken)])
+    Promise.all([appDataSource.fetchFolders(authToken), appDataSource.fetchTags(authToken)])
       .then(([nextFolders, nextTags]) => {
         if (cancelled) {
           return;
@@ -4518,16 +4347,11 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [authToken, demoState.folders, demoState.tags, isDemoMode]);
+  }, [appDataSource, authToken]);
 
   useEffect(() => {
     if (!authToken) {
       setSidebarCountItems([]);
-      return;
-    }
-
-    if (isDemoMode) {
-      setSidebarCountItems(demoState.bookmarks);
       return;
     }
 
@@ -4548,7 +4372,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [authToken, demoState.bookmarks, isDemoMode, route.page]);
+  }, [appDataSource, authToken, route.page]);
 
   useEffect(() => {
     if (!authToken) {
@@ -4561,33 +4385,13 @@ export function App({
       return;
     }
 
-    if (isDemoMode) {
-      const filteredItems = filterDemoBookmarks(demoState, {
-        search: deferredSearch,
-        quality: qualityFilter,
-        view: bookmarkView,
-        folderId: selectedFolderId || undefined,
-        tagId: selectedTagId || undefined,
-      });
-      setLoadState("loading");
-      setListError(null);
-      setLoadMoreError(null);
-      setLoadingMore(false);
-      startTransition(() => {
-        setItems(filteredItems.slice(0, BOOKMARKS_PAGE_SIZE));
-        setListTotal(filteredItems.length);
-        setLoadState("ready");
-      });
-      return;
-    }
-
     let cancelled = false;
     setLoadState("loading");
     setListError(null);
     setLoadMoreError(null);
     setLoadingMore(false);
 
-    fetchBookmarks(
+    appDataSource.searchBookmarks(
       {
         search: deferredSearch,
         quality: qualityFilter,
@@ -4624,7 +4428,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [authToken, bookmarkView, deferredSearch, demoState, isDemoMode, qualityFilter, selectedFolderId, selectedTagId]);
+  }, [appDataSource, authToken, bookmarkView, deferredSearch, qualityFilter, selectedFolderId, selectedTagId]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
@@ -4634,22 +4438,11 @@ export function App({
       return;
     }
 
-    if (isDemoMode) {
-      setDetailLoadState("loading");
-      setDetailError(null);
-      startTransition(() => {
-        const result = getDemoBookmarkDetail(demoState, route.bookmarkId);
-        setDetail(result);
-        setDetailLoadState(result ? "ready" : "not-found");
-      });
-      return;
-    }
-
     let cancelled = false;
     setDetailLoadState("loading");
     setDetailError(null);
 
-    fetchBookmarkDetail(route.bookmarkId, authToken)
+    appDataSource.fetchBookmarkDetail(route.bookmarkId, authToken)
       .then((result) => {
         if (cancelled) {
           return;
@@ -4673,7 +4466,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [authToken, demoState, isDemoMode, route]);
+  }, [appDataSource, authToken, route]);
 
   useEffect(() => {
     if (!detail) {
@@ -4789,39 +4582,17 @@ export function App({
 
     setArchivePreview({ status: "loading" });
 
-    if (isDemoMode) {
-      if (!selectedVersion) {
-        setArchivePreview({ status: "idle" });
-        return;
-      }
-      const html = getDemoArchiveHtml(demoState, selectedVersion.id);
-      if (!html) {
-        setArchivePreview({
-          status: "error",
-          error: "未找到本地 Mock 归档内容。",
-        });
-        return;
-      }
-      const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-      revokedUrl = url;
-      setArchivePreview({
-        status: "ready",
-        url,
-      });
-      return () => {
-        cancelled = true;
-        if (revokedUrl) {
-          URL.revokeObjectURL(revokedUrl);
-        }
-      };
-    }
-
-    createArchiveObjectUrl(
-      authToken,
-      previewSelection.objectKey,
+    appDataSource.createArchivePreviewUrl(
+      selectedVersion?.id ?? null,
+      previewSelection?.objectKey ?? null,
       previewSourceUrl,
+      authToken,
     )
       .then((url) => {
+        if (!url) {
+          setArchivePreview({ status: "idle" });
+          return;
+        }
         if (cancelled) {
           URL.revokeObjectURL(url);
           return;
@@ -4858,9 +4629,8 @@ export function App({
       }
     };
   }, [
+    appDataSource,
     authToken,
-    demoState,
-    isDemoMode,
     previewSelection?.objectKey,
     previewSelection?.mode,
     previewSourceUrl,
@@ -4873,7 +4643,7 @@ export function App({
     let total = 0;
 
     do {
-      const result = await fetchBookmarks(
+      const result = await appDataSource.searchBookmarks(
         {
           search: "",
           quality: "all",
@@ -4901,8 +4671,8 @@ export function App({
 
   async function refreshCatalogs(currentToken: string) {
     const [nextFolders, nextTags] = await Promise.all([
-      fetchFolders(currentToken),
-      fetchTags(currentToken),
+      appDataSource.fetchFolders(currentToken),
+      appDataSource.fetchTags(currentToken),
     ]);
     setFolders(nextFolders);
     setTags(nextTags);
@@ -4916,7 +4686,7 @@ export function App({
 
   async function refreshBookmarksList(currentToken: string) {
     const limit = Math.max(items.length, BOOKMARKS_PAGE_SIZE);
-    const result = await fetchBookmarks(
+    const result = await appDataSource.searchBookmarks(
       {
         search: deferredSearch,
         quality: qualityFilter,
@@ -4944,29 +4714,13 @@ export function App({
     setLoadMoreError(null);
     setLoadingMore(true);
 
-    if (isDemoMode) {
-      const filteredItems = filterDemoBookmarks(demoState, {
-        search: deferredSearch,
-        quality: qualityFilter,
-        view: bookmarkView,
-        folderId: selectedFolderId || undefined,
-        tagId: selectedTagId || undefined,
-      });
-      startTransition(() => {
-        setItems((current) => filteredItems.slice(0, current.length + BOOKMARKS_PAGE_SIZE));
-        setListTotal(filteredItems.length);
-        setLoadingMore(false);
-      });
-      return;
-    }
-
     if (!authToken) {
       setLoadingMore(false);
       return;
     }
 
     try {
-      const result = await fetchBookmarks(
+      const result = await appDataSource.searchBookmarks(
         {
           search: deferredSearch,
           quality: qualityFilter,
@@ -4994,7 +4748,7 @@ export function App({
   }
 
   async function refreshBookmarkDetail(currentToken: string, bookmarkId: string) {
-    const result = await fetchBookmarkDetail(bookmarkId, currentToken);
+    const result = await appDataSource.fetchBookmarkDetail(bookmarkId, currentToken);
     setDetailError(null);
     setDetail(result);
     setDetailLoadState(result ? "ready" : "not-found");
@@ -5034,28 +4788,8 @@ export function App({
   }
 
   async function handleDeleteBookmark(bookmark: Bookmark) {
-    if (isDemoMode) {
-      try {
-        setDemoState(deleteDemoBookmark(demoState, bookmark.id));
-        if (route.page === "detail" && route.bookmarkId === bookmark.id) {
-          goToList();
-        }
-        setManagerFeedback({
-          kind: "success",
-          message: `已删除书签：${bookmark.title}`,
-        });
-      } catch (error) {
-        setManagerFeedback({
-          kind: "error",
-          message: toErrorMessage(error),
-        });
-        throw error;
-      }
-      return;
-    }
-
     await runManagerAction(async () => {
-      await deleteBookmark(bookmark.id, authToken!);
+      await appDataSource.deleteBookmark(bookmark.id, authToken!);
       if (route.page === "detail" && route.bookmarkId === bookmark.id) {
         goToList();
       }
@@ -5068,30 +4802,22 @@ export function App({
     setSelectionBusy(true);
     setManagerFeedback(null);
     try {
-      if (isDemoMode) {
-        let workspace = demoState;
-        for (const id of ids) {
-          workspace = deleteDemoBookmark(workspace, id);
-        }
-        setDemoState(workspace);
-      } else {
-        const results = await Promise.allSettled(
-          [...ids].map((id) => deleteBookmark(id, authToken!)),
-        );
-        const failed = results.filter((r) => r.status === "rejected").length;
-        if (failed > 0) {
-          setManagerFeedback({
-            kind: "error",
-            message: `批量删除完成，但有 ${failed} 条失败。`,
-          });
-          await refreshSidebarCountItems(authToken!);
-          await refreshBookmarksList(authToken!);
-          exitSelectionMode();
-          return;
-        }
+      const results = await Promise.allSettled(
+        [...ids].map((id) => appDataSource.deleteBookmark(id, authToken!)),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      if (failed > 0) {
+        setManagerFeedback({
+          kind: "error",
+          message: `批量删除完成，但有 ${failed} 条失败。`,
+        });
         await refreshSidebarCountItems(authToken!);
         await refreshBookmarksList(authToken!);
+        exitSelectionMode();
+        return;
       }
+      await refreshSidebarCountItems(authToken!);
+      await refreshBookmarksList(authToken!);
       setManagerFeedback({
         kind: "success",
         message: `已删除 ${ids.size} 个书签。`,
@@ -5110,20 +4836,11 @@ export function App({
     setSelectionBusy(true);
     setManagerFeedback(null);
     try {
-      if (isDemoMode) {
-        let workspace = demoState;
-        for (const id of ids) {
-          const result = updateDemoBookmarkMetadata(workspace, id, { isFavorite });
-          workspace = result.workspace;
-        }
-        setDemoState(workspace);
-      } else {
-        await Promise.allSettled(
-          [...ids].map((id) => updateBookmarkMetadata(id, { isFavorite }, authToken!)),
-        );
-        await refreshSidebarCountItems(authToken!);
-        await refreshBookmarksList(authToken!);
-      }
+      await Promise.allSettled(
+        [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { isFavorite }, authToken!)),
+      );
+      await refreshSidebarCountItems(authToken!);
+      await refreshBookmarksList(authToken!);
       setManagerFeedback({
         kind: "success",
         message: isFavorite
@@ -5152,14 +4869,10 @@ export function App({
     setLocalArchiveBusy(true);
     setLocalArchiveError(null);
     try {
-      if (isDemoMode) {
-        setLocalArchiveError("Mock 模式暂不支持本地插件批量存档。");
-        return;
-      }
       if (!authToken) {
         throw new Error("当前未登录，无法发送本地存档任务。");
       }
-      const result = await enqueueBookmarksToLocalExtension(localArchiveDialog.bookmarks);
+      const result = await appDataSource.enqueueLocalArchive(localArchiveDialog.bookmarks);
       setLocalArchiveDialog({
         step: "done",
         totalCount: localArchiveDialog.bookmarks.length,
@@ -5180,20 +4893,11 @@ export function App({
     setSelectionBusy(true);
     setManagerFeedback(null);
     try {
-      if (isDemoMode) {
-        let workspace = demoState;
-        for (const id of ids) {
-          const result = updateDemoBookmarkMetadata(workspace, id, { folderId });
-          workspace = result.workspace;
-        }
-        setDemoState(workspace);
-      } else {
-        await Promise.allSettled(
-          [...ids].map((id) => updateBookmarkMetadata(id, { folderId }, authToken!)),
-        );
-        await refreshSidebarCountItems(authToken!);
-        await refreshBookmarksList(authToken!);
-      }
+      await Promise.allSettled(
+        [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { folderId }, authToken!)),
+      );
+      await refreshSidebarCountItems(authToken!);
+      await refreshBookmarksList(authToken!);
       const folderName = folderId
         ? (folders.find((f) => f.id === folderId)?.name ?? "指定收藏夹")
         : "未归类";
@@ -5215,20 +4919,11 @@ export function App({
     setSelectionBusy(true);
     setManagerFeedback(null);
     try {
-      if (isDemoMode) {
-        let workspace = demoState;
-        for (const id of ids) {
-          const result = updateDemoBookmarkMetadata(workspace, id, { tagIds });
-          workspace = result.workspace;
-        }
-        setDemoState(workspace);
-      } else {
-        await Promise.allSettled(
-          [...ids].map((id) => updateBookmarkMetadata(id, { tagIds }, authToken!)),
-        );
-        await refreshSidebarCountItems(authToken!);
-        await refreshBookmarksList(authToken!);
-      }
+      await Promise.allSettled(
+        [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { tagIds }, authToken!)),
+      );
+      await refreshSidebarCountItems(authToken!);
+      await refreshBookmarksList(authToken!);
       const tagName = tags.find((t) => t.id === tagIds[0])?.name ?? "标签";
       setManagerFeedback({
         kind: "success",
@@ -5245,29 +4940,8 @@ export function App({
 
   async function handleCreateFolder(name: string, parent?: Folder) {
     const trimmedName = name.trim();
-    if (isDemoMode) {
-      try {
-        const result = createDemoFolder(demoState, {
-          name: trimmedName,
-          parentId: parent?.id ?? null,
-        });
-        setDemoState(result.workspace);
-        setManagerFeedback({
-          kind: "success",
-          message: `已创建收藏夹：${result.folder.path}`,
-        });
-      } catch (error) {
-        setManagerFeedback({
-          kind: "error",
-          message: toErrorMessage(error),
-        });
-        throw error;
-      }
-      return;
-    }
-
     await runManagerAction(async () => {
-      const folder = await createFolder({
+      const folder = await appDataSource.createFolder({
         name: trimmedName,
         parentId: parent?.id ?? null,
       }, authToken!);
@@ -5288,29 +4962,8 @@ export function App({
       throw new Error(`未找到父收藏夹路径：${parentPath}`);
     }
 
-    if (isDemoMode) {
-      try {
-        const result = updateDemoFolder(demoState, folder.id, {
-          name: nextName,
-          parentId: parent?.id ?? null,
-        });
-        setDemoState(result.workspace);
-        setManagerFeedback({
-          kind: "success",
-          message: `已更新收藏夹路径：${result.folder.path}`,
-        });
-      } catch (error) {
-        setManagerFeedback({
-          kind: "error",
-          message: toErrorMessage(error),
-        });
-        throw error;
-      }
-      return;
-    }
-
     await runManagerAction(async () => {
-      const updated = await updateFolder(folder.id, {
+      const updated = await appDataSource.updateFolder(folder.id, {
         name: nextName,
         parentId: parent?.id ?? null,
       }, authToken!);
@@ -5319,54 +4972,16 @@ export function App({
   }
 
   async function handleDeleteFolder(folder: Folder) {
-    if (isDemoMode) {
-      try {
-        setDemoState(deleteDemoFolder(demoState, folder.id));
-        setManagerFeedback({
-          kind: "success",
-          message: `已删除收藏夹：${folder.path}`,
-        });
-      } catch (error) {
-        setManagerFeedback({
-          kind: "error",
-          message: toErrorMessage(error),
-        });
-        throw error;
-      }
-      return;
-    }
-
     await runManagerAction(async () => {
-      await deleteFolder(folder.id, authToken!);
+      await appDataSource.deleteFolder(folder.id, authToken!);
       return `已删除收藏夹：${folder.path}`;
     });
   }
 
   async function handleCreateTag(name: string, color?: string) {
     const trimmedName = name.trim();
-    if (isDemoMode) {
-      try {
-        const result = createDemoTag(demoState, {
-          name: trimmedName,
-          color,
-        });
-        setDemoState(result.workspace);
-        setManagerFeedback({
-          kind: "success",
-          message: `已创建标签：#${result.tag.name}`,
-        });
-      } catch (error) {
-        setManagerFeedback({
-          kind: "error",
-          message: toErrorMessage(error),
-        });
-        throw error;
-      }
-      return;
-    }
-
     await runManagerAction(async () => {
-      const tag = await createTag({
+      const tag = await appDataSource.createTag({
         name: trimmedName,
         color,
       }, authToken!);
@@ -5375,29 +4990,8 @@ export function App({
   }
 
   async function handleEditTag(tag: Tag, nextName: string, nextColorRaw: string) {
-    if (isDemoMode) {
-      try {
-        const result = updateDemoTag(demoState, tag.id, {
-          name: nextName.trim(),
-          color: nextColorRaw.trim() || null,
-        });
-        setDemoState(result.workspace);
-        setManagerFeedback({
-          kind: "success",
-          message: `已更新标签：#${result.tag.name}`,
-        });
-      } catch (error) {
-        setManagerFeedback({
-          kind: "error",
-          message: toErrorMessage(error),
-        });
-        throw error;
-      }
-      return;
-    }
-
     await runManagerAction(async () => {
-      const updated = await updateTag(tag.id, {
+      const updated = await appDataSource.updateTag(tag.id, {
         name: nextName.trim(),
         color: nextColorRaw.trim() || null,
       }, authToken!);
@@ -5406,25 +5000,8 @@ export function App({
   }
 
   async function handleDeleteTag(tag: Tag) {
-    if (isDemoMode) {
-      try {
-        setDemoState(deleteDemoTag(demoState, tag.id));
-        setManagerFeedback({
-          kind: "success",
-          message: `已删除标签：#${tag.name}`,
-        });
-      } catch (error) {
-        setManagerFeedback({
-          kind: "error",
-          message: toErrorMessage(error),
-        });
-        throw error;
-      }
-      return;
-    }
-
     await runManagerAction(async () => {
-      await deleteTag(tag.id, authToken!);
+      await appDataSource.deleteTag(tag.id, authToken!);
       return `已删除标签：#${tag.name}`;
     });
   }
@@ -5523,32 +5100,9 @@ export function App({
 
     setMetadataSaving(true);
     setMetadataFeedback(null);
-    if (isDemoMode) {
-      try {
-        const result = updateDemoBookmarkMetadata(demoState, route.bookmarkId, {
-          note: metadataNote,
-          isFavorite: metadataIsFavorite,
-          folderId: metadataFolderId || null,
-          tagIds: metadataTagIds,
-        });
-        setDemoState(result.workspace);
-        setMetadataFeedback({
-          kind: "success",
-          message: "Mock 数据中的收藏状态、收藏夹、标签和备注已更新。",
-        });
-      } catch (error) {
-        setMetadataFeedback({
-          kind: "error",
-          message: toErrorMessage(error),
-        });
-      } finally {
-        setMetadataSaving(false);
-      }
-      return;
-    }
 
     try {
-      const updated = await updateBookmarkMetadata(
+      const updated = await appDataSource.updateBookmarkMetadata(
         route.bookmarkId,
         {
           note: metadataNote,
@@ -5586,16 +5140,11 @@ export function App({
     setManagerBusy(true);
     setManagerFeedback(null);
     try {
-      if (isDemoMode) {
-        const result = updateDemoBookmarkMetadata(demoState, bookmark.id, { isFavorite });
-        setDemoState(result.workspace);
-      } else {
-        await updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
-        await refreshSidebarCountItems(authToken);
-        await refreshBookmarksList(authToken);
-        if (route.page === "detail" && route.bookmarkId === bookmark.id) {
-          await refreshBookmarkDetail(authToken, bookmark.id);
-        }
+      await appDataSource.updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
+      await refreshSidebarCountItems(authToken);
+      await refreshBookmarksList(authToken);
+      if (route.page === "detail" && route.bookmarkId === bookmark.id) {
+        await refreshBookmarkDetail(authToken, bookmark.id);
       }
 
       setManagerFeedback({
@@ -5820,26 +5369,13 @@ export function App({
     setAuthError(null);
 
     try {
-      if (isDemoMode) {
-        setStoredToken("demo-token");
-        setSession({
-          status: "authenticated",
-          token: "demo-token",
-          user: demoState.user,
-          error: null,
-        });
-        setAuthPassword("");
-        goToList();
-        return;
-      }
-
       const sessionResult = authMode === "register"
-        ? await registerAccount({
+        ? await appDataSource.register({
             name: authName.trim() || undefined,
             email: authEmail.trim(),
             password: authPassword,
           })
-        : await loginAccount({
+        : await appDataSource.login({
             email: authEmail.trim(),
             password: authPassword,
           });
@@ -6058,7 +5594,7 @@ export function App({
         <ApiTokensPanel
           token={session.token}
           userId={session.user.id}
-          isDemoMode={isDemoMode}
+          dataSource={appDataSource}
           onApiError={handleProtectedApiError}
           onBack={goToList}
         />

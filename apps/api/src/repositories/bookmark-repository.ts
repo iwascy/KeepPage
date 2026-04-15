@@ -110,8 +110,11 @@ export type IngestBookmarkResult = {
   deduplicated: boolean;
 };
 
-export interface BookmarkRepository {
+export interface RepositoryInfo {
   readonly kind: "memory" | "postgres";
+}
+
+export interface AuthRepository extends RepositoryInfo {
   createUser(input: {
     email: string;
     name?: string;
@@ -119,22 +122,40 @@ export interface BookmarkRepository {
   }): Promise<AuthUser>;
   findUserByEmail(email: string): Promise<UserAuthRecord | null>;
   getUserById(userId: string): Promise<AuthUser | null>;
+}
+
+export interface ApiTokenRepository extends RepositoryInfo {
   createApiToken(userId: string, input: CreateApiTokenInput): Promise<ApiToken>;
   listApiTokens(userId: string): Promise<ApiToken[]>;
   getApiTokenAuthRecord(tokenId: string): Promise<ApiTokenAuthRecord | null>;
   revokeApiToken(userId: string, tokenId: string): Promise<boolean>;
   touchApiToken(tokenId: string, usedAt: string): Promise<void>;
+}
+
+export interface CaptureRepository extends RepositoryInfo {
   initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult>;
   completeCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult>;
+}
+
+export interface IngestRepository extends RepositoryInfo {
   ingestBookmark(userId: string, input: IngestBookmarkRequest): Promise<IngestBookmarkResult>;
+}
+
+export interface BookmarkReadRepository extends RepositoryInfo {
   searchBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse>;
   getBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null>;
+}
+
+export interface BookmarkWriteRepository extends RepositoryInfo {
   deleteBookmark(userId: string, bookmarkId: string): Promise<boolean>;
   updateBookmarkMetadata(
     userId: string,
     bookmarkId: string,
     input: BookmarkMetadataUpdateRequest,
   ): Promise<Bookmark | null>;
+}
+
+export interface TaxonomyRepository extends RepositoryInfo {
   listFolders(userId: string): Promise<Folder[]>;
   createFolder(userId: string, input: FolderCreateRequest): Promise<Folder>;
   updateFolder(userId: string, folderId: string, input: FolderUpdateRequest): Promise<Folder | null>;
@@ -143,6 +164,9 @@ export interface BookmarkRepository {
   createTag(userId: string, input: TagCreateRequest): Promise<Tag>;
   updateTag(userId: string, tagId: string, input: TagUpdateRequest): Promise<Tag | null>;
   deleteTag(userId: string, tagId: string): Promise<boolean>;
+}
+
+export interface ImportRepository extends RepositoryInfo {
   findImportBookmarkMatches(
     userId: string,
     normalizedUrlHashes: string[],
@@ -150,6 +174,20 @@ export interface BookmarkRepository {
   createImportTask(userId: string, input: CreateImportTaskInput): Promise<ImportTaskDetailResponse>;
   listImportTasks(userId: string): Promise<ImportTask[]>;
   getImportTaskDetail(userId: string, taskId: string): Promise<ImportTaskDetailResponse | null>;
+}
+
+export interface ObjectAccessRepository extends RepositoryInfo {
   userCanReadObject(userId: string, objectKey: string): Promise<boolean>;
   userCanWriteObject(userId: string, objectKey: string): Promise<boolean>;
 }
+
+export type BookmarkRepository =
+  & AuthRepository
+  & ApiTokenRepository
+  & CaptureRepository
+  & IngestRepository
+  & BookmarkReadRepository
+  & BookmarkWriteRepository
+  & TaxonomyRepository
+  & ImportRepository
+  & ObjectAccessRepository;

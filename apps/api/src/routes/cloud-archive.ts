@@ -5,8 +5,8 @@ import {
 } from "@keeppage/domain";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { AuthService } from "../lib/auth-service";
-import type { CloudArchiveManager } from "../lib/cloud-archive-manager";
+import type { AuthService } from "../services/auth/auth-service";
+import type { CloudArchiveManager } from "../services/cloud-archive/cloud-archive-manager";
 
 const taskParamsSchema = z.object({
   taskId: z.string().min(1),

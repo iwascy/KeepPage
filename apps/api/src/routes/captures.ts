@@ -6,9 +6,8 @@ import {
 } from "@keeppage/domain";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { AuthService } from "../lib/auth-service";
-import type { BookmarkRepository } from "../repositories";
-import type { ObjectStorage } from "../storage/object-storage";
+import type { CaptureRepository } from "../repositories";
+import type { AuthService } from "../services/auth/auth-service";
 
 const captureCompleteResponseSchema = z.object({
   bookmarkId: z.string().min(1),
@@ -21,8 +20,7 @@ export async function registerCaptureRoutes(
   app: FastifyInstance,
   config: ApiConfig,
   authService: AuthService,
-  repository: BookmarkRepository,
-  objectStorage: ObjectStorage,
+  repository: CaptureRepository,
 ) {
   app.post("/captures/init", async (request, reply) => {
     const user = await authService.requireUser(request, {

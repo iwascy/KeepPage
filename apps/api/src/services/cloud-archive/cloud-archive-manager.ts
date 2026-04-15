@@ -4,9 +4,9 @@ import {
   type CloudArchiveStatus,
   type CloudArchiveTask,
 } from "@keeppage/domain";
-import type { ApiConfig } from "../config";
-import type { BookmarkRepository } from "../repositories";
-import type { ObjectStorage } from "../storage/object-storage";
+import type { ApiConfig } from "../../config";
+import type { BookmarkWriteRepository, CaptureRepository } from "../../repositories";
+import type { ObjectStorage } from "../../storage/object-storage";
 import { processCloudArchive } from "./cloud-archive-worker";
 
 type InternalTask = {
@@ -33,7 +33,7 @@ export class CloudArchiveManager {
 
   constructor(
     private readonly config: ApiConfig,
-    private readonly repository: BookmarkRepository,
+    private readonly repository: CaptureRepository & BookmarkWriteRepository,
     private readonly objectStorage: ObjectStorage,
   ) {}
 
