@@ -38,6 +38,10 @@ import {
   folders,
   importItems,
   importTasks,
+  privateBookmarks,
+  privateBookmarkVersions,
+  privateCaptureUploads,
+  privateModeConfigs,
   tags,
   users,
 } from "@keeppage/db";
@@ -67,6 +71,7 @@ import type {
   IngestBookmarkResult,
   ImportBookmarkMatch,
   InitCaptureResult,
+  PrivateModeConfigRecord,
   UserAuthRecord,
 } from "../bookmark-repository";
 import {
@@ -286,6 +291,114 @@ export class PostgresRepositoryCore {
       .where(eq(apiTokens.id, tokenId));
   }
 
+  async getPrivateModeConfig(userId: string): Promise<PrivateModeConfigRecord | null> {
+    const rows = await this.db
+      .select({
+        userId: privateModeConfigs.userId,
+        passwordHash: privateModeConfigs.passwordHash,
+        passwordAlgo: privateModeConfigs.passwordAlgo,
+        enabledAt: privateModeConfigs.enabledAt,
+        passwordUpdatedAt: privateModeConfigs.passwordUpdatedAt,
+      })
+      .from(privateModeConfigs)
+      .where(eq(privateModeConfigs.userId, userId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    return {
+      userId: row.userId,
+      passwordHash: row.passwordHash,
+      passwordAlgo: row.passwordAlgo,
+      enabledAt: row.enabledAt.toISOString(),
+      passwordUpdatedAt: row.passwordUpdatedAt.toISOString(),
+    };
+  }
+
+  async enablePrivateMode(input: {
+    userId: string;
+    passwordHash: string;
+    passwordAlgo: string;
+  }): Promise<PrivateModeConfigRecord> {
+    const now = new Date();
+    const rows = await this.db
+      .insert(privateModeConfigs)
+      .values({
+        userId: input.userId,
+        passwordHash: input.passwordHash,
+        passwordAlgo: input.passwordAlgo,
+        enabledAt: now,
+        passwordUpdatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: privateModeConfigs.userId,
+        set: {
+          passwordHash: input.passwordHash,
+          passwordAlgo: input.passwordAlgo,
+          passwordUpdatedAt: now,
+        },
+      })
+      .returning({
+        userId: privateModeConfigs.userId,
+        passwordHash: privateModeConfigs.passwordHash,
+        passwordAlgo: privateModeConfigs.passwordAlgo,
+        enabledAt: privateModeConfigs.enabledAt,
+        passwordUpdatedAt: privateModeConfigs.passwordUpdatedAt,
+      });
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Failed to enable private mode.");
+    }
+    return {
+      userId: row.userId,
+      passwordHash: row.passwordHash,
+      passwordAlgo: row.passwordAlgo,
+      enabledAt: row.enabledAt.toISOString(),
+      passwordUpdatedAt: row.passwordUpdatedAt.toISOString(),
+    };
+  }
+
+  async getPrivateVaultSummary(userId: string) {
+    const config = await this.getPrivateModeConfig(userId);
+    if (!config) {
+      return {
+        enabled: false,
+        unlocked: false,
+        autoLock: "browser" as const,
+        totalItems: 0,
+        pendingSyncCount: 0,
+        syncEnabled: true,
+      };
+    }
+
+    const [summaryRows, pendingRows] = await Promise.all([
+      this.db
+        .select({
+          total: count(),
+          lastUpdatedAt: sql<Date | null>`max(${privateBookmarks.updatedAt})`,
+        })
+        .from(privateBookmarks)
+        .where(eq(privateBookmarks.userId, userId)),
+      this.db
+        .select({
+          total: count(),
+        })
+        .from(privateCaptureUploads)
+        .where(eq(privateCaptureUploads.userId, userId)),
+    ]);
+
+    return {
+      enabled: true,
+      unlocked: false,
+      autoLock: "browser" as const,
+      totalItems: Number(summaryRows[0]?.total ?? 0),
+      pendingSyncCount: Number(pendingRows[0]?.total ?? 0),
+      syncEnabled: true,
+      lastUpdatedAt: summaryRows[0]?.lastUpdatedAt?.toISOString(),
+    };
+  }
+
   async initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
     const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(input.url));
     const existing = await this.db
@@ -376,6 +489,104 @@ export class PostgresRepositoryCore {
 
     if (!claimedPending[0]) {
       throw new Error("Failed to create or reuse pending upload.");
+    }
+
+    return {
+      alreadyExists: false,
+      objectKey: claimedPending[0].objectKey,
+    };
+  }
+
+  async initPrivateCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
+    const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(input.url));
+    const existing = await this.db
+      .select({
+        bookmarkId: privateBookmarks.id,
+        versionId: privateBookmarkVersions.id,
+        objectKey: privateBookmarkVersions.htmlObjectKey,
+      })
+      .from(privateBookmarks)
+      .innerJoin(privateBookmarkVersions, eq(privateBookmarks.id, privateBookmarkVersions.bookmarkId))
+      .where(
+        and(
+          eq(privateBookmarks.userId, userId),
+          eq(privateBookmarks.normalizedUrlHash, normalizedUrlHash),
+          eq(privateBookmarkVersions.htmlSha256, input.htmlSha256),
+        ),
+      )
+      .limit(1);
+
+    const hit = existing[0];
+    if (hit) {
+      return {
+        alreadyExists: true,
+        bookmarkId: hit.bookmarkId,
+        versionId: hit.versionId,
+        objectKey: hit.objectKey,
+      };
+    }
+
+    const pending = await this.db
+      .select({
+        objectKey: privateCaptureUploads.objectKey,
+      })
+      .from(privateCaptureUploads)
+      .where(
+        and(
+          eq(privateCaptureUploads.userId, userId),
+          eq(privateCaptureUploads.normalizedUrlHash, normalizedUrlHash),
+          eq(privateCaptureUploads.htmlSha256, input.htmlSha256),
+        ),
+      )
+      .orderBy(desc(privateCaptureUploads.createdAt))
+      .limit(1);
+
+    if (pending[0]) {
+      return {
+        alreadyExists: false,
+        objectKey: pending[0].objectKey,
+      };
+    }
+
+    const objectKey = this.createPrivateObjectKey(userId);
+    await this.db
+      .insert(privateCaptureUploads)
+      .values({
+        objectKey,
+        userId,
+        normalizedUrlHash,
+        sourceUrl: input.url,
+        title: input.title,
+        htmlSha256: input.htmlSha256,
+        fileSize: input.fileSize,
+        captureProfile: input.profile,
+        deviceId: input.deviceId,
+      })
+      .onConflictDoNothing({
+        target: [
+          privateCaptureUploads.userId,
+          privateCaptureUploads.normalizedUrlHash,
+          privateCaptureUploads.htmlSha256,
+        ],
+      });
+
+    const claimedPending = await this.db
+      .select({
+        objectKey: privateCaptureUploads.objectKey,
+      })
+      .from(privateCaptureUploads)
+      .where(
+        and(
+          eq(privateCaptureUploads.userId, userId),
+          eq(privateCaptureUploads.normalizedUrlHash, normalizedUrlHash),
+          eq(privateCaptureUploads.htmlSha256, input.htmlSha256),
+        ),
+      )
+      .orderBy(desc(privateCaptureUploads.createdAt))
+      .limit(1);
+
+    if (!claimedPending[0]) {
+      throw new Error("Failed to create or reuse pending private upload.");
     }
 
     return {
@@ -626,6 +837,344 @@ export class PostgresRepositoryCore {
       versionId: transactionResult.versionId,
       createdNewVersion: transactionResult.createdNewVersion,
       deduplicated: transactionResult.deduplicated,
+    };
+  }
+
+  async completePrivateCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
+    const existingByObjectKey = await this.db
+      .select({
+        bookmarkId: privateBookmarks.id,
+        versionId: privateBookmarkVersions.id,
+        readerHtmlObjectKey: privateBookmarkVersions.readerHtmlObjectKey,
+        sourceMetaJson: privateBookmarkVersions.sourceMetaJson,
+      })
+      .from(privateBookmarkVersions)
+      .innerJoin(privateBookmarks, eq(privateBookmarks.id, privateBookmarkVersions.bookmarkId))
+      .where(
+        and(
+          eq(privateBookmarks.userId, userId),
+          eq(privateBookmarkVersions.htmlObjectKey, input.objectKey),
+        ),
+      )
+      .limit(1);
+
+    if (existingByObjectKey[0]) {
+      const readerHtmlObjectKey = existingByObjectKey[0].readerHtmlObjectKey
+        ?? await this.persistReaderArchive(input.objectKey, input.readerHtml);
+      const now = new Date();
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(privateBookmarkVersions)
+          .set({
+            readerHtmlObjectKey,
+            qualityScore: input.quality.score,
+            qualityGrade: input.quality.grade,
+            qualityReasonsJson: input.quality.reasons,
+            qualityReportJson: input.quality,
+            sourceMetaJson: this.buildSourceMetaPayload(
+              input.source,
+              input.mediaFiles,
+              existingByObjectKey[0].sourceMetaJson,
+            ),
+          })
+          .where(eq(privateBookmarkVersions.id, existingByObjectKey[0].versionId));
+
+        await tx
+          .update(privateBookmarks)
+          .set({
+            sourceUrl: input.source.url,
+            canonicalUrl: input.source.canonicalUrl,
+            title: input.source.title,
+            domain: input.source.domain,
+            latestVersionId: existingByObjectKey[0].versionId,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(privateBookmarks.userId, userId),
+              eq(privateBookmarks.id, existingByObjectKey[0].bookmarkId),
+            ),
+          );
+      });
+      const bookmark = await this.loadPrivateBookmark(existingByObjectKey[0].bookmarkId, userId);
+      return {
+        bookmark,
+        versionId: existingByObjectKey[0].versionId,
+        createdNewVersion: false,
+        deduplicated: true,
+      };
+    }
+
+    if (!(await this.objectStorage.hasObject(input.objectKey))) {
+      throw new Error("Uploaded private archive object not found.");
+    }
+
+    const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(input.source.url));
+    const now = new Date();
+
+    const transactionResult = await this.db.transaction(async (tx) => {
+      const pendingUpload = await tx
+        .select()
+        .from(privateCaptureUploads)
+        .where(
+          and(
+            eq(privateCaptureUploads.objectKey, input.objectKey),
+            eq(privateCaptureUploads.userId, userId),
+          ),
+        )
+        .limit(1);
+      const pending = pendingUpload[0];
+      if (!pending) {
+        throw new Error("Pending private capture not found for object key.");
+      }
+
+      const existingBookmarkRows = await tx
+        .select({
+          id: privateBookmarks.id,
+        })
+        .from(privateBookmarks)
+        .where(
+          and(
+            eq(privateBookmarks.userId, userId),
+            eq(privateBookmarks.normalizedUrlHash, normalizedUrlHash),
+          ),
+        )
+        .orderBy(desc(privateBookmarks.updatedAt))
+        .limit(1);
+
+      const bookmarkId = existingBookmarkRows[0]?.id ?? crypto.randomUUID();
+      if (!existingBookmarkRows[0]) {
+        await tx.insert(privateBookmarks).values({
+          id: bookmarkId,
+          userId,
+          sourceUrl: input.source.url,
+          canonicalUrl: input.source.canonicalUrl,
+          normalizedUrlHash,
+          title: input.source.title,
+          domain: input.source.domain,
+          note: "",
+          isFavorite: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      const duplicateVersionRows = await tx
+        .select({
+          id: privateBookmarkVersions.id,
+          htmlObjectKey: privateBookmarkVersions.htmlObjectKey,
+          readerHtmlObjectKey: privateBookmarkVersions.readerHtmlObjectKey,
+          sourceMetaJson: privateBookmarkVersions.sourceMetaJson,
+        })
+        .from(privateBookmarkVersions)
+        .where(
+          and(
+            eq(privateBookmarkVersions.bookmarkId, bookmarkId),
+            eq(privateBookmarkVersions.htmlSha256, input.htmlSha256),
+          ),
+        )
+        .limit(1);
+
+      if (duplicateVersionRows[0]) {
+        const duplicatedVersionId = duplicateVersionRows[0].id;
+        const readerHtmlObjectKey = duplicateVersionRows[0].readerHtmlObjectKey
+          ?? await this.persistReaderArchive(
+            duplicateVersionRows[0].htmlObjectKey,
+            input.readerHtml,
+          );
+        await tx
+          .update(privateBookmarkVersions)
+          .set({
+            readerHtmlObjectKey,
+            qualityScore: input.quality.score,
+            qualityGrade: input.quality.grade,
+            qualityReasonsJson: input.quality.reasons,
+            qualityReportJson: input.quality,
+            sourceMetaJson: this.buildSourceMetaPayload(
+              input.source,
+              input.mediaFiles,
+              duplicateVersionRows[0].sourceMetaJson,
+            ),
+          })
+          .where(eq(privateBookmarkVersions.id, duplicatedVersionId));
+        await tx
+          .update(privateBookmarks)
+          .set({
+            sourceUrl: input.source.url,
+            canonicalUrl: input.source.canonicalUrl,
+            title: input.source.title,
+            domain: input.source.domain,
+            latestVersionId: duplicatedVersionId,
+            updatedAt: now,
+          })
+          .where(eq(privateBookmarks.id, bookmarkId));
+        await tx.delete(privateCaptureUploads).where(eq(privateCaptureUploads.objectKey, input.objectKey));
+        return {
+          bookmarkId,
+          versionId: duplicatedVersionId,
+          createdNewVersion: false,
+          deduplicated: true,
+        };
+      }
+
+      const nextVersionNoRows = await tx
+        .select({
+          nextVersionNo: sql<number>`coalesce(max(${privateBookmarkVersions.versionNo}), 0) + 1`,
+        })
+        .from(privateBookmarkVersions)
+        .where(eq(privateBookmarkVersions.bookmarkId, bookmarkId));
+      const versionNo = nextVersionNoRows[0]?.nextVersionNo ?? 1;
+      const versionId = crypto.randomUUID();
+      const objectStat = await this.objectStorage.statObject(input.objectKey);
+      const readerHtmlObjectKey = await this.persistReaderArchive(input.objectKey, input.readerHtml);
+
+      await tx.insert(privateBookmarkVersions).values({
+        id: versionId,
+        bookmarkId,
+        versionNo,
+        htmlObjectKey: input.objectKey,
+        readerHtmlObjectKey,
+        htmlSha256: input.htmlSha256,
+        textSha256: input.textSha256,
+        textSimhash: input.textSimhash,
+        captureProfile: pending.captureProfile ?? "standard",
+        captureOptionsJson: {
+          fileSize: pending.fileSize,
+          uploadedSize: objectStat?.size ?? pending.fileSize,
+          deviceId: pending.deviceId,
+        },
+        qualityScore: input.quality.score,
+        qualityGrade: input.quality.grade,
+        qualityReasonsJson: input.quality.reasons,
+        qualityReportJson: input.quality,
+        sourceMetaJson: this.buildSourceMetaPayload(input.source, input.mediaFiles),
+        extractedText: input.extractedText ?? null,
+        createdByDeviceId: null,
+        createdAt: now,
+      });
+
+      await tx
+        .update(privateBookmarks)
+        .set({
+          sourceUrl: input.source.url,
+          canonicalUrl: input.source.canonicalUrl,
+          title: input.source.title,
+          domain: input.source.domain,
+          latestVersionId: versionId,
+          updatedAt: now,
+        })
+        .where(eq(privateBookmarks.id, bookmarkId));
+
+      await tx.delete(privateCaptureUploads).where(eq(privateCaptureUploads.objectKey, input.objectKey));
+
+      return {
+        bookmarkId,
+        versionId,
+        createdNewVersion: true,
+        deduplicated: false,
+      };
+    });
+
+    const bookmark = await this.loadPrivateBookmark(transactionResult.bookmarkId, userId);
+    return {
+      bookmark,
+      versionId: transactionResult.versionId,
+      createdNewVersion: transactionResult.createdNewVersion,
+      deduplicated: transactionResult.deduplicated,
+    };
+  }
+
+  async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery) {
+    const conditions = [eq(privateBookmarks.userId, userId)];
+    if (query.view === "favorites") {
+      conditions.push(eq(privateBookmarks.isFavorite, true));
+    }
+    if (query.view === "recent") {
+      conditions.push(gte(privateBookmarks.updatedAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)));
+    }
+    if (query.domain) {
+      conditions.push(eq(privateBookmarks.domain, query.domain));
+    }
+    if (query.quality) {
+      conditions.push(eq(privateBookmarkVersions.qualityGrade, query.quality));
+    }
+    if (query.q?.trim()) {
+      const needle = `%${query.q.trim()}%`;
+      conditions.push(
+        or(
+          ilike(privateBookmarks.title, needle),
+          ilike(privateBookmarks.sourceUrl, needle),
+          ilike(privateBookmarks.domain, needle),
+          ilike(privateBookmarks.note, needle),
+          ilike(privateBookmarkVersions.extractedText, needle),
+        )!,
+      );
+    }
+
+    const totalRow = await this.db
+      .select({
+        total: count(),
+      })
+      .from(privateBookmarks)
+      .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .where(and(...conditions));
+    const total = Number(totalRow[0]?.total ?? 0);
+    if (total === 0) {
+      return bookmarkSearchResponseSchema.parse({
+        items: [],
+        total: 0,
+      });
+    }
+
+    const rows = await this.db
+      .select({
+        id: privateBookmarks.id,
+        sourceUrl: privateBookmarks.sourceUrl,
+        canonicalUrl: privateBookmarks.canonicalUrl,
+        title: privateBookmarks.title,
+        domain: privateBookmarks.domain,
+        note: privateBookmarks.note,
+        isFavorite: privateBookmarks.isFavorite,
+        latestVersionId: privateBookmarks.latestVersionId,
+        createdAt: privateBookmarks.createdAt,
+        updatedAt: privateBookmarks.updatedAt,
+        latestQualityReport: privateBookmarkVersions.qualityReportJson,
+        latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
+      })
+      .from(privateBookmarks)
+      .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .where(and(...conditions))
+      .orderBy(desc(privateBookmarks.updatedAt))
+      .limit(query.limit)
+      .offset(query.offset);
+    const versionCountMap = await this.loadPrivateVersionCounts(rows.map((row) => row.id));
+
+    return bookmarkSearchResponseSchema.parse({
+      items: rows.map((row) =>
+        this.mapBookmarkRow({
+          ...row,
+          folderId: null,
+          folderName: null,
+          folderPath: null,
+          folderParentId: null,
+        }, {
+          tags: [],
+          versionCount: versionCountMap.get(row.id) ?? 0,
+        })),
+      total,
+    });
+  }
+
+  async getPrivateBookmarkDetail(userId: string, bookmarkId: string) {
+    const bookmark = await this.loadPrivateBookmarkOrNull(bookmarkId, userId);
+    if (!bookmark) {
+      return null;
+    }
+
+    const versions = await this.loadPrivateVersionsByBookmarkId(bookmarkId, userId);
+    return {
+      bookmark,
+      versions,
     };
   }
 
@@ -1541,7 +2090,27 @@ export class PostgresRepositoryCore {
         ),
       )
       .limit(1);
-    return Boolean(rows[0]);
+    if (rows[0]) {
+      return true;
+    }
+
+    const privateRows = await this.db
+      .select({
+        id: privateBookmarkVersions.id,
+      })
+      .from(privateBookmarkVersions)
+      .innerJoin(privateBookmarks, eq(privateBookmarks.id, privateBookmarkVersions.bookmarkId))
+      .where(
+        and(
+          eq(privateBookmarks.userId, userId),
+          or(
+            eq(privateBookmarkVersions.htmlObjectKey, ownerHtmlObjectKey),
+            eq(privateBookmarkVersions.readerHtmlObjectKey, ownerHtmlObjectKey),
+          ),
+        ),
+      )
+      .limit(1);
+    return Boolean(privateRows[0]);
   }
 
   async userCanWriteObject(userId: string, objectKey: string) {
@@ -1559,6 +2128,22 @@ export class PostgresRepositoryCore {
       )
       .limit(1);
     if (pendingRows[0]) {
+      return true;
+    }
+
+    const privatePendingRows = await this.db
+      .select({
+        objectKey: privateCaptureUploads.objectKey,
+      })
+      .from(privateCaptureUploads)
+      .where(
+        and(
+          eq(privateCaptureUploads.userId, userId),
+          eq(privateCaptureUploads.objectKey, ownerHtmlObjectKey),
+        ),
+      )
+      .limit(1);
+    if (privatePendingRows[0]) {
       return true;
     }
 
@@ -1632,6 +2217,58 @@ export class PostgresRepositoryCore {
     });
   }
 
+  private async loadPrivateBookmark(bookmarkId: string, userId: string): Promise<Bookmark> {
+    const bookmark = await this.loadPrivateBookmarkOrNull(bookmarkId, userId);
+    if (!bookmark) {
+      throw new Error(`Private bookmark not found: ${bookmarkId}`);
+    }
+    return bookmark;
+  }
+
+  private async loadPrivateBookmarkOrNull(bookmarkId: string, userId: string): Promise<Bookmark | null> {
+    const rows = await this.db
+      .select({
+        id: privateBookmarks.id,
+        sourceUrl: privateBookmarks.sourceUrl,
+        canonicalUrl: privateBookmarks.canonicalUrl,
+        title: privateBookmarks.title,
+        domain: privateBookmarks.domain,
+        note: privateBookmarks.note,
+        isFavorite: privateBookmarks.isFavorite,
+        latestVersionId: privateBookmarks.latestVersionId,
+        createdAt: privateBookmarks.createdAt,
+        updatedAt: privateBookmarks.updatedAt,
+        latestQualityReport: privateBookmarkVersions.qualityReportJson,
+        latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
+      })
+      .from(privateBookmarks)
+      .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .where(
+        and(
+          eq(privateBookmarks.id, bookmarkId),
+          eq(privateBookmarks.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    const versionCounts = await this.loadPrivateVersionCounts([bookmarkId]);
+    return this.mapBookmarkRow({
+      ...row,
+      folderId: null,
+      folderName: null,
+      folderPath: null,
+      folderParentId: null,
+    }, {
+      tags: [],
+      versionCount: versionCounts.get(bookmarkId) ?? 0,
+    });
+  }
+
   private async loadVersionsByBookmarkId(bookmarkId: string, userId: string): Promise<BookmarkVersion[]> {
     const rows = await this.db
       .select({
@@ -1657,6 +2294,50 @@ export class PostgresRepositoryCore {
         ),
       )
       .orderBy(desc(bookmarkVersions.versionNo));
+
+    return rows.map((row) =>
+      bookmarkVersionSchema.parse({
+        id: row.id,
+        bookmarkId: row.bookmarkId,
+        versionNo: row.versionNo,
+        htmlObjectKey: row.htmlObjectKey,
+        readerHtmlObjectKey: row.readerHtmlObjectKey ?? undefined,
+        htmlSha256: row.htmlSha256,
+        textSha256: row.textSha256 ?? undefined,
+        textSimhash: row.textSimhash ?? undefined,
+        mediaFiles: this.readMediaFiles(row.sourceMeta),
+        captureProfile: row.captureProfile,
+        quality: this.readQuality(row.qualityReport),
+        createdAt: row.createdAt.toISOString(),
+      }),
+    );
+  }
+
+  private async loadPrivateVersionsByBookmarkId(bookmarkId: string, userId: string): Promise<BookmarkVersion[]> {
+    const rows = await this.db
+      .select({
+        id: privateBookmarkVersions.id,
+        bookmarkId: privateBookmarkVersions.bookmarkId,
+        versionNo: privateBookmarkVersions.versionNo,
+        htmlObjectKey: privateBookmarkVersions.htmlObjectKey,
+        readerHtmlObjectKey: privateBookmarkVersions.readerHtmlObjectKey,
+        htmlSha256: privateBookmarkVersions.htmlSha256,
+        textSha256: privateBookmarkVersions.textSha256,
+        textSimhash: privateBookmarkVersions.textSimhash,
+        captureProfile: privateBookmarkVersions.captureProfile,
+        qualityReport: privateBookmarkVersions.qualityReportJson,
+        sourceMeta: privateBookmarkVersions.sourceMetaJson,
+        createdAt: privateBookmarkVersions.createdAt,
+      })
+      .from(privateBookmarkVersions)
+      .innerJoin(privateBookmarks, eq(privateBookmarks.id, privateBookmarkVersions.bookmarkId))
+      .where(
+        and(
+          eq(privateBookmarks.userId, userId),
+          eq(privateBookmarkVersions.bookmarkId, bookmarkId),
+        ),
+      )
+      .orderBy(desc(privateBookmarkVersions.versionNo));
 
     return rows.map((row) =>
       bookmarkVersionSchema.parse({
@@ -1719,6 +2400,27 @@ export class PostgresRepositoryCore {
       .from(bookmarkVersions)
       .where(inArray(bookmarkVersions.bookmarkId, bookmarkIds))
       .groupBy(bookmarkVersions.bookmarkId);
+
+    for (const row of countRows) {
+      versionCountMap.set(row.bookmarkId, Number(row.count));
+    }
+    return versionCountMap;
+  }
+
+  private async loadPrivateVersionCounts(bookmarkIds: string[]) {
+    const versionCountMap = new Map<string, number>();
+    if (bookmarkIds.length === 0) {
+      return versionCountMap;
+    }
+
+    const countRows = await this.db
+      .select({
+        bookmarkId: privateBookmarkVersions.bookmarkId,
+        count: count(),
+      })
+      .from(privateBookmarkVersions)
+      .where(inArray(privateBookmarkVersions.bookmarkId, bookmarkIds))
+      .groupBy(privateBookmarkVersions.bookmarkId);
 
     for (const row of countRows) {
       versionCountMap.set(row.bookmarkId, Number(row.count));
@@ -2389,6 +3091,11 @@ export class PostgresRepositoryCore {
   private createObjectKey(userId: string) {
     const day = new Date().toISOString().slice(0, 10);
     return `captures/${userId}/${day}/${crypto.randomUUID()}.html`;
+  }
+
+  private createPrivateObjectKey(userId: string) {
+    const day = new Date().toISOString().slice(0, 10);
+    return `private-captures/${userId}/${day}/${crypto.randomUUID()}.html`;
   }
 
   private createReaderObjectKey(objectKey: string) {

@@ -73,6 +73,16 @@ export const devices = pgTable("devices", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const privateModeConfigs = pgTable("private_mode_configs", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  passwordHash: text("password_hash").notNull(),
+  passwordAlgo: varchar("password_algo", { length: 40 }).notNull().default("scrypt"),
+  enabledAt: timestamp("enabled_at", { withTimezone: true }).defaultNow().notNull(),
+  passwordUpdatedAt: timestamp("password_updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const folders = pgTable(
   "folders",
   {
@@ -143,6 +153,55 @@ export const captureUploads = pgTable(
   }),
 );
 
+export const privateBookmarks = pgTable(
+  "private_bookmarks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sourceUrl: text("source_url").notNull(),
+    canonicalUrl: text("canonical_url"),
+    normalizedUrlHash: varchar("normalized_url_hash", { length: 128 }).notNull(),
+    title: text("title").notNull(),
+    domain: varchar("domain", { length: 255 }).notNull(),
+    latestVersionId: uuid("latest_version_id"),
+    note: text("note").default("").notNull(),
+    isFavorite: boolean("is_favorite").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    privateBookmarkUserUrlIdx: index("private_bookmarks_user_url_idx").on(table.userId, table.normalizedUrlHash),
+    privateBookmarkLatestVersionIdx: index("private_bookmarks_latest_version_idx").on(table.latestVersionId),
+  }),
+);
+
+export const privateCaptureUploads = pgTable(
+  "private_capture_uploads",
+  {
+    objectKey: text("object_key").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    normalizedUrlHash: varchar("normalized_url_hash", { length: 128 }).notNull(),
+    sourceUrl: text("source_url").notNull(),
+    title: text("title").notNull(),
+    htmlSha256: varchar("html_sha256", { length: 128 }).notNull(),
+    fileSize: integer("file_size").notNull(),
+    captureProfile: captureProfileEnum("capture_profile").notNull(),
+    deviceId: varchar("device_id", { length: 120 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    privateCaptureUploadsHashIdx: uniqueIndex("private_capture_uploads_hash_idx").on(
+      table.userId,
+      table.normalizedUrlHash,
+      table.htmlSha256,
+    ),
+  }),
+);
+
 export const bookmarkVersions = pgTable(
   "bookmark_versions",
   {
@@ -179,6 +238,42 @@ export const bookmarkVersions = pgTable(
     ),
     htmlShaIdx: index("bookmark_versions_html_sha_idx").on(table.htmlSha256),
     textShaIdx: index("bookmark_versions_text_sha_idx").on(table.textSha256),
+  }),
+);
+
+export const privateBookmarkVersions = pgTable(
+  "private_bookmark_versions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    bookmarkId: uuid("bookmark_id")
+      .notNull()
+      .references(() => privateBookmarks.id, { onDelete: "cascade" }),
+    versionNo: integer("version_no").notNull(),
+    htmlObjectKey: text("html_object_key").notNull(),
+    readerHtmlObjectKey: text("reader_html_object_key"),
+    htmlSha256: varchar("html_sha256", { length: 128 }).notNull(),
+    textSha256: varchar("text_sha256", { length: 128 }),
+    textSimhash: varchar("text_simhash", { length: 128 }),
+    captureProfile: captureProfileEnum("capture_profile").notNull(),
+    captureOptionsJson: jsonb("capture_options_json").default({}).notNull(),
+    qualityScore: integer("quality_score").notNull(),
+    qualityGrade: qualityGradeEnum("quality_grade").notNull(),
+    qualityReasonsJson: jsonb("quality_reasons_json").default([]).notNull(),
+    qualityReportJson: jsonb("quality_report_json").default({}).notNull(),
+    sourceMetaJson: jsonb("source_meta_json").default({}).notNull(),
+    extractedText: text("extracted_text"),
+    createdByDeviceId: uuid("created_by_device_id").references(() => devices.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    privateBookmarkVersionIdx: uniqueIndex("private_bookmark_versions_bookmark_version_idx").on(
+      table.bookmarkId,
+      table.versionNo,
+    ),
+    privateHtmlShaIdx: index("private_bookmark_versions_html_sha_idx").on(table.htmlSha256),
+    privateTextShaIdx: index("private_bookmark_versions_text_sha_idx").on(table.textSha256),
   }),
 );
 

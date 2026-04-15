@@ -66,6 +66,7 @@ const saveModeValues = ["standard", "private"] as const satisfies readonly SaveM
 const privateModeValues = [
   "local-only",
   "encrypted-sync",
+  "password-gated",
 ] as const satisfies readonly PrivateMode[];
 const privateSyncStateValues = [
   "local-only",
@@ -480,10 +481,10 @@ function parsePrivateVaultSummary(input: unknown): PrivateVaultSummary {
   return {
     enabled: expectBoolean(record.enabled, "private vault summary enabled"),
     unlocked: expectBoolean(record.unlocked, "private vault summary unlocked"),
-    autoLock: parsePrivateAutoLock(record.autoLock ?? "15m"),
+    autoLock: parsePrivateAutoLock(record.autoLock ?? "browser"),
     totalItems: expectInt(record.totalItems ?? 0, "private vault summary totalItems", { min: 0 }),
     pendingSyncCount: expectInt(record.pendingSyncCount ?? 0, "private vault summary pendingSyncCount", { min: 0 }),
-    syncEnabled: expectBoolean(record.syncEnabled ?? false, "private vault summary syncEnabled"),
+    syncEnabled: expectBoolean(record.syncEnabled ?? true, "private vault summary syncEnabled"),
     lastUpdatedAt: record.lastUpdatedAt == null
       ? undefined
       : expectDateTimeString(record.lastUpdatedAt, "private vault summary lastUpdatedAt"),
@@ -497,8 +498,8 @@ function parsePrivateCaptureTaskShell(input: unknown): PrivateCaptureTaskShell {
     status: parseCaptureStatus(record.status),
     owner: record.owner == null ? undefined : parseCaptureTaskOwner(record.owner),
     isPrivate: expectLiteralTrue(record.isPrivate, "private capture task shell isPrivate"),
-    privateMode: parsePrivateMode(record.privateMode ?? "local-only"),
-    syncState: parsePrivateSyncState(record.syncState ?? "local-only"),
+    privateMode: parsePrivateMode(record.privateMode ?? "password-gated"),
+    syncState: parsePrivateSyncState(record.syncState ?? "sync-pending"),
     createdAt: expectDateTimeString(record.createdAt, "private capture task shell createdAt"),
     updatedAt: expectDateTimeString(record.updatedAt, "private capture task shell updatedAt"),
     failureReason: expectOptionalString(record.failureReason, "private capture task shell failureReason"),

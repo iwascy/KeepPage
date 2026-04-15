@@ -138,11 +138,13 @@ function qualityGradeLabel(grade?: QualityGrade) {
 
 function privateModeLabel(mode?: CaptureTask["privateMode"]) {
   switch (mode) {
+    case "password-gated":
+      return "密码进入";
     case "encrypted-sync":
-      return "端到端同步";
+      return "旧版加密同步";
     case "local-only":
     default:
-      return "本机私密";
+      return "本地私密";
   }
 }
 
@@ -259,10 +261,10 @@ export function App() {
       return isPrivateView ? "私密保存中..." : "保存中...";
     }
     if (isPrivateView && !isVaultEnabled) {
-      return "先启用私密库";
+      return "先启用私密模式";
     }
     if (isPrivateView && !isVaultUnlocked) {
-      return "先解锁私密库";
+      return "先输入私密密码";
     }
     return isPrivateView ? "私密保存当前页" : "保存当前页";
   }, [authUser, state, isPrivateView, isVaultEnabled, isVaultUnlocked]);
@@ -313,7 +315,7 @@ export function App() {
       type: MESSAGE_TYPE.GetPrivateVaultState,
     }) as PrivateVaultStateResponse;
     if (!response?.ok) {
-      setError(response?.error ?? "加载私密库状态失败。");
+      setError(response?.error ?? "加载私密模式状态失败。");
       return;
     }
     setVaultSummary(response.summary ?? null);
@@ -347,11 +349,11 @@ export function App() {
       return false;
     }
     if (isPrivateView && !isVaultEnabled) {
-      setError("请先启用私密库，再进行私密保存。");
+      setError("请先启用私密模式，再进行私密保存。");
       return false;
     }
     if (isPrivateView && !isVaultUnlocked) {
-      setError("私密库当前已锁定，请先解锁。");
+      setError("私密模式当前已锁定，请先输入密码。");
       return false;
     }
     return true;
@@ -413,11 +415,11 @@ export function App() {
   async function createPrivateVaultAction() {
     setError(null);
     if (vaultPassphrase.trim().length < 8) {
-      setError("私密口令至少需要 8 位。");
+      setError("私密密码至少需要 8 位。");
       return;
     }
     if (vaultPassphrase !== vaultPassphraseConfirm) {
-      setError("两次输入的私密口令不一致。");
+      setError("两次输入的私密密码不一致。");
       return;
     }
     const response = await chrome.runtime.sendMessage({
@@ -426,11 +428,11 @@ export function App() {
       autoLock: vaultAutoLock,
     }) as PrivateVaultStateResponse;
     if (!response?.ok) {
-      setError(response?.error ?? "启用私密库失败。");
+      setError(response?.error ?? "启用私密模式失败。");
       return;
     }
     setVaultSummary(response.summary ?? null);
-    setRecoveryCode(response.recoveryCode ?? null);
+    setRecoveryCode(null);
     setVaultPassphrase("");
     setVaultPassphraseConfirm("");
     setUnlockPassphrase("");
@@ -445,7 +447,7 @@ export function App() {
       passphrase: unlockPassphrase,
     }) as PrivateVaultStateResponse;
     if (!response?.ok) {
-      setError(response?.error ?? "解锁私密库失败。");
+      setError(response?.error ?? "进入私密模式失败。");
       return;
     }
     setVaultSummary(response.summary ?? null);
@@ -458,7 +460,7 @@ export function App() {
       type: MESSAGE_TYPE.LockPrivateVault,
     }) as PrivateVaultStateResponse;
     if (!response?.ok) {
-      setError(response?.error ?? "锁定私密库失败。");
+      setError(response?.error ?? "退出私密模式失败。");
       return;
     }
     setVaultSummary(response.summary ?? null);
@@ -825,7 +827,7 @@ export function App() {
           <h1>{isPrivateView ? "私密归档队列" : "本地归档队列"}</h1>
           <p className="header-subtitle">
             {isPrivateView
-              ? "私密任务会先在当前设备加密写入本地库，锁定状态下不展示标题、URL 与质量详情。"
+              ? "私密任务会走服务端私密链路，只有输入私密密码后才能查看和继续同步。"
               : "先拿到本地可预览归档，再异步上传、去重和建索引。"}
           </p>
         </div>
@@ -873,13 +875,13 @@ export function App() {
       {isPrivateView && (
         <section className="private-strip">
           <div className="settings-copy">
-            <p className="settings-title">私密库状态</p>
+            <p className="settings-title">私密模式状态</p>
             <p className="muted">
               {!isVaultEnabled
-                ? "首次启用后，私密归档会以加密形式保存在当前浏览器设备。"
+                ? "首次启用后，扩展和 Web 都可以把内容保存到服务端私密工作区。"
                 : isVaultUnlocked
-                ? "当前设备已解锁私密库，可以查看标题、质量信息和本地预览。"
-                : "私密库当前已锁定，只会暴露最小摘要信息。"}
+                ? "当前设备已进入私密模式，可以查看私密标题、质量信息和预览。"
+                : "私密模式当前已锁定，只有输入密码后才能进入。"}
             </p>
             {vaultSummary ? (
               <div className="vault-facts">
@@ -894,7 +896,7 @@ export function App() {
             <>
               <div className="vault-form">
                 <label className="field-inline">
-                  <span>私密口令</span>
+                  <span>私密密码</span>
                   <input
                     type="password"
                     value={vaultPassphrase}
@@ -903,7 +905,7 @@ export function App() {
                   />
                 </label>
                 <label className="field-inline">
-                  <span>确认口令</span>
+                  <span>确认密码</span>
                   <input
                     type="password"
                     value={vaultPassphraseConfirm}
@@ -911,37 +913,24 @@ export function App() {
                     placeholder="再次输入"
                   />
                 </label>
-                <label className="field-inline">
-                  <span>自动锁定</span>
-                  <select
-                    value={vaultAutoLock}
-                    onChange={(event) => setVaultAutoLock(event.target.value as PrivateAutoLock)}
-                  >
-                    {AUTO_LOCK_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
               </div>
               <div className="settings-actions">
                 <button onClick={createPrivateVaultAction} type="button">
-                  启用私密库
+                  启用私密模式
                 </button>
               </div>
             </>
           ) : isVaultUnlocked ? (
             <>
               <div className="vault-summary-card">
-                <strong>私密库已解锁</strong>
+                <strong>私密模式已进入</strong>
                 <span>
-                  当前会话可以查看私密标题、预览和质量提示。手动锁定或超时后需要重新输入口令。
+                  当前会话可以查看私密标题、预览和质量提示。关闭浏览器后会默认退出。
                 </span>
               </div>
               <div className="settings-actions">
                 <button className="ghost-btn" onClick={lockPrivateVaultAction} type="button">
-                  立即锁定
+                  退出私密模式
                 </button>
               </div>
             </>
@@ -949,28 +938,22 @@ export function App() {
             <>
               <div className="vault-form">
                 <label className="field-inline">
-                  <span>解锁口令</span>
+                  <span>私密密码</span>
                   <input
                     type="password"
                     value={unlockPassphrase}
                     onChange={(event) => setUnlockPassphrase(event.target.value)}
-                    placeholder="输入私密口令"
+                    placeholder="输入私密密码"
                   />
                 </label>
               </div>
               <div className="settings-actions">
                 <button onClick={unlockPrivateVaultAction} type="button">
-                  解锁私密库
+                  进入私密模式
                 </button>
               </div>
             </>
           )}
-        </section>
-      )}
-
-      {recoveryCode && (
-        <section className="settings-banner settings-ok">
-          恢复码已生成，请尽快另存到安全位置：<strong>{recoveryCode}</strong>
         </section>
       )}
 
@@ -980,7 +963,7 @@ export function App() {
           <p className="muted">
             {authUser
               ? isPrivateView
-                ? "当前版本的私密保存仍绑定到当前账号，但内容只保存在本机私密库。"
+                ? "当前私密保存会同步到这个账号的服务端私密工作区。"
                 : "当前扩展会把新归档同步到这个账号。"
               : "请先注册或登录账号，新的本地归档任务也会绑定到当前账号。"}
           </p>
@@ -1116,8 +1099,8 @@ export function App() {
             <p className="muted">
               {isPrivateView
                 ? !isVaultEnabled
-                  ? "启用私密库后，新的私密保存记录会出现在这里。"
-                  : "当前私密库还没有保存记录。"
+                  ? "启用私密模式后，新的私密保存记录会出现在这里。"
+                  : "当前私密模式还没有保存记录。"
                 : authUser
                 ? "当前账号还没有保存记录。点击「保存当前页」，先生成本地归档，再异步进入上传队列。"
                 : "登录后，这里只会显示当前账号的本地保存记录。"}
@@ -1169,13 +1152,13 @@ export function App() {
 
           {selectedTask && isPrivateLockedView && (
             <div className="vault-locked-panel">
-              <h2>私密库已锁定</h2>
+              <h2>私密模式已锁定</h2>
               <p className="muted">
-                当前只展示最小摘要信息。输入私密口令解锁后，才能查看标题、域名、质量诊断和本地预览。
+                当前只展示最小摘要信息。输入私密密码后，才能查看标题、域名、质量诊断和本地预览。
               </p>
               <div className="task-facts">
                 <span>状态：{captureStatusLabel(selectedTask.status)}</span>
-                <span>模式：本机私密</span>
+                <span>模式：密码进入</span>
                 {vaultSummary?.lastUpdatedAt ? (
                   <span>最近更新：{formatDateTime(vaultSummary.lastUpdatedAt)}</span>
                 ) : null}
@@ -1199,10 +1182,10 @@ export function App() {
                     新标签预览
                   </button>
                   {isPrivateView && (
-                    <button className="ghost-btn" onClick={lockPrivateVaultAction} type="button">
-                      锁定私密库
-                    </button>
-                  )}
+                  <button className="ghost-btn" onClick={lockPrivateVaultAction} type="button">
+                      退出私密模式
+                  </button>
+                )}
                 </div>
               </div>
               <p className="muted">{selectedTask.source.url}</p>

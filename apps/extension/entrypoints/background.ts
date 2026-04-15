@@ -42,10 +42,17 @@ const logger = createLogger("background");
 export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
     logger.info("Extension installed or updated, registering context menu.");
-    chrome.contextMenus.create({
-      id: "keeppage-save-page",
-      title: "保存到 KeepPage",
-      contexts: ["page", "action"],
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: "keeppage-save-page",
+        title: "保存到 KeepPage",
+        contexts: ["page", "action"],
+      });
+      chrome.contextMenus.create({
+        id: "keeppage-save-page-private",
+        title: "保存到 KP 私密模式",
+        contexts: ["page", "action"],
+      });
     });
     void drainLocalArchiveQueue();
   });
@@ -56,18 +63,26 @@ export default defineBackground(() => {
   });
 
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId !== "keeppage-save-page" || !tab?.id) {
+    if (
+      info.menuItemId !== "keeppage-save-page" &&
+      info.menuItemId !== "keeppage-save-page-private"
+    ) {
       return;
     }
+    if (!tab?.id) {
+      return;
+    }
+    const saveMode = info.menuItemId === "keeppage-save-page-private" ? "private" : "standard";
     logger.info("Context menu capture requested.", {
       tabId: tab.id,
       url: tab.url,
+      saveMode,
     });
     if (tab.windowId != null) {
       if (!await ensureAuthenticated("context-menu")) {
         return;
       }
-      await attemptQuickCapture(tab.windowId);
+      await attemptQuickCapture(tab.windowId, saveMode);
     }
   });
 
@@ -227,7 +242,6 @@ export default defineBackground(() => {
         sendResponse({
           ok: true,
           summary: result.summary,
-          recoveryCode: result.recoveryCode,
         });
         return;
       }
@@ -294,11 +308,12 @@ async function ensureAuthenticated(trigger: string) {
   return false;
 }
 
-async function attemptQuickCapture(windowId: number | undefined) {
+async function attemptQuickCapture(windowId: number | undefined, saveMode: "standard" | "private" = "standard") {
   try {
-    await captureActiveTab();
+    await captureActiveTab(undefined, saveMode);
   } catch (error) {
     logger.warn("Quick capture failed.", {
+      saveMode,
       error: error instanceof Error ? error.message : String(error),
     });
   } finally {

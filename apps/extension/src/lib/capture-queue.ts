@@ -1,6 +1,7 @@
 import type {
   CaptureStatus,
   CaptureTask,
+  SaveMode,
 } from "@keeppage/domain";
 import { dbPromise } from "./extension-db";
 import {
@@ -21,12 +22,13 @@ export async function getCaptureTask(taskId: string) {
   return task ? captureTaskSchema.parse(task) : null;
 }
 
-export async function listCaptureTasks(limit = 20, ownerUserId?: string) {
+export async function listCaptureTasks(limit = 20, ownerUserId?: string, saveMode?: SaveMode) {
   const database = await dbPromise;
   const tasks = await database.getAll("captureTasks");
   return tasks
     .map((task) => captureTaskSchema.parse(task))
     .filter((task) => (ownerUserId ? task.owner?.userId === ownerUserId : true))
+    .filter((task) => (saveMode ? (task.saveMode ?? "standard") === saveMode : true))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, limit);
 }

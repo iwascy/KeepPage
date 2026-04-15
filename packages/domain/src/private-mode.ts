@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const saveModeValues = ["standard", "private"] as const;
-export const privateModeValues = ["local-only", "encrypted-sync"] as const;
+export const privateModeValues = ["local-only", "encrypted-sync", "password-gated"] as const;
 export const privateSyncStateValues = [
   "local-only",
   "sync-disabled",

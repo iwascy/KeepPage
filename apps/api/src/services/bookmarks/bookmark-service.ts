@@ -3,10 +3,12 @@ import {
   bookmarkSchema,
   bookmarkSearchResponseSchema,
   bookmarkSidebarStatsResponseSchema,
+  privateVaultSummarySchema,
   type BookmarkMetadataUpdateRequest,
 } from "@keeppage/domain";
 import { HttpError } from "../../lib/http-error";
 import type {
+  BookmarkRepository,
   BookmarkReadRepository,
   BookmarkWriteRepository,
   BookmarkSearchQuery,
@@ -14,12 +16,12 @@ import type {
 import type { ObjectStorage } from "../../storage/object-storage";
 
 type BookmarkServiceOptions = {
-  repository: BookmarkReadRepository & BookmarkWriteRepository;
+  repository: BookmarkRepository;
   objectStorage: ObjectStorage;
 };
 
 export class BookmarkService {
-  private readonly repository: BookmarkReadRepository & BookmarkWriteRepository;
+  private readonly repository: BookmarkRepository;
   private readonly objectStorage: ObjectStorage;
 
   constructor(options: BookmarkServiceOptions) {
@@ -37,8 +39,47 @@ export class BookmarkService {
     return bookmarkSidebarStatsResponseSchema.parse(result);
   }
 
+  async getPrivateVaultSummary(userId: string) {
+    const result = await this.repository.getPrivateVaultSummary(userId);
+    return privateVaultSummarySchema.parse(result);
+  }
+
   async getBookmarkDetail(userId: string, bookmarkId: string) {
     const detail = await this.requireBookmarkDetail(userId, bookmarkId);
+    const versions = await Promise.all(
+      detail.versions.map(async (version) => {
+        const [objectStat, readerObjectStat] = await Promise.all([
+          this.objectStorage.statObject(version.htmlObjectKey),
+          version.readerHtmlObjectKey
+            ? this.objectStorage.statObject(version.readerHtmlObjectKey)
+            : Promise.resolve(null),
+        ]);
+        return {
+          ...version,
+          archiveAvailable: objectStat !== null,
+          archiveSizeBytes: objectStat?.size,
+          readerArchiveAvailable: readerObjectStat !== null,
+          readerArchiveSizeBytes: readerObjectStat?.size,
+        };
+      }),
+    );
+
+    return bookmarkDetailResponseSchema.parse({
+      bookmark: detail.bookmark,
+      versions,
+    });
+  }
+
+  async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery) {
+    const result = await this.repository.searchPrivateBookmarks(userId, query);
+    return bookmarkSearchResponseSchema.parse(result);
+  }
+
+  async getPrivateBookmarkDetail(userId: string, bookmarkId: string) {
+    const detail = await this.repository.getPrivateBookmarkDetail(userId, bookmarkId);
+    if (!detail) {
+      throw new HttpError(404, "PrivateBookmarkNotFound", "Private bookmark not found.");
+    }
     const versions = await Promise.all(
       detail.versions.map(async (version) => {
         const [objectStat, readerObjectStat] = await Promise.all([

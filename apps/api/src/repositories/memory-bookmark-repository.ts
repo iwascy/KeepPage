@@ -3,6 +3,7 @@ import type {
   AuthUser,
   Bookmark,
   BookmarkMetadataUpdateRequest,
+  PrivateVaultSummary,
   BookmarkSearchResponse,
   BookmarkSidebarStatsResponse,
   CaptureCompleteRequest,
@@ -28,6 +29,7 @@ import type {
   ImportBookmarkMatch,
   IngestBookmarkResult,
   InitCaptureResult,
+  PrivateModeConfigRecord,
   UserAuthRecord,
 } from "./bookmark-repository";
 import * as apiTokensRepository from "./memory/api-tokens";
@@ -83,12 +85,36 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     return apiTokensRepository.touchApiToken(this.core, tokenId, usedAt);
   }
 
+  async getPrivateModeConfig(userId: string): Promise<PrivateModeConfigRecord | null> {
+    return this.core.getPrivateModeConfig(userId);
+  }
+
+  async enablePrivateMode(input: {
+    userId: string;
+    passwordHash: string;
+    passwordAlgo: string;
+  }): Promise<PrivateModeConfigRecord> {
+    return this.core.enablePrivateMode(input);
+  }
+
+  async getPrivateVaultSummary(userId: string): Promise<PrivateVaultSummary> {
+    return this.core.getPrivateVaultSummary(userId);
+  }
+
   async initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
     return capturesRepository.initCapture(this.core, userId, input);
   }
 
   async completeCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
     return capturesRepository.completeCapture(this.core, userId, input);
+  }
+
+  async initPrivateCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
+    return this.core.initPrivateCapture(userId, input);
+  }
+
+  async completePrivateCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
+    return this.core.completePrivateCapture(userId, input);
   }
 
   async ingestBookmark(userId: string, input: IngestBookmarkRequest): Promise<IngestBookmarkResult> {
@@ -105,6 +131,14 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
   async getBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null> {
     return bookmarksRepository.getBookmarkDetail(this.core, userId, bookmarkId);
+  }
+
+  async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse> {
+    return this.core.searchPrivateBookmarks(userId, query);
+  }
+
+  async getPrivateBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null> {
+    return this.core.getPrivateBookmarkDetail(userId, bookmarkId);
   }
 
   async deleteBookmark(userId: string, bookmarkId: string): Promise<boolean> {

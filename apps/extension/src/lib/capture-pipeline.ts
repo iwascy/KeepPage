@@ -14,15 +14,7 @@ import {
   putCaptureTask,
   transitionCaptureTaskStatus,
 } from "./capture-queue";
-import {
-  buildPrivateTaskShell,
-  getPrivateTask,
-  listPrivateTasks,
-  patchPrivateTaskShell,
-  putPrivateTaskPayload,
-  putPrivateTaskShell,
-  requirePrivateVaultUnlocked,
-} from "./private-vault";
+import { requirePrivateVaultUnlocked } from "./private-vault";
 import {
   MESSAGE_TYPE,
   type CaptureArchiveHtmlRequest,
@@ -82,12 +74,7 @@ export async function retryTask(
   saveModeOverride?: SaveMode,
 ) {
   const owner = await requireCurrentTaskOwner();
-  const saveMode = saveModeOverride ?? "standard";
-  const standardTask = saveMode === "standard" ? await getCaptureTask(taskId) : null;
-  const privateTask = saveMode === "private"
-    ? await getPrivateTask(taskId, owner.userId)
-    : null;
-  const task = standardTask ?? privateTask;
+  const task = await getCaptureTask(taskId);
   if (!task) {
     throw new Error("Task not found.");
   }
@@ -101,15 +88,15 @@ export async function retryTask(
     profileOverride,
     ownerUserId: owner.userId,
   });
+  const saveMode = saveModeOverride ?? task.saveMode ?? "standard";
   const retryProfile = profileOverride ?? task.profile;
   if (
-    saveMode === "standard" &&
     retryProfile === task.profile &&
     task.status === "upload_pending" &&
     task.artifacts?.archiveHtml &&
     typeof task.artifacts.extractedText === "string" &&
     task.quality &&
-      task.localArchiveSha256
+    task.localArchiveSha256
   ) {
     return syncTask(task);
   }
@@ -121,8 +108,7 @@ export async function retryTask(
 
 export async function openTaskPreview(taskId: string) {
   const owner = await requireCurrentTaskOwner();
-  const task = await getCaptureTask(taskId)
-    ?? await getPrivateTask(taskId, owner.userId);
+  const task = await getCaptureTask(taskId);
   if (!task?.artifacts?.archiveHtml) {
     throw new Error("Task archive HTML is not available for preview.");
   }
@@ -143,10 +129,7 @@ export async function listRecentTasks(limit = 20, saveMode: SaveMode = "standard
   if (!owner) {
     return [];
   }
-  if (saveMode === "private") {
-    return listPrivateTasks(limit, owner.userId);
-  }
-  return listCaptureTasks(limit, owner.userId);
+  return listCaptureTasks(limit, owner.userId, saveMode);
 }
 
 async function captureTab(
@@ -167,27 +150,15 @@ async function captureTab(
     status: "queued",
     saveMode,
     isPrivate: saveMode === "private",
-    privateMode: saveMode === "private" ? "local-only" : undefined,
-    syncState: saveMode === "private" ? "local-only" : undefined,
+    privateMode: saveMode === "private" ? "password-gated" : undefined,
+    syncState: saveMode === "private" ? "sync-pending" : undefined,
     profile,
     owner,
     source,
     createdAt: now,
     updatedAt: now,
   };
-  if (saveMode === "private") {
-    await putPrivateTaskShell(
-      buildPrivateTaskShell({
-        id: task.id,
-        status: task.status,
-        owner,
-        createdAt: now,
-        updatedAt: now,
-      }),
-    );
-  } else {
-    await putCaptureTask(task);
-  }
+  await putCaptureTask(task);
   await publishTaskByMode(task.id, saveMode, owner.userId);
   await logCapture(saveMode, "info", tabId, "Task queued.", {
     taskId: task.id,
@@ -202,18 +173,7 @@ async function captureTab(
   });
 
   try {
-    let workingTask = saveMode === "private"
-      ? {
-          ...task,
-          status: "capturing" as const,
-          updatedAt: new Date().toISOString(),
-        }
-      : await transitionCaptureTaskStatus(task.id, "capturing");
-    if (saveMode === "private") {
-      await patchPrivateTaskShell(task.id, {
-        status: "capturing",
-      });
-    }
+    let workingTask = await transitionCaptureTaskStatus(task.id, "capturing");
     await publishTaskByMode(task.id, saveMode, owner.userId);
     await logCapture(saveMode, "info", tabId, "Collecting live page signals.", {
       taskId: task.id,
@@ -249,11 +209,9 @@ async function captureTab(
       source: mergedSource,
       updatedAt: new Date().toISOString(),
     };
-    if (saveMode === "standard") {
-      workingTask = await patchCaptureTask(task.id, {
-        source: mergedSource,
-      });
-    }
+    workingTask = await patchCaptureTask(task.id, {
+      source: mergedSource,
+    });
     await publishTaskByMode(task.id, saveMode, owner.userId);
 
     const archiveResult = await sendMessageToTab<
@@ -315,42 +273,6 @@ async function captureTab(
       screenshotCaptured: Boolean(screenshotDataUrl),
     });
 
-    if (saveMode === "private") {
-      await patchPrivateTaskShell(task.id, {
-        status: "validating",
-      });
-      await publishTaskByMode(task.id, saveMode, owner.userId);
-      await patchPrivateTaskShell(task.id, {
-        status: "local_ready",
-      });
-      await putPrivateTaskPayload(task.id, {
-        profile,
-        source: mergedSource,
-        localArchiveSha256,
-        quality,
-        artifacts: {
-          archiveHtml,
-          readerHtml,
-          extractedText,
-          screenshotDataUrl: screenshotDataUrl ?? undefined,
-          downloadableMedia: archiveResult.ok ? archiveResult.downloadableMedia ?? [] : [],
-          meta: {
-            usedSingleFile: archiveResult.ok && archiveResult.usedSingleFile === true,
-          },
-        },
-      });
-      const privateTask = await getPrivateTask(task.id, owner.userId);
-      await publishTaskByMode(task.id, saveMode, owner.userId);
-      if (!privateTask) {
-        throw new Error("Private task saved but could not be reloaded.");
-      }
-      await showInPageSuccessToast(tabId, privateTask);
-      await logCapture(saveMode, "info", tabId, "Private task stored locally.", {
-        taskId: task.id,
-      });
-      return privateTask;
-    }
-
     workingTask = await transitionCaptureTaskStatus(task.id, "validating");
     await publishTaskByMode(task.id, saveMode, owner.userId);
     workingTask = await transitionCaptureTaskStatus(task.id, "local_ready", {
@@ -369,6 +291,11 @@ async function captureTab(
     });
     await publishTaskByMode(task.id, saveMode, owner.userId);
     workingTask = await transitionCaptureTaskStatus(task.id, "upload_pending");
+    if (saveMode === "private") {
+      workingTask = await patchCaptureTask(task.id, {
+        syncState: "sync-pending",
+      });
+    }
     await publishTaskByMode(task.id, saveMode, owner.userId);
     await logCapture(saveMode, "info", tabId, "Task ready for upload.", {
       taskId: task.id,
@@ -381,18 +308,6 @@ async function captureTab(
       tabId,
       error: message,
     });
-    if (saveMode === "private") {
-      await patchPrivateTaskShell(task.id, {
-        status: "failed",
-        failureReason: "私密保存失败，请重试。",
-      });
-      await publishTaskByMode(task.id, saveMode, owner.userId);
-      const failedTask = await getPrivateTask(task.id, owner.userId);
-      if (!failedTask) {
-        throw error;
-      }
-      return failedTask;
-    }
     const failedTask = await transitionCaptureTaskStatus(task.id, "failed", {
       failureReason: message,
     });
@@ -444,11 +359,12 @@ export async function captureSourceUrl(
 async function syncTask(task: CaptureTask, debugTabId?: number) {
   const owner = await requireCurrentTaskOwner();
   assertTaskOwnership(task, owner);
+  const saveMode = task.saveMode ?? (task.isPrivate ? "private" : "standard");
   let workingTask = await transitionCaptureTaskStatus(task.id, "uploading", {
     failureReason: undefined,
   });
-  await publishTaskByMode(task.id, "standard", owner.userId);
-  await logCapture("standard", "info", debugTabId, "Uploading task to API.", {
+  await publishTaskByMode(task.id, saveMode, owner.userId);
+  await logCapture(saveMode, "info", debugTabId, "Uploading task to API.", {
     taskId: task.id,
     url: task.source.url,
   });
@@ -458,13 +374,14 @@ async function syncTask(task: CaptureTask, debugTabId?: number) {
     workingTask = await transitionCaptureTaskStatus(task.id, "uploaded", {
       bookmarkId: syncResult.bookmarkId,
       versionId: syncResult.versionId,
+      syncState: task.isPrivate ? undefined : task.syncState,
       failureReason: undefined,
     });
-    await publishTaskByMode(task.id, "standard", owner.userId);
+    await publishTaskByMode(task.id, saveMode, owner.userId);
     workingTask = await transitionCaptureTaskStatus(task.id, "synced");
-    await publishTaskByMode(task.id, "standard", owner.userId);
+    await publishTaskByMode(task.id, saveMode, owner.userId);
     await showInPageSuccessToast(debugTabId, workingTask);
-    await logCapture("standard", "info", debugTabId, "Task synced successfully.", {
+    await logCapture(saveMode, "info", debugTabId, "Task synced successfully.", {
       taskId: task.id,
       bookmarkId: syncResult.bookmarkId,
       versionId: syncResult.versionId,
@@ -472,14 +389,15 @@ async function syncTask(task: CaptureTask, debugTabId?: number) {
     return workingTask;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await logCapture("standard", "error", debugTabId, "Task sync failed.", {
+    await logCapture(saveMode, "error", debugTabId, "Task sync failed.", {
       taskId: task.id,
       error: message,
     });
     workingTask = await transitionCaptureTaskStatus(task.id, "upload_pending", {
+      syncState: task.isPrivate ? "sync-failed" : task.syncState,
       failureReason: `同步失败，等待重试：${message}`,
     });
-    await publishTaskByMode(task.id, "standard", owner.userId);
+    await publishTaskByMode(task.id, saveMode, owner.userId);
     return workingTask;
   }
 }
@@ -513,7 +431,7 @@ async function showInPageSuccessToast(tabId: number | undefined, task: CaptureTa
 
 function buildTaskSyncedMessage(task: CaptureTask) {
   if (task.isPrivate) {
-    return "内容已加密写入当前设备的私密库。";
+    return "内容已保存到 KeepPage 私密模式。";
   }
   const pageTitle = task.source.title.trim() || task.source.url;
   return pageTitle.length > 84 ? `${pageTitle.slice(0, 81)}...` : pageTitle;
@@ -679,10 +597,11 @@ async function publishTask(task: CaptureTask) {
 }
 
 async function publishTaskByMode(taskId: string, saveMode: SaveMode, ownerUserId: string) {
-  const task = saveMode === "private"
-    ? await getPrivateTask(taskId, ownerUserId)
-    : await getCaptureTask(taskId);
+  const task = await getCaptureTask(taskId);
   if (!task) {
+    return;
+  }
+  if (task.owner?.userId !== ownerUserId || (task.saveMode ?? "standard") !== saveMode) {
     return;
   }
   await publishTask(task);
