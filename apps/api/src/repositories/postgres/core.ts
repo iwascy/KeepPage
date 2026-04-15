@@ -4,6 +4,7 @@ import {
   type ApiToken,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
+  bookmarkSidebarStatsResponseSchema,
   bookmarkVersionMediaFileSchema,
   bookmarkVersionSchema,
   captureSourceSchema,
@@ -803,6 +804,22 @@ export class PostgresRepositoryCore {
       );
     }
 
+    const totalRow = await this.db
+      .select({
+        total: count(),
+      })
+      .from(bookmarks)
+      .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
+      .leftJoin(folders, eq(bookmarks.folderId, folders.id))
+      .where(and(...conditions));
+    const total = Number(totalRow[0]?.total ?? 0);
+    if (total === 0) {
+      return bookmarkSearchResponseSchema.parse({
+        items: [],
+        total: 0,
+      });
+    }
+
     const rows = await this.db
       .select({
         id: bookmarks.id,
@@ -826,15 +843,14 @@ export class PostgresRepositoryCore {
       .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
       .leftJoin(folders, eq(bookmarks.folderId, folders.id))
       .where(and(...conditions))
-      .orderBy(desc(bookmarks.updatedAt));
-
-    const total = rows.length;
-    const paginatedRows = rows.slice(query.offset, query.offset + query.limit);
-    const paginatedBookmarkIds = paginatedRows.map((row) => row.id);
+      .orderBy(desc(bookmarks.updatedAt))
+      .limit(query.limit)
+      .offset(query.offset);
+    const paginatedBookmarkIds = rows.map((row) => row.id);
     const tagMap = await this.loadTagsByBookmarkId(paginatedBookmarkIds);
     const versionCountMap = await this.loadVersionCounts(paginatedBookmarkIds);
 
-    const paginated = paginatedRows.map((row) =>
+    const paginated = rows.map((row) =>
       this.mapBookmarkRow(row, {
         tags: tagMap.get(row.id) ?? [],
         versionCount: versionCountMap.get(row.id) ?? 0,
@@ -844,6 +860,31 @@ export class PostgresRepositoryCore {
     return bookmarkSearchResponseSchema.parse({
       items: paginated,
       total,
+    });
+  }
+
+  async getBookmarkSidebarStats(userId: string) {
+    const rows = await this.db
+      .select({
+        folderId: bookmarks.folderId,
+        count: count(),
+      })
+      .from(bookmarks)
+      .where(and(
+        eq(bookmarks.userId, userId),
+        sql<boolean>`${bookmarks.folderId} is not null`,
+      ))
+      .groupBy(bookmarks.folderId);
+
+    return bookmarkSidebarStatsResponseSchema.parse({
+      folderCounts: rows.flatMap((row) => (
+        typeof row.folderId === "string"
+          ? [{
+              folderId: row.folderId,
+              count: Number(row.count),
+            }]
+          : []
+      )),
     });
   }
 

@@ -23,6 +23,7 @@ import {
   deleteTag,
   fetchApiTokens,
   fetchBookmarkDetail,
+  fetchBookmarkFolderCounts,
   fetchBookmarks,
   fetchCloudArchiveTask,
   fetchCurrentUser,
@@ -91,6 +92,17 @@ function createInitialDemoApiTokens(): ApiTokenItem[] {
   ];
 }
 
+function buildFolderCountRecord(bookmarks: Bookmark[]) {
+  return bookmarks.reduce<Record<string, number>>((accumulator, bookmark) => {
+    const folderId = bookmark.folder?.id;
+    if (!folderId) {
+      return accumulator;
+    }
+    accumulator[folderId] = (accumulator[folderId] ?? 0) + 1;
+    return accumulator;
+  }, {});
+}
+
 export type RestoredSessionState =
   | { status: "anonymous"; token: null; user: null; error: string | null }
   | { status: "authenticated"; token: string; user: AuthUser; error: null };
@@ -107,6 +119,7 @@ export type AppDataSource = {
   register(input: { name?: string; email: string; password: string }): Promise<AuthSession>;
   fetchFolders(token: string): Promise<Folder[]>;
   fetchTags(token: string): Promise<Tag[]>;
+  fetchBookmarkFolderCounts(token: string): Promise<Record<string, number>>;
   searchBookmarks(query: BookmarkQuery, token: string): Promise<BookmarkResult>;
   fetchBookmarkDetail(bookmarkId: string, token: string): Promise<BookmarkDetailResult | null>;
   createArchivePreviewUrl(
@@ -207,6 +220,9 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
         },
         async fetchTags() {
           return demoState.tags;
+        },
+        async fetchBookmarkFolderCounts() {
+          return buildFolderCountRecord(demoState.bookmarks);
         },
         async searchBookmarks(query) {
           const filtered = filterDemoBookmarks(demoState, query);
@@ -385,6 +401,7 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
       register: registerAccount,
       fetchFolders,
       fetchTags,
+      fetchBookmarkFolderCounts,
       searchBookmarks: fetchBookmarks,
       fetchBookmarkDetail,
       async createArchivePreviewUrl(_versionId, objectKey, sourceUrl, token) {

@@ -2,6 +2,7 @@ import {
   bookmarkDetailResponseSchema,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
+  bookmarkSidebarStatsResponseSchema,
   type BookmarkMetadataUpdateRequest,
 } from "@keeppage/domain";
 import { HttpError } from "../../lib/http-error";
@@ -29,6 +30,11 @@ export class BookmarkService {
   async searchBookmarks(userId: string, query: BookmarkSearchQuery) {
     const result = await this.repository.searchBookmarks(userId, query);
     return bookmarkSearchResponseSchema.parse(result);
+  }
+
+  async getBookmarkSidebarStats(userId: string) {
+    const result = await this.repository.getBookmarkSidebarStats(userId);
+    return bookmarkSidebarStatsResponseSchema.parse(result);
   }
 
   async getBookmarkDetail(userId: string, bookmarkId: string) {

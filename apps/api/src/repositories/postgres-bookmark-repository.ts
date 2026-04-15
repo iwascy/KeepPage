@@ -4,6 +4,7 @@ import type {
   Bookmark,
   BookmarkMetadataUpdateRequest,
   BookmarkSearchResponse,
+  BookmarkSidebarStatsResponse,
   CaptureCompleteRequest,
   CaptureInitRequest,
   Folder,
@@ -96,6 +97,10 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
   async searchBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse> {
     return bookmarksRepository.searchBookmarks(this.core, userId, query);
+  }
+
+  async getBookmarkSidebarStats(userId: string): Promise<BookmarkSidebarStatsResponse> {
+    return bookmarksRepository.getBookmarkSidebarStats(this.core, userId);
   }
 
   async getBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null> {

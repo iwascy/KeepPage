@@ -2,6 +2,7 @@ import type {
   Bookmark,
   BookmarkMetadataUpdateRequest,
   BookmarkSearchResponse,
+  BookmarkSidebarStatsResponse,
   IngestBookmarkRequest,
 } from "@keeppage/domain";
 import type {
@@ -25,6 +26,13 @@ export function searchBookmarks(
   query: BookmarkSearchQuery,
 ): Promise<BookmarkSearchResponse> {
   return core.searchBookmarks(userId, query);
+}
+
+export function getBookmarkSidebarStats(
+  core: InMemoryRepositoryCore,
+  userId: string,
+): Promise<BookmarkSidebarStatsResponse> {
+  return core.getBookmarkSidebarStats(userId);
 }
 
 export function getBookmarkDetail(

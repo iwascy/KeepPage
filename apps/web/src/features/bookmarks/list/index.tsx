@@ -19,6 +19,19 @@ type InlineFeedback = {
   message: string;
 };
 
+type DesktopWindowState = {
+  enabled: boolean;
+  startIndex: number;
+  endIndex: number;
+  topSpacerHeight: number;
+  bottomSpacerHeight: number;
+};
+
+const DESKTOP_WINDOWING_BREAKPOINT = 1080;
+const DESKTOP_WINDOW_OVERSCAN_ROWS = 2;
+const DEFAULT_DESKTOP_CARD_WIDTH = 320;
+const DEFAULT_DESKTOP_CARD_HEIGHT = 430;
+
 function formatWhen(input: string) {
   const date = new Date(input);
   return new Intl.DateTimeFormat("zh-CN", {
@@ -278,6 +291,140 @@ function HomeBookmarkSkeleton() {
   );
 }
 
+function useDesktopWindowedBookmarks(items: Bookmark[]) {
+  const gridRef = useRef<HTMLElement | null>(null);
+  const [windowState, setWindowState] = useState<DesktopWindowState>({
+    enabled: false,
+    startIndex: 0,
+    endIndex: items.length,
+    topSpacerHeight: 0,
+    bottomSpacerHeight: 0,
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let frameId = 0;
+    const grid = gridRef.current;
+    if (!grid || items.length === 0) {
+      setWindowState({
+        enabled: false,
+        startIndex: 0,
+        endIndex: items.length,
+        topSpacerHeight: 0,
+        bottomSpacerHeight: 0,
+      });
+      return;
+    }
+
+    const updateWindow = () => {
+      frameId = 0;
+      const currentGrid = gridRef.current;
+      if (!currentGrid) {
+        return;
+      }
+
+      if (window.innerWidth <= DESKTOP_WINDOWING_BREAKPOINT) {
+        setWindowState((current) => (
+          current.enabled
+            || current.startIndex !== 0
+            || current.endIndex !== items.length
+            || current.topSpacerHeight !== 0
+            || current.bottomSpacerHeight !== 0
+            ? {
+                enabled: false,
+                startIndex: 0,
+                endIndex: items.length,
+                topSpacerHeight: 0,
+                bottomSpacerHeight: 0,
+              }
+            : current
+        ));
+        return;
+      }
+
+      const computedStyle = window.getComputedStyle(currentGrid);
+      const gap = Number.parseFloat(computedStyle.rowGap || computedStyle.gap || "0") || 0;
+      const sampleCard = currentGrid.querySelector<HTMLElement>(".home-bookmark-card");
+      const cardWidth = sampleCard?.offsetWidth || DEFAULT_DESKTOP_CARD_WIDTH;
+      const cardHeight = sampleCard?.offsetHeight || DEFAULT_DESKTOP_CARD_HEIGHT;
+      const columns = Math.max(
+        1,
+        Math.floor((currentGrid.clientWidth + gap) / Math.max(1, cardWidth + gap)),
+      );
+      const rowHeight = Math.max(1, cardHeight + gap);
+      const totalRows = Math.ceil(items.length / columns);
+      const scrollTop = window.scrollY;
+      const viewportHeight = window.innerHeight;
+      const gridTop = currentGrid.getBoundingClientRect().top + scrollTop;
+      const viewportStart = scrollTop - gridTop;
+      const viewportEnd = viewportStart + viewportHeight;
+      const startRow = Math.max(
+        0,
+        Math.floor(viewportStart / rowHeight) - DESKTOP_WINDOW_OVERSCAN_ROWS,
+      );
+      const endRow = Math.min(
+        totalRows,
+        Math.ceil(viewportEnd / rowHeight) + DESKTOP_WINDOW_OVERSCAN_ROWS,
+      );
+      const startIndex = Math.min(items.length, startRow * columns);
+      const endIndex = Math.max(
+        Math.min(items.length, endRow * columns),
+        Math.min(items.length, startIndex + columns),
+      );
+      const topSpacerHeight = startRow * rowHeight;
+      const bottomSpacerHeight = Math.max(0, (totalRows - endRow) * rowHeight);
+
+      setWindowState((current) => (
+        current.enabled
+        && current.startIndex === startIndex
+        && current.endIndex === endIndex
+        && current.topSpacerHeight === topSpacerHeight
+        && current.bottomSpacerHeight === bottomSpacerHeight
+          ? current
+          : {
+              enabled: items.length > endIndex - startIndex,
+              startIndex,
+              endIndex,
+              topSpacerHeight,
+              bottomSpacerHeight,
+            }
+      ));
+    };
+
+    const scheduleUpdate = () => {
+      if (frameId !== 0) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(updateWindow);
+    };
+
+    scheduleUpdate();
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => scheduleUpdate());
+    resizeObserver?.observe(grid);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      if (frameId !== 0) {
+        window.cancelAnimationFrame(frameId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [items]);
+
+  return {
+    gridRef,
+    windowState,
+  };
+}
+
 function HomePage({
   items,
   bookmarkView,
@@ -315,10 +462,14 @@ function HomePage({
   selectedIds: Set<string>;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
+  const { gridRef, windowState } = useDesktopWindowedBookmarks(items);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
   const showEmpty = !showLoading && !showError && items.length === 0;
+  const visibleItems = windowState.enabled
+    ? items.slice(windowState.startIndex, windowState.endIndex)
+    : items;
   const emptyTitle = hasActiveFilters
     ? "当前筛选下没有匹配的归档"
     : bookmarkView === "favorites"
@@ -423,8 +574,15 @@ function HomePage({
         </section>
       ) : (
         <>
-          <section className="home-grid">
-            {items.map((bookmark) => (
+          <section className="home-grid" ref={gridRef}>
+            {windowState.enabled && windowState.topSpacerHeight > 0 ? (
+              <div
+                className="home-grid-spacer"
+                style={{ height: `${windowState.topSpacerHeight}px` }}
+                aria-hidden="true"
+              />
+            ) : null}
+            {visibleItems.map((bookmark) => (
               <HomeBookmarkCard
                 key={bookmark.id}
                 bookmark={bookmark}
@@ -438,6 +596,13 @@ function HomePage({
                 mobileVariant={!selectionMode && bookmark.id === items[0]?.id ? "featured" : "compact"}
               />
             ))}
+            {windowState.enabled && windowState.bottomSpacerHeight > 0 ? (
+              <div
+                className="home-grid-spacer"
+                style={{ height: `${windowState.bottomSpacerHeight}px` }}
+                aria-hidden="true"
+              />
+            ) : null}
           </section>
           {hasMoreItems ? (
             <div className="home-load-more-anchor" ref={loadMoreRef} aria-hidden="true" />

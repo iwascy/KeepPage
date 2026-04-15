@@ -265,6 +265,13 @@ export const bookmarkSearchResponseSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 
+export const bookmarkSidebarStatsResponseSchema = z.object({
+  folderCounts: z.array(z.object({
+    folderId: z.string().min(1),
+    count: z.number().int().nonnegative(),
+  })),
+});
+
 export const folderListResponseSchema = z.object({
   items: z.array(folderSchema),
 });
@@ -357,6 +364,7 @@ export type CaptureInitRequest = z.infer<typeof captureInitRequestSchema>;
 export type CaptureInitResponse = z.infer<typeof captureInitResponseSchema>;
 export type CaptureCompleteRequest = z.infer<typeof captureCompleteRequestSchema>;
 export type BookmarkSearchResponse = z.infer<typeof bookmarkSearchResponseSchema>;
+export type BookmarkSidebarStatsResponse = z.infer<typeof bookmarkSidebarStatsResponseSchema>;
 export type BookmarkDetailResponse = z.infer<typeof bookmarkDetailResponseSchema>;
 export type FolderListResponse = z.infer<typeof folderListResponseSchema>;
 export type FolderCreateRequest = z.infer<typeof folderCreateRequestSchema>;

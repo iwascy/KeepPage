@@ -101,7 +101,6 @@ type ContextMenuGroup = {
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 const API_TOKEN_SECRET_STORAGE_PREFIX = "keeppage.api-token-secrets";
 const BOOKMARKS_PAGE_SIZE = 24;
-const SIDEBAR_COUNT_PAGE_SIZE = 100;
 
 type ApiTokenSecretRecord = {
   value: string;
@@ -507,7 +506,7 @@ function userInitials(user: AuthUser) {
 function AppShell({
   user,
   items,
-  countItems,
+  folderItemCounts,
   folders,
   tags,
   routePage,
@@ -537,7 +536,7 @@ function AppShell({
 }: {
   user: AuthUser;
   items: Bookmark[];
-  countItems: Bookmark[];
+  folderItemCounts: Record<string, number>;
   folders: Folder[];
   tags: Tag[];
   routePage: ViewRoute["page"];
@@ -640,19 +639,20 @@ function AppShell({
 
   const folderCounts = useMemo(() => {
     const mapping = new Map<string, number>();
-    for (const folder of sortedFolders) {
-      const descendantIds = new Set(descendantIdsByFolder.get(folder.id) ?? [folder.id]);
-      let count = 0;
-      for (const item of countItems) {
-        const folderId = item.folder?.id;
-        if (folderId && descendantIds.has(folderId)) {
-          count += 1;
-        }
-      }
-      mapping.set(folder.id, count);
+    function visit(folderId: string): number {
+      const directCount = folderItemCounts[folderId] ?? 0;
+      const nestedCount = (childrenByParent.get(folderId) ?? [])
+        .reduce((sum, child) => sum + visit(child.id), 0);
+      const total = directCount + nestedCount;
+      mapping.set(folderId, total);
+      return total;
+    }
+
+    for (const folder of childrenByParent.get(null) ?? []) {
+      visit(folder.id);
     }
     return mapping;
-  }, [countItems, descendantIdsByFolder, sortedFolders]);
+  }, [childrenByParent, folderItemCounts]);
 
   useEffect(() => {
     setCollapsedFolderIds((current) => {
@@ -2867,7 +2867,7 @@ export function App({
   const [selectedTagId, setSelectedTagId] = useState("");
   const [items, setItems] = useState<Bookmark[]>([]);
   const [listTotal, setListTotal] = useState(0);
-  const [sidebarCountItems, setSidebarCountItems] = useState<Bookmark[]>([]);
+  const [sidebarFolderCounts, setSidebarFolderCounts] = useState<Record<string, number>>({});
   const [folders, setFolders] = useState<Folder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -2970,7 +2970,7 @@ export function App({
         error: message ?? null,
       });
       setItems([]);
-      setSidebarCountItems([]);
+      setSidebarFolderCounts({});
       setFolders([]);
       setTags([]);
       setBookmarkView("all");
@@ -3113,7 +3113,7 @@ export function App({
           });
           if (authToken) {
             void refreshBookmarksList(authToken);
-            void refreshSidebarCountItems(authToken);
+            void refreshSidebarFolderCounts(authToken);
             if (route.page === "detail" && task.bookmarkId === route.bookmarkId) {
               void refreshBookmarkDetail(authToken, route.bookmarkId);
             }
@@ -3360,17 +3360,17 @@ export function App({
 
   useEffect(() => {
     if (!authToken) {
-      setSidebarCountItems([]);
+      setSidebarFolderCounts({});
       return;
     }
 
     let cancelled = false;
-    loadSidebarCountItems(authToken)
-      .then((nextItems) => {
+    appDataSource.fetchBookmarkFolderCounts(authToken)
+      .then((nextCounts) => {
         if (cancelled) {
           return;
         }
-        setSidebarCountItems(nextItems);
+        setSidebarFolderCounts(nextCounts);
       })
       .catch((error) => {
         if (cancelled || handleProtectedApiError(error)) {
@@ -3646,36 +3646,9 @@ export function App({
     selectedVersion?.id,
   ]);
 
-  async function loadSidebarCountItems(currentToken: string) {
-    const nextItems: Bookmark[] = [];
-    let offset = 0;
-    let total = 0;
-
-    do {
-      const result = await appDataSource.searchBookmarks(
-        {
-          search: "",
-          quality: "all",
-          view: "all",
-          limit: SIDEBAR_COUNT_PAGE_SIZE,
-          offset,
-        },
-        currentToken,
-      );
-      nextItems.push(...result.items);
-      total = result.total;
-      offset += result.items.length;
-      if (result.items.length === 0) {
-        break;
-      }
-    } while (nextItems.length < total);
-
-    return nextItems;
-  }
-
-  async function refreshSidebarCountItems(currentToken: string) {
-    const nextItems = await loadSidebarCountItems(currentToken);
-    setSidebarCountItems(nextItems);
+  async function refreshSidebarFolderCounts(currentToken: string) {
+    const nextCounts = await appDataSource.fetchBookmarkFolderCounts(currentToken);
+    setSidebarFolderCounts(nextCounts);
   }
 
   async function refreshCatalogs(currentToken: string) {
@@ -3772,7 +3745,7 @@ export function App({
     try {
       const message = await action();
       await refreshCatalogs(authToken);
-      await refreshSidebarCountItems(authToken);
+      await refreshSidebarFolderCounts(authToken);
       await refreshBookmarksList(authToken);
       if (route.page === "detail") {
         await refreshBookmarkDetail(authToken, route.bookmarkId);
@@ -3820,12 +3793,12 @@ export function App({
           kind: "error",
           message: `批量删除完成，但有 ${failed} 条失败。`,
         });
-        await refreshSidebarCountItems(authToken!);
+        await refreshSidebarFolderCounts(authToken!);
         await refreshBookmarksList(authToken!);
         exitSelectionMode();
         return;
       }
-      await refreshSidebarCountItems(authToken!);
+      await refreshSidebarFolderCounts(authToken!);
       await refreshBookmarksList(authToken!);
       setManagerFeedback({
         kind: "success",
@@ -3848,7 +3821,7 @@ export function App({
       await Promise.allSettled(
         [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { isFavorite }, authToken!)),
       );
-      await refreshSidebarCountItems(authToken!);
+      await refreshSidebarFolderCounts(authToken!);
       await refreshBookmarksList(authToken!);
       setManagerFeedback({
         kind: "success",
@@ -3905,7 +3878,7 @@ export function App({
       await Promise.allSettled(
         [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { folderId }, authToken!)),
       );
-      await refreshSidebarCountItems(authToken!);
+      await refreshSidebarFolderCounts(authToken!);
       await refreshBookmarksList(authToken!);
       const folderName = folderId
         ? (folders.find((f) => f.id === folderId)?.name ?? "指定收藏夹")
@@ -3931,7 +3904,7 @@ export function App({
       await Promise.allSettled(
         [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { tagIds }, authToken!)),
       );
-      await refreshSidebarCountItems(authToken!);
+      await refreshSidebarFolderCounts(authToken!);
       await refreshBookmarksList(authToken!);
       const tagName = tags.find((t) => t.id === tagIds[0])?.name ?? "标签";
       setManagerFeedback({
@@ -4121,7 +4094,7 @@ export function App({
         },
         authToken,
       );
-      await refreshSidebarCountItems(authToken);
+      await refreshSidebarFolderCounts(authToken);
       await refreshBookmarksList(authToken);
       await refreshBookmarkDetail(authToken, updated.id);
       setMetadataFeedback({
@@ -4150,7 +4123,7 @@ export function App({
     setManagerFeedback(null);
     try {
       await appDataSource.updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
-      await refreshSidebarCountItems(authToken);
+      await refreshSidebarFolderCounts(authToken);
       await refreshBookmarksList(authToken);
       if (route.page === "detail" && route.bookmarkId === bookmark.id) {
         await refreshBookmarkDetail(authToken, bookmark.id);
@@ -4437,7 +4410,7 @@ export function App({
       <AppShell
         user={session.user}
         items={items}
-        countItems={sidebarCountItems}
+        folderItemCounts={sidebarFolderCounts}
         folders={folders}
         tags={tags}
         routePage={route.page}

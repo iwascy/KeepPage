@@ -483,6 +483,26 @@ export class InMemoryRepositoryCore {
     };
   }
 
+  async getBookmarkSidebarStats(userId: string) {
+    const state = this.ensureUserState(userId);
+    const folderCounts = new Map<string, number>();
+
+    for (const bookmark of state.bookmarks.values()) {
+      const folderId = bookmark.folder?.id;
+      if (!folderId) {
+        continue;
+      }
+      folderCounts.set(folderId, (folderCounts.get(folderId) ?? 0) + 1);
+    }
+
+    return {
+      folderCounts: [...folderCounts.entries()].map(([folderId, count]) => ({
+        folderId,
+        count,
+      })),
+    };
+  }
+
   async getBookmarkDetail(userId: string, bookmarkId: string) {
     const state = this.ensureUserState(userId);
     const bookmark = state.bookmarks.get(bookmarkId);

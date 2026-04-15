@@ -7,6 +7,7 @@ import {
   bookmarkDetailResponseSchema,
   bookmarkListViewSchema,
   bookmarkMetadataUpdateRequestSchema,
+  bookmarkSidebarStatsResponseSchema,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
   cloudArchiveResponseSchema,
@@ -477,6 +478,16 @@ export async function fetchBookmarks(query: BookmarkQuery, token: string): Promi
     total: payload.total,
     source: "api",
   };
+}
+
+export async function fetchBookmarkFolderCounts(token: string): Promise<Record<string, number>> {
+  const payload = await requestJson("/bookmarks/sidebar-stats", bookmarkSidebarStatsResponseSchema, {
+    token,
+  });
+  return payload.folderCounts.reduce<Record<string, number>>((accumulator, item) => {
+    accumulator[item.folderId] = item.count;
+    return accumulator;
+  }, {});
 }
 
 export async function fetchBookmarkDetail(

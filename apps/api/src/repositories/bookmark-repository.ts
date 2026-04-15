@@ -6,6 +6,7 @@ import type {
   BookmarkListView,
   BookmarkMetadataUpdateRequest,
   BookmarkSearchResponse,
+  BookmarkSidebarStatsResponse,
   BookmarkVersion,
   CaptureCompleteRequest,
   CaptureInitRequest,
@@ -143,6 +144,7 @@ export interface IngestRepository extends RepositoryInfo {
 
 export interface BookmarkReadRepository extends RepositoryInfo {
   searchBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse>;
+  getBookmarkSidebarStats(userId: string): Promise<BookmarkSidebarStatsResponse>;
   getBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null>;
 }
 

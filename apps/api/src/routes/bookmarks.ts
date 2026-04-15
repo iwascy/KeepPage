@@ -34,6 +34,11 @@ export async function registerBookmarkRoutes(
     return reply.send(await bookmarkService.searchBookmarks(user.id, query));
   });
 
+  app.get("/bookmarks/sidebar-stats", async (request, reply) => {
+    const user = await authService.requireUser(request);
+    return reply.send(await bookmarkService.getBookmarkSidebarStats(user.id));
+  });
+
   app.get<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId", async (request, reply) => {
     const user = await authService.requireUser(request);
     const params = bookmarkParamsSchema.parse(request.params);
