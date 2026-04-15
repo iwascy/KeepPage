@@ -1038,6 +1038,7 @@ button {
   position: fixed;
   inset: 0;
   pointer-events: none;
+  transform: translateZ(0);
   background:
     linear-gradient(120deg, rgba(255, 255, 255, 0.55), transparent 48%),
     radial-gradient(circle at 72% 64%, rgba(255, 255, 255, 0.45), transparent 30%);
@@ -1079,6 +1080,7 @@ button {
     rgba(255, 255, 255, 0.52);
   backdrop-filter: blur(34px);
   -webkit-backdrop-filter: blur(34px);
+  transform: translateZ(0);
   box-shadow: 10px 0 42px rgba(45, 51, 56, 0.05);
   overflow: hidden;
 }
@@ -2433,8 +2435,10 @@ button {
   justify-content: flex-end;
   padding: 0.9rem 1.75rem;
   background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transform: translateZ(0);
+  will-change: backdrop-filter;
   box-shadow: var(--shadow-soft);
 }
 

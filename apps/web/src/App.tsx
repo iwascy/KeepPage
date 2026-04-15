@@ -2,6 +2,7 @@ import {
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -3016,7 +3017,7 @@ export function App({
     setBatchDropdown("closed");
   }
 
-  function toggleSelected(bookmarkId: string) {
+  const toggleSelected = useCallback((bookmarkId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(bookmarkId)) {
@@ -3026,7 +3027,7 @@ export function App({
       }
       return next;
     });
-  }
+  }, []);
 
   function selectAllBookmarks() {
     setSelectedIds(new Set(items.map((b) => b.id)));
@@ -3207,20 +3208,20 @@ export function App({
     setManagerDialogError(null);
   }
 
-  function openBookmarkContextMenu(bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    openBookmarkContextMenuAt(bookmark, event.clientX, event.clientY);
-  }
-
-  function openBookmarkContextMenuAt(bookmark: Bookmark, x: number, y: number) {
+  const openBookmarkContextMenuAt = useCallback((bookmark: Bookmark, x: number, y: number) => {
     setContextMenu({
       kind: "bookmark",
       bookmark,
       x,
       y,
     });
-  }
+  }, []);
+
+  const openBookmarkContextMenu = useCallback((bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openBookmarkContextMenuAt(bookmark, event.clientX, event.clientY);
+  }, [openBookmarkContextMenuAt]);
 
   function openFolderContextMenu(folder: Folder, event: ReactMouseEvent<HTMLElement>) {
     event.preventDefault();
