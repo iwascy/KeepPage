@@ -15,6 +15,12 @@ import {
   ensureArchiveBaseHref,
   folderListResponseSchema,
   folderSchema,
+  privateBookmarkDetailResponseSchema,
+  privateBookmarkSearchResponseSchema,
+  privateModeSetupRequestSchema,
+  privateModeUnlockRequestSchema,
+  privateModeUnlockResponseSchema,
+  privateVaultSummarySchema,
   tagListResponseSchema,
   tagSchema,
   type ApiToken,
@@ -35,6 +41,8 @@ import {
   type FolderCreateRequest,
   type FolderUpdateRequest,
   type QualityGrade,
+  type PrivateModeUnlockResponse,
+  type PrivateVaultSummary,
   type Tag,
   type TagCreateRequest,
   type TagUpdateRequest,
@@ -209,6 +217,7 @@ export type ApiTokenItem = ApiToken;
 type RequestOptions = {
   method?: string;
   token?: string;
+  privateToken?: string;
   body?: unknown;
   headers?: Record<string, string>;
 };
@@ -224,6 +233,9 @@ async function request(path: string, options: RequestOptions = {}) {
   };
   if (options.token) {
     headers.authorization = `Bearer ${options.token}`;
+  }
+  if (options.privateToken) {
+    headers["x-keeppage-private-token"] = options.privateToken;
   }
   if (options.body !== undefined) {
     headers["content-type"] = "application/json";
@@ -480,6 +492,69 @@ export async function fetchBookmarks(query: BookmarkQuery, token: string): Promi
   };
 }
 
+export async function fetchPrivateModeStatus(token: string, privateToken?: string): Promise<PrivateVaultSummary> {
+  return requestJson("/private-mode/status", privateVaultSummarySchema, {
+    token,
+    privateToken,
+  });
+}
+
+export async function setupPrivateMode(password: string, token: string): Promise<PrivateModeUnlockResponse> {
+  const payload = privateModeSetupRequestSchema.parse({ password });
+  return requestJson("/private-mode/setup", privateModeUnlockResponseSchema, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export async function unlockPrivateMode(password: string, token: string): Promise<PrivateModeUnlockResponse> {
+  const payload = privateModeUnlockRequestSchema.parse({ password });
+  return requestJson("/private-mode/unlock", privateModeUnlockResponseSchema, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export async function lockPrivateMode(token: string): Promise<PrivateVaultSummary> {
+  return requestJson("/private-mode/lock", privateVaultSummarySchema, {
+    method: "POST",
+    token,
+  });
+}
+
+export async function fetchPrivateBookmarks(
+  query: BookmarkQuery,
+  token: string,
+  privateToken: string,
+): Promise<BookmarkResult> {
+  const params = new URLSearchParams();
+  if (query.search.trim()) {
+    params.set("q", query.search.trim());
+  }
+  params.set("view", bookmarkListViewSchema.parse(query.view));
+  if (query.quality !== "all") {
+    params.set("quality", query.quality);
+  }
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  if (query.offset !== undefined) {
+    params.set("offset", String(query.offset));
+  }
+  const path = `/private/bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
+  const payload = await requestJson(path, privateBookmarkSearchResponseSchema, {
+    token,
+    privateToken,
+  });
+  return {
+    items: payload.items,
+    total: payload.total,
+    source: "api",
+  };
+}
+
 export async function fetchBookmarkFolderCounts(token: string): Promise<Record<string, number>> {
   const payload = await requestJson("/bookmarks/sidebar-stats", bookmarkSidebarStatsResponseSchema, {
     token,
@@ -488,6 +563,33 @@ export async function fetchBookmarkFolderCounts(token: string): Promise<Record<s
     accumulator[item.folderId] = item.count;
     return accumulator;
   }, {});
+}
+
+export async function fetchPrivateBookmarkDetail(
+  bookmarkId: string,
+  token: string,
+  privateToken: string,
+): Promise<BookmarkDetailResult | null> {
+  try {
+    const payload = await requestJson(
+      `/private/bookmarks/${encodeURIComponent(bookmarkId)}`,
+      privateBookmarkDetailResponseSchema,
+      {
+        token,
+        privateToken,
+      },
+    );
+    return {
+      bookmark: payload.bookmark,
+      versions: payload.versions,
+      source: "api",
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function fetchBookmarkDetail(
@@ -599,12 +701,18 @@ export async function deleteTag(tagId: string, token: string) {
   });
 }
 
-export async function createArchiveObjectUrl(token: string, objectKey: string, sourceUrl: string) {
+export async function createArchiveObjectUrl(
+  token: string,
+  objectKey: string,
+  sourceUrl: string,
+  privateToken?: string,
+) {
   const response = await fetch(
     `${resolveApiBase()}/objects?key=${encodeURIComponent(objectKey)}`,
     {
       headers: {
         authorization: `Bearer ${token}`,
+        ...(privateToken ? { "x-keeppage-private-token": privateToken } : {}),
       },
     },
   );

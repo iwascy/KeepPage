@@ -6,6 +6,7 @@ import { createRepository } from "./repositories";
 import { registerRoutes } from "./routes";
 import { ApiTokenService } from "./services/api-tokens/api-token-service";
 import { AuthService } from "./services/auth/auth-service";
+import { PrivateModeService } from "./services/auth/private-mode-service";
 import { BookmarkService } from "./services/bookmarks/bookmark-service";
 import { CloudArchiveManager } from "./services/cloud-archive/cloud-archive-manager";
 import { ImportService } from "./services/imports/import-service";
@@ -37,6 +38,10 @@ export function buildServer(config: ApiConfig) {
   });
   const authService = new AuthService({
     apiTokenService,
+    config,
+    repository,
+  });
+  const privateModeService = new PrivateModeService({
     config,
     repository,
   });
@@ -123,6 +128,7 @@ export function buildServer(config: ApiConfig) {
       instance,
       config,
       authService,
+      privateModeService,
       apiTokenService,
       repository,
       cloudArchiveManager,

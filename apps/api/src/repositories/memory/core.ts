@@ -20,6 +20,7 @@ import {
   type ImportTask,
   type ImportTaskDetailResponse,
   type ImportTaskItem,
+  type PrivateVaultSummary,
   type Tag,
   type TagCreateRequest,
   type TagUpdateRequest,
@@ -36,6 +37,7 @@ import type {
   IngestBookmarkResult,
   ImportBookmarkMatch,
   InitCaptureResult,
+  PrivateModeConfigRecord,
   PreparedImportItem,
   UserAuthRecord,
 } from "../bookmark-repository";
@@ -52,12 +54,18 @@ type PendingCapture = {
 
 type StoredUser = UserAuthRecord;
 type StoredApiToken = ApiTokenAuthRecord;
+type StoredPrivateModeConfig = PrivateModeConfigRecord;
 
 type UserBookmarkState = {
   bookmarks: Map<string, Bookmark>;
   versionsByBookmark: Map<string, BookmarkVersion[]>;
   pendingByObjectKey: Map<string, PendingCapture>;
   versionsByObjectKey: Map<string, BookmarkVersion>;
+  privateBookmarks: Map<string, Bookmark>;
+  privateVersionsByBookmark: Map<string, BookmarkVersion[]>;
+  privatePendingByObjectKey: Map<string, PendingCapture>;
+  privateVersionsByObjectKey: Map<string, BookmarkVersion>;
+  privateModeConfig: StoredPrivateModeConfig | null;
   folders: Map<string, Folder>;
   tags: Map<string, Tag>;
   importTasks: Map<string, ImportTask>;
@@ -181,6 +189,45 @@ export class InMemoryRepositoryCore {
     this.apiTokensById.set(token.id, token);
   }
 
+  async getPrivateModeConfig(userId: string): Promise<PrivateModeConfigRecord | null> {
+    const state = this.ensureUserState(userId);
+    return state.privateModeConfig;
+  }
+
+  async enablePrivateMode(input: {
+    userId: string;
+    passwordHash: string;
+    passwordAlgo: string;
+  }): Promise<PrivateModeConfigRecord> {
+    const state = this.ensureUserState(input.userId);
+    const now = new Date().toISOString();
+    const nextConfig: PrivateModeConfigRecord = {
+      userId: input.userId,
+      passwordHash: input.passwordHash,
+      passwordAlgo: input.passwordAlgo,
+      enabledAt: state.privateModeConfig?.enabledAt ?? now,
+      passwordUpdatedAt: now,
+    };
+    state.privateModeConfig = nextConfig;
+    return nextConfig;
+  }
+
+  async getPrivateVaultSummary(userId: string): Promise<PrivateVaultSummary> {
+    const state = this.ensureUserState(userId);
+    const latestUpdatedAt = [...state.privateBookmarks.values()]
+      .map((bookmark) => bookmark.updatedAt)
+      .sort((left, right) => right.localeCompare(left))[0];
+    return {
+      enabled: Boolean(state.privateModeConfig),
+      unlocked: false,
+      autoLock: "browser",
+      totalItems: state.privateBookmarks.size,
+      pendingSyncCount: state.privatePendingByObjectKey.size,
+      syncEnabled: true,
+      lastUpdatedAt: latestUpdatedAt,
+    };
+  }
+
   async initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
     const state = this.ensureUserState(userId);
     const normalizedUrl = normalizeSourceUrl(input.url);
@@ -222,6 +269,49 @@ export class InMemoryRepositoryCore {
 
     const objectKey = this.createObjectKey(userId);
     state.pendingByObjectKey.set(objectKey, { objectKey, request: input });
+    return { alreadyExists: false, objectKey };
+  }
+
+  async initPrivateCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
+    const state = this.ensureUserState(userId);
+    const normalizedUrl = normalizeSourceUrl(input.url);
+    const normalizedUrlHash = hashNormalizedUrl(normalizedUrl);
+
+    for (const bookmark of state.privateBookmarks.values()) {
+      const bookmarkHash = hashNormalizedUrl(normalizeSourceUrl(bookmark.sourceUrl));
+      if (bookmarkHash !== normalizedUrlHash) {
+        continue;
+      }
+
+      const versions = state.privateVersionsByBookmark.get(bookmark.id) ?? [];
+      const matchedVersion = versions.find((version) => version.htmlSha256 === input.htmlSha256);
+      if (!matchedVersion) {
+        continue;
+      }
+
+      return {
+        alreadyExists: true,
+        bookmarkId: bookmark.id,
+        versionId: matchedVersion.id,
+        objectKey: matchedVersion.htmlObjectKey,
+      };
+    }
+
+    for (const pendingCapture of state.privatePendingByObjectKey.values()) {
+      const pendingHash = hashNormalizedUrl(normalizeSourceUrl(pendingCapture.request.url));
+      if (
+        pendingHash === normalizedUrlHash &&
+        pendingCapture.request.htmlSha256 === input.htmlSha256
+      ) {
+        return {
+          alreadyExists: false,
+          objectKey: pendingCapture.objectKey,
+        };
+      }
+    }
+
+    const objectKey = this.createPrivateObjectKey(userId);
+    state.privatePendingByObjectKey.set(objectKey, { objectKey, request: input });
     return { alreadyExists: false, objectKey };
   }
 
@@ -344,6 +434,131 @@ export class InMemoryRepositoryCore {
     bookmark.versionCount = versions.length;
     bookmark.updatedAt = now;
     state.bookmarks.set(bookmark.id, bookmark);
+
+    return {
+      bookmark,
+      versionId: version.id,
+      createdNewVersion: true,
+      deduplicated: false,
+    };
+  }
+
+  async completePrivateCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
+    const state = this.ensureUserState(userId);
+    const pendingCapture = state.privatePendingByObjectKey.get(input.objectKey);
+    const existingByObjectKey = state.privateVersionsByObjectKey.get(input.objectKey);
+    if (!pendingCapture && existingByObjectKey) {
+      await this.persistReaderArchive(state, existingByObjectKey, input.readerHtml);
+      existingByObjectKey.mediaFiles = mergeBookmarkMediaFiles(
+        existingByObjectKey.mediaFiles,
+        input.mediaFiles,
+      );
+      for (const mediaFile of existingByObjectKey.mediaFiles ?? []) {
+        state.privateVersionsByObjectKey.set(mediaFile.objectKey, existingByObjectKey);
+      }
+      const bookmark = state.privateBookmarks.get(existingByObjectKey.bookmarkId);
+      if (!bookmark) {
+        throw new Error("Existing private version not linked to bookmark.");
+      }
+      const versions = state.privateVersionsByBookmark.get(bookmark.id) ?? [];
+      const now = new Date().toISOString();
+      bookmark.sourceUrl = input.source.url;
+      bookmark.canonicalUrl = input.source.canonicalUrl;
+      bookmark.title = input.source.title;
+      bookmark.domain = input.source.domain;
+      bookmark.faviconUrl = input.source.faviconUrl;
+      bookmark.coverImageUrl = input.source.coverImageUrl;
+      bookmark.latestVersionId = existingByObjectKey.id;
+      bookmark.latestQuality = input.quality;
+      bookmark.updatedAt = now;
+      bookmark.versionCount = versions.length;
+      state.privateBookmarks.set(bookmark.id, bookmark);
+      return {
+        bookmark,
+        versionId: existingByObjectKey.id,
+        createdNewVersion: false,
+        deduplicated: true,
+      };
+    }
+    if (!pendingCapture) {
+      throw new Error("Pending private capture not found for object key.");
+    }
+    if (!(await this.objectStorage.hasObject(input.objectKey))) {
+      throw new Error("Uploaded private archive object not found.");
+    }
+
+    const normalizedUrl = normalizeSourceUrl(input.source.url);
+    const normalizedUrlHash = hashNormalizedUrl(normalizedUrl);
+    const now = new Date().toISOString();
+    const bookmark = this.findPrivateBookmarkByNormalizedHash(state, normalizedUrlHash)
+      ?? this.createPrivateBookmark(state, input, now);
+    const versions = state.privateVersionsByBookmark.get(bookmark.id) ?? [];
+    const matchedVersion = versions.find((version) => version.htmlSha256 === input.htmlSha256);
+
+    if (matchedVersion) {
+      await this.persistReaderArchive(state, matchedVersion, input.readerHtml);
+      matchedVersion.mediaFiles = mergeBookmarkMediaFiles(matchedVersion.mediaFiles, input.mediaFiles);
+      for (const mediaFile of matchedVersion.mediaFiles ?? []) {
+        state.privateVersionsByObjectKey.set(mediaFile.objectKey, matchedVersion);
+      }
+      state.privatePendingByObjectKey.delete(input.objectKey);
+      bookmark.sourceUrl = input.source.url;
+      bookmark.canonicalUrl = input.source.canonicalUrl;
+      bookmark.title = input.source.title;
+      bookmark.domain = input.source.domain;
+      bookmark.faviconUrl = input.source.faviconUrl;
+      bookmark.coverImageUrl = input.source.coverImageUrl;
+      bookmark.latestVersionId = matchedVersion.id;
+      bookmark.latestQuality = input.quality;
+      bookmark.updatedAt = now;
+      bookmark.versionCount = versions.length;
+      state.privateBookmarks.set(bookmark.id, bookmark);
+      return {
+        bookmark,
+        versionId: matchedVersion.id,
+        createdNewVersion: false,
+        deduplicated: true,
+      };
+    }
+
+    const version: BookmarkVersion = {
+      id: createVersionId(),
+      bookmarkId: bookmark.id,
+      versionNo: versions.length + 1,
+      htmlObjectKey: input.objectKey,
+      readerHtmlObjectKey: undefined,
+      htmlSha256: input.htmlSha256,
+      textSha256: input.textSha256,
+      textSimhash: input.textSimhash,
+      mediaFiles: input.mediaFiles ?? [],
+      captureProfile: pendingCapture.request.profile ?? "standard",
+      quality: input.quality,
+      createdAt: now,
+    };
+
+    await this.persistReaderArchive(state, version, input.readerHtml);
+    versions.push(version);
+    state.privateVersionsByBookmark.set(bookmark.id, versions);
+    state.privateVersionsByObjectKey.set(input.objectKey, version);
+    if (version.readerHtmlObjectKey) {
+      state.privateVersionsByObjectKey.set(version.readerHtmlObjectKey, version);
+    }
+    for (const mediaFile of version.mediaFiles ?? []) {
+      state.privateVersionsByObjectKey.set(mediaFile.objectKey, version);
+    }
+    state.privatePendingByObjectKey.delete(input.objectKey);
+
+    bookmark.latestVersionId = version.id;
+    bookmark.latestQuality = input.quality;
+    bookmark.sourceUrl = input.source.url;
+    bookmark.canonicalUrl = input.source.canonicalUrl;
+    bookmark.title = input.source.title;
+    bookmark.domain = input.source.domain;
+    bookmark.faviconUrl = input.source.faviconUrl;
+    bookmark.coverImageUrl = input.source.coverImageUrl;
+    bookmark.versionCount = versions.length;
+    bookmark.updatedAt = now;
+    state.privateBookmarks.set(bookmark.id, bookmark);
 
     return {
       bookmark,
@@ -511,6 +726,67 @@ export class InMemoryRepositoryCore {
     }
 
     const versions = [...(state.versionsByBookmark.get(bookmarkId) ?? [])].sort(
+      (left, right) => right.versionNo - left.versionNo,
+    );
+
+    return {
+      bookmark,
+      versions,
+    };
+  }
+
+  async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery) {
+    const state = this.ensureUserState(userId);
+    const keyword = query.q?.trim().toLowerCase();
+    const recentThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const filtered = [...state.privateBookmarks.values()].filter((bookmark) => {
+      if (query.view === "favorites" && !bookmark.isFavorite) {
+        return false;
+      }
+
+      if (query.view === "recent" && new Date(bookmark.updatedAt).getTime() < recentThreshold) {
+        return false;
+      }
+
+      if (query.domain && bookmark.domain !== query.domain) {
+        return false;
+      }
+
+      if (query.quality && bookmark.latestQuality?.grade !== query.quality) {
+        return false;
+      }
+
+      if (!keyword) {
+        return true;
+      }
+
+      const searchable = [
+        bookmark.title,
+        bookmark.sourceUrl,
+        bookmark.domain,
+        bookmark.note,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return searchable.includes(keyword);
+    });
+
+    filtered.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+    return {
+      items: filtered.slice(query.offset, query.offset + query.limit),
+      total: filtered.length,
+    };
+  }
+
+  async getPrivateBookmarkDetail(userId: string, bookmarkId: string) {
+    const state = this.ensureUserState(userId);
+    const bookmark = state.privateBookmarks.get(bookmarkId);
+    if (!bookmark) {
+      return null;
+    }
+
+    const versions = [...(state.privateVersionsByBookmark.get(bookmarkId) ?? [])].sort(
       (left, right) => right.versionNo - left.versionNo,
     );
 
@@ -985,9 +1261,14 @@ export class InMemoryRepositoryCore {
     if (state.versionsByObjectKey.has(objectKey)) {
       return true;
     }
+    if (state.privateVersionsByObjectKey.has(objectKey)) {
+      return true;
+    }
 
     const ownerObjectKey = deriveHtmlObjectKeyFromMediaObjectKey(objectKey);
-    return ownerObjectKey ? state.versionsByObjectKey.has(ownerObjectKey) : false;
+    return ownerObjectKey
+      ? state.versionsByObjectKey.has(ownerObjectKey) || state.privateVersionsByObjectKey.has(ownerObjectKey)
+      : false;
   }
 
   async userCanWriteObject(userId: string, objectKey: string) {
@@ -995,10 +1276,16 @@ export class InMemoryRepositoryCore {
     if (state.pendingByObjectKey.has(objectKey) || state.versionsByObjectKey.has(objectKey)) {
       return true;
     }
+    if (state.privatePendingByObjectKey.has(objectKey) || state.privateVersionsByObjectKey.has(objectKey)) {
+      return true;
+    }
 
     const ownerObjectKey = deriveHtmlObjectKeyFromMediaObjectKey(objectKey);
     return ownerObjectKey
-      ? state.pendingByObjectKey.has(ownerObjectKey) || state.versionsByObjectKey.has(ownerObjectKey)
+      ? state.pendingByObjectKey.has(ownerObjectKey)
+        || state.versionsByObjectKey.has(ownerObjectKey)
+        || state.privatePendingByObjectKey.has(ownerObjectKey)
+        || state.privateVersionsByObjectKey.has(ownerObjectKey)
       : false;
   }
 
@@ -1012,6 +1299,11 @@ export class InMemoryRepositoryCore {
       versionsByBookmark: new Map(),
       pendingByObjectKey: new Map(),
       versionsByObjectKey: new Map(),
+      privateBookmarks: new Map(),
+      privateVersionsByBookmark: new Map(),
+      privatePendingByObjectKey: new Map(),
+      privateVersionsByObjectKey: new Map(),
+      privateModeConfig: null,
       folders: new Map(),
       tags: new Map(),
       importTasks: new Map(),
@@ -1146,6 +1438,41 @@ export class InMemoryRepositoryCore {
       updatedAt: now,
     };
     state.bookmarks.set(bookmark.id, bookmark);
+    return bookmark;
+  }
+
+  private findPrivateBookmarkByNormalizedHash(state: UserBookmarkState, normalizedHash: string) {
+    for (const bookmark of state.privateBookmarks.values()) {
+      const bookmarkHash = hashNormalizedUrl(normalizeSourceUrl(bookmark.sourceUrl));
+      if (bookmarkHash === normalizedHash) {
+        return bookmark;
+      }
+    }
+    return undefined;
+  }
+
+  private createPrivateBookmark(
+    state: UserBookmarkState,
+    input: CaptureCompleteRequest,
+    now: string,
+  ): Bookmark {
+    const bookmark: Bookmark = {
+      id: createBookmarkId(),
+      sourceUrl: input.source.url,
+      canonicalUrl: input.source.canonicalUrl,
+      title: input.source.title,
+      domain: input.source.domain,
+      faviconUrl: input.source.faviconUrl,
+      coverImageUrl: input.source.coverImageUrl,
+      note: "",
+      isFavorite: false,
+      tags: [],
+      versionCount: 1,
+      latestQuality: input.quality,
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.privateBookmarks.set(bookmark.id, bookmark);
     return bookmark;
   }
 
@@ -1357,6 +1684,11 @@ export class InMemoryRepositoryCore {
     return `captures/${userId}/${day}/${crypto.randomUUID()}.html`;
   }
 
+  private createPrivateObjectKey(userId: string) {
+    const day = new Date().toISOString().slice(0, 10);
+    return `private-captures/${userId}/${day}/${crypto.randomUUID()}.html`;
+  }
+
   private createReaderObjectKey(objectKey: string) {
     return objectKey.endsWith(".html")
       ? objectKey.replace(/\.html$/i, ".reader.html")
@@ -1382,6 +1714,10 @@ export class InMemoryRepositoryCore {
       },
     );
     version.readerHtmlObjectKey = readerObjectKey;
-    state.versionsByObjectKey.set(readerObjectKey, version);
+    if (state.bookmarks.has(version.bookmarkId)) {
+      state.versionsByObjectKey.set(readerObjectKey, version);
+      return;
+    }
+    state.privateVersionsByObjectKey.set(readerObjectKey, version);
   }
 }

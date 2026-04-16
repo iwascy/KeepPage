@@ -10,6 +10,7 @@ import { getConfiguredApiBaseUrl, recoverUnauthorizedSession } from "./auth-flow
 import { emitDebugLogToTab } from "./debug-log";
 import { captureInitResponseSchema } from "./domain-runtime";
 import { createLogger } from "./logger";
+import { getPrivateSessionToken } from "./private-vault";
 
 const CHUNK_SIZE_BYTES = 256 * 1024;
 const CHUNK_UPLOAD_THRESHOLD_BYTES = 512 * 1024;
@@ -281,13 +282,18 @@ async function getAuthToken() {
   return configured || "";
 }
 
-async function getAuthHeaders() {
+async function getAuthHeaders(privateToken?: string) {
   const token = await getAuthToken();
   if (!token) {
     throw new Error("未登录账号，请先在扩展侧登录后再同步。");
   }
   return {
     authorization: `Bearer ${token}`,
+    ...(privateToken
+      ? {
+          "x-keeppage-private-token": privateToken,
+        }
+      : {}),
   } satisfies Record<string, string>;
 }
 
@@ -359,14 +365,22 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     throw new Error(`这条本地任务属于 ${task.owner.email}，请切回对应账号后再同步。`);
   }
 
+  const isPrivateTask = (task.saveMode ?? "standard") === "private" || task.isPrivate;
+  const privateToken = isPrivateTask ? await getPrivateSessionToken() : null;
+  if (isPrivateTask && !privateToken) {
+    throw new Error("请先在扩展侧输入私密模式密码，再继续同步私密内容。");
+  }
+
   const apiBaseUrl = await getApiBaseUrl();
   const deviceId = await getOrCreateDeviceId();
-  const authHeaders = await getAuthHeaders();
+  const authHeaders = await getAuthHeaders(privateToken ?? undefined);
+  const captureBasePath = isPrivateTask ? "/private/captures" : "/captures";
   const archiveFileSize = new TextEncoder().encode(artifacts.archiveHtml).length;
   await logSync("debug", debugTabId, "Prepared sync prerequisites.", {
     taskId: task.id,
     deviceId,
     hasAuthorizationHeader: Boolean(authHeaders.authorization),
+    isPrivateTask,
     extractedTextLength: artifacts.extractedText.length,
     qualityGrade: quality.grade,
     qualityScore: quality.score,
@@ -394,7 +408,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
 
   const initResponse = captureInitResponseSchema.parse(
     await withUnauthorizedAuthRecovery(
-      () => postJson(`${apiBaseUrl}/captures/init`, initPayload, {
+      () => postJson(`${apiBaseUrl}${captureBasePath}/init`, initPayload, {
         ...authHeaders,
         "x-keeppage-public-base-url": apiBaseUrl,
       }),
@@ -479,7 +493,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
 
   const completeResponse = await withUnauthorizedAuthRecovery(
     () => postJson(
-      `${apiBaseUrl}/captures/complete`,
+      `${apiBaseUrl}${captureBasePath}/complete`,
       completePayload,
       authHeaders,
     ),

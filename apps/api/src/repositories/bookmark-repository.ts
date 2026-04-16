@@ -20,6 +20,7 @@ import type {
   ImportSource,
   ImportTask,
   ImportTaskDetailResponse,
+  PrivateVaultSummary,
   Tag,
   TagCreateRequest,
   TagUpdateRequest,
@@ -96,6 +97,14 @@ export type ApiTokenAuthRecord = ApiToken & {
   tokenHash: string;
 };
 
+export type PrivateModeConfigRecord = {
+  userId: string;
+  passwordHash: string;
+  passwordAlgo: string;
+  enabledAt: string;
+  passwordUpdatedAt: string;
+};
+
 export type CreateApiTokenInput = {
   id: string;
   name: string;
@@ -136,6 +145,26 @@ export interface ApiTokenRepository extends RepositoryInfo {
 export interface CaptureRepository extends RepositoryInfo {
   initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult>;
   completeCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult>;
+}
+
+export interface PrivateModeRepository extends RepositoryInfo {
+  getPrivateModeConfig(userId: string): Promise<PrivateModeConfigRecord | null>;
+  enablePrivateMode(input: {
+    userId: string;
+    passwordHash: string;
+    passwordAlgo: string;
+  }): Promise<PrivateModeConfigRecord>;
+  getPrivateVaultSummary(userId: string): Promise<PrivateVaultSummary>;
+}
+
+export interface PrivateCaptureRepository extends RepositoryInfo {
+  initPrivateCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult>;
+  completePrivateCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult>;
+}
+
+export interface PrivateBookmarkReadRepository extends RepositoryInfo {
+  searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse>;
+  getPrivateBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null>;
 }
 
 export interface IngestRepository extends RepositoryInfo {
@@ -187,6 +216,9 @@ export type BookmarkRepository =
   & AuthRepository
   & ApiTokenRepository
   & CaptureRepository
+  & PrivateModeRepository
+  & PrivateCaptureRepository
+  & PrivateBookmarkReadRepository
   & IngestRepository
   & BookmarkReadRepository
   & BookmarkWriteRepository

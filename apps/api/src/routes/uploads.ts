@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AuthService } from "../services/auth/auth-service";
+import { PrivateModeService } from "../services/auth/private-mode-service";
 import type { UploadService } from "../services/uploads/upload-service";
 
 const uploadParamsSchema = z.object({
@@ -19,6 +20,7 @@ const uploadChunkParamsSchema = z.object({
 export async function registerUploadRoutes(
   app: FastifyInstance,
   authService: AuthService,
+  privateModeService: PrivateModeService,
   uploadService: UploadService,
 ) {
   app.get<{ Querystring: { key: string } }>(
@@ -26,6 +28,9 @@ export async function registerUploadRoutes(
     async (request, reply) => {
       const user = await authService.requireUser(request);
       const query = objectQuerySchema.parse(request.query);
+      if (isPrivateObjectKey(query.key)) {
+        privateModeService.requireUnlocked(request, user.id);
+      }
       const result = await uploadService.getObject(user.id, query.key);
       reply.header("content-type", result.contentType);
       return reply.send(result.body);
@@ -38,6 +43,9 @@ export async function registerUploadRoutes(
       const user = await authService.requireUser(request);
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = uploadService.decodeObjectKey(params.encodedObjectKey);
+      if (isPrivateObjectKey(objectKey)) {
+        privateModeService.requireUnlocked(request, user.id);
+      }
       const result = await uploadService.getObject(user.id, objectKey);
       reply.header("content-type", result.contentType);
       return reply.send(result.body);
@@ -53,6 +61,9 @@ export async function registerUploadRoutes(
       });
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = uploadService.decodeObjectKey(params.encodedObjectKey);
+      if (isPrivateObjectKey(objectKey)) {
+        privateModeService.requireUnlocked(request, user.id);
+      }
       await uploadService.uploadObject({
         userId: user.id,
         objectKey,
@@ -72,6 +83,9 @@ export async function registerUploadRoutes(
       });
       const params = uploadChunkParamsSchema.parse(request.params);
       const objectKey = uploadService.decodeObjectKey(params.encodedObjectKey);
+      if (isPrivateObjectKey(objectKey)) {
+        privateModeService.requireUnlocked(request, user.id);
+      }
       const result = await uploadService.uploadChunk({
         userId: user.id,
         objectKey,
@@ -87,4 +101,8 @@ export async function registerUploadRoutes(
       return reply.status(204).send();
     },
   );
+}
+
+function isPrivateObjectKey(objectKey: string) {
+  return objectKey.startsWith("private-captures/");
 }

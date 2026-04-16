@@ -9,6 +9,8 @@ import type {
   Folder,
   FolderCreateRequest,
   FolderUpdateRequest,
+  PrivateModeUnlockResponse,
+  PrivateVaultSummary,
   Tag,
   TagCreateRequest,
   TagUpdateRequest,
@@ -25,14 +27,20 @@ import {
   fetchBookmarkDetail,
   fetchBookmarkFolderCounts,
   fetchBookmarks,
+  fetchPrivateBookmarkDetail,
+  fetchPrivateBookmarks,
+  fetchPrivateModeStatus,
   fetchCloudArchiveTask,
   fetchCurrentUser,
   fetchFolders,
   fetchTags,
+  lockPrivateMode,
   loginAccount,
   registerAccount,
   revokeApiToken,
+  setupPrivateMode,
   submitCloudArchive,
+  unlockPrivateMode,
   updateBookmarkMetadata,
   updateFolder,
   updateTag,
@@ -127,7 +135,18 @@ export type AppDataSource = {
     objectKey: string | null,
     sourceUrl: string | null,
     token: string,
+    privateToken?: string,
   ): Promise<string | null>;
+  fetchPrivateModeStatus(token: string, privateToken?: string): Promise<PrivateVaultSummary>;
+  setupPrivateMode(password: string, token: string): Promise<PrivateModeUnlockResponse>;
+  unlockPrivateMode(password: string, token: string): Promise<PrivateModeUnlockResponse>;
+  lockPrivateMode(token: string): Promise<PrivateVaultSummary>;
+  searchPrivateBookmarks(query: BookmarkQuery, token: string, privateToken: string): Promise<BookmarkResult>;
+  fetchPrivateBookmarkDetail(
+    bookmarkId: string,
+    token: string,
+    privateToken: string,
+  ): Promise<BookmarkDetailResult | null>;
   deleteBookmark(bookmarkId: string, token: string): Promise<void>;
   updateBookmarkMetadata(
     bookmarkId: string,
@@ -246,6 +265,42 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
             return null;
           }
           return URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+        },
+        async fetchPrivateModeStatus() {
+          return {
+            enabled: false,
+            unlocked: false,
+            autoLock: "browser",
+            totalItems: 0,
+            pendingSyncCount: 0,
+            syncEnabled: true,
+          };
+        },
+        async setupPrivateMode() {
+          throw new Error("Mock 模式暂不支持私密模式。");
+        },
+        async unlockPrivateMode() {
+          throw new Error("Mock 模式暂不支持私密模式。");
+        },
+        async lockPrivateMode() {
+          return {
+            enabled: false,
+            unlocked: false,
+            autoLock: "browser",
+            totalItems: 0,
+            pendingSyncCount: 0,
+            syncEnabled: true,
+          };
+        },
+        async searchPrivateBookmarks() {
+          return {
+            items: [],
+            total: 0,
+            source: "api" as const,
+          };
+        },
+        async fetchPrivateBookmarkDetail() {
+          return null;
         },
         async deleteBookmark(bookmarkId) {
           setDemoState((current) => deleteDemoBookmark(current, bookmarkId));
@@ -404,12 +459,18 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
       fetchBookmarkFolderCounts,
       searchBookmarks: fetchBookmarks,
       fetchBookmarkDetail,
-      async createArchivePreviewUrl(_versionId, objectKey, sourceUrl, token) {
+      async createArchivePreviewUrl(_versionId, objectKey, sourceUrl, token, privateToken) {
         if (!objectKey || !sourceUrl) {
           return null;
         }
-        return createArchiveObjectUrl(token, objectKey, sourceUrl);
+        return createArchiveObjectUrl(token, objectKey, sourceUrl, privateToken);
       },
+      fetchPrivateModeStatus,
+      setupPrivateMode,
+      unlockPrivateMode,
+      lockPrivateMode,
+      searchPrivateBookmarks: fetchPrivateBookmarks,
+      fetchPrivateBookmarkDetail,
       async deleteBookmark(bookmarkId, token) {
         await deleteBookmark(bookmarkId, token);
       },

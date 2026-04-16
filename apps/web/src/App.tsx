@@ -18,6 +18,7 @@ import type {
   CloudArchiveRequest,
   CloudArchiveStatus,
   Folder,
+  PrivateVaultSummary,
   QualityGrade,
   QualityReport,
   Tag,
@@ -46,6 +47,8 @@ type ArchiveViewMode = "reader" | "original";
 type ViewRoute =
   | { page: "list" }
   | { page: "detail"; bookmarkId: string; versionId?: string }
+  | { page: "private-mode" }
+  | { page: "private-detail"; bookmarkId: string; versionId?: string }
   | { page: "imports-new" }
   | { page: "imports-list" }
   | { page: "imports-detail"; taskId: string }
@@ -391,6 +394,9 @@ function parseRoute(hash: string): ViewRoute {
   if (path === "/imports") {
     return { page: "imports-list" };
   }
+  if (path === "/settings/private-mode") {
+    return { page: "private-mode" };
+  }
   if (path === "/settings/api-tokens") {
     return { page: "settings-api-tokens" };
   }
@@ -405,6 +411,18 @@ function parseRoute(hash: string): ViewRoute {
     };
   }
   if (!path.startsWith("/bookmarks/")) {
+    if (path.startsWith("/private/bookmarks/")) {
+      const bookmarkId = decodeURIComponent(path.slice("/private/bookmarks/".length));
+      if (!bookmarkId) {
+        return { page: "private-mode" };
+      }
+      const versionId = new URLSearchParams(queryString).get("version") ?? undefined;
+      return {
+        page: "private-detail",
+        bookmarkId,
+        versionId,
+      };
+    }
     return { page: "list" };
   }
 
@@ -429,6 +447,14 @@ function buildDetailHash(bookmarkId: string, versionId?: string) {
   return `#/bookmarks/${encodeURIComponent(bookmarkId)}${params.toString() ? `?${params.toString()}` : ""}`;
 }
 
+function buildPrivateDetailHash(bookmarkId: string, versionId?: string) {
+  const params = new URLSearchParams();
+  if (versionId) {
+    params.set("version", versionId);
+  }
+  return `#/private/bookmarks/${encodeURIComponent(bookmarkId)}${params.toString() ? `?${params.toString()}` : ""}`;
+}
+
 function goToList() {
   window.location.hash = "#/";
 }
@@ -445,12 +471,20 @@ function goToApiTokens() {
   window.location.hash = "#/settings/api-tokens";
 }
 
+function goToPrivateMode() {
+  window.location.hash = "#/settings/private-mode";
+}
+
 function openImportTask(taskId: string) {
   window.location.hash = `#/imports/${encodeURIComponent(taskId)}`;
 }
 
 function openBookmark(bookmarkId: string, versionId?: string) {
   window.location.hash = buildDetailHash(bookmarkId, versionId);
+}
+
+function openPrivateBookmark(bookmarkId: string, versionId?: string) {
+  window.location.hash = buildPrivateDetailHash(bookmarkId, versionId);
 }
 
 function isManagerDialogOpen(state: ManagerDialogState) {
@@ -523,6 +557,7 @@ function AppShell({
   onGoHome,
   onCreateRootFolder,
   onCreateTag,
+  onOpenPrivateMode,
   onOpenApiTokens,
   onOpenImportNew,
   onOpenImportHistory,
@@ -553,6 +588,7 @@ function AppShell({
   onGoHome: () => void;
   onCreateRootFolder: () => void;
   onCreateTag: () => void;
+  onOpenPrivateMode: () => void;
   onOpenApiTokens: () => void;
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
@@ -779,6 +815,21 @@ function AppShell({
             </button>
 
             <div className="home-settings-list">
+              <button
+                className={routePage === "private-mode" || routePage === "private-detail"
+                  ? "home-settings-item is-active"
+                  : "home-settings-item"}
+                type="button"
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  onOpenPrivateMode();
+                }}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  lock
+                </span>
+                <span>私密模式</span>
+              </button>
               <button
                 className={routePage === "settings-api-tokens" ? "home-settings-item is-active" : "home-settings-item"}
                 type="button"
@@ -1227,6 +1278,345 @@ function AppShell({
         ) : null}
       </div>
     </main>
+  );
+}
+
+function PrivateModePage({
+  summary,
+  privateToken,
+  items,
+  loadState,
+  error,
+  setupPassword,
+  setupConfirm,
+  unlockPassword,
+  busy,
+  onSetupPasswordChange,
+  onSetupConfirmChange,
+  onUnlockPasswordChange,
+  onSetup,
+  onUnlock,
+  onLock,
+  onOpenBookmark,
+}: {
+  summary: PrivateVaultSummary | null;
+  privateToken: string | null;
+  items: Bookmark[];
+  loadState: LoadState;
+  error: string | null;
+  setupPassword: string;
+  setupConfirm: string;
+  unlockPassword: string;
+  busy: boolean;
+  onSetupPasswordChange: (value: string) => void;
+  onSetupConfirmChange: (value: string) => void;
+  onUnlockPasswordChange: (value: string) => void;
+  onSetup: () => void;
+  onUnlock: () => void;
+  onLock: () => void;
+  onOpenBookmark: (bookmarkId: string) => void;
+}) {
+  const enabled = Boolean(summary?.enabled);
+  const unlocked = Boolean(privateToken);
+
+  if (!summary) {
+    return (
+      <section className="private-mode-page">
+        <header className="private-mode-hero">
+          <div>
+            <p className="eyebrow">设置</p>
+            <h1>私密模式</h1>
+            <p>正在读取私密模式状态...</p>
+          </div>
+        </header>
+        {error ? (
+          <p className="status-banner is-error">{error}</p>
+        ) : (
+          <p className="status-banner">正在加载私密模式状态...</p>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section className="private-mode-page">
+      <header className="private-mode-hero">
+        <div>
+          <p className="eyebrow">设置</p>
+          <h1>私密模式</h1>
+          <p>
+            私密模式用于默认隐藏和密码进入，不等同于加密保险箱。
+            当前版本会把私密内容存到独立私密链路中，首页默认不会展示。
+          </p>
+        </div>
+        {enabled && unlocked ? (
+          <button className="secondary-button" type="button" onClick={onLock} disabled={busy}>
+            退出私密模式
+          </button>
+        ) : null}
+      </header>
+
+      <div className="private-mode-stats">
+        <article className="private-mode-stat-card">
+          <span>当前状态</span>
+          <strong>{!enabled ? "未启用" : unlocked ? "已进入" : "已锁定"}</strong>
+          <small>登录账号后仍需单独输入私密密码</small>
+        </article>
+        <article className="private-mode-stat-card">
+          <span>私密条目</span>
+          <strong>{summary?.totalItems ?? 0}</strong>
+          <small>默认不会出现在普通首页和普通搜索中</small>
+        </article>
+        <article className="private-mode-stat-card">
+          <span>最近更新</span>
+          <strong>{summary?.lastUpdatedAt ? formatRelativeWhen(summary.lastUpdatedAt) : "暂无"}</strong>
+          <small>{summary?.lastUpdatedAt ? formatWhen(summary.lastUpdatedAt) : "还没有私密内容"}</small>
+        </article>
+      </div>
+
+      {!enabled ? (
+        <section className="private-mode-card">
+          <h2>启用私密模式</h2>
+          <p>设置一个独立密码后，扩展和 Web 都可以把内容保存到私密工作区。</p>
+          <div className="private-mode-form">
+            <label>
+              <span>私密密码</span>
+              <input
+                type="password"
+                value={setupPassword}
+                onChange={(event) => onSetupPasswordChange(event.target.value)}
+                placeholder="至少 8 位"
+              />
+            </label>
+            <label>
+              <span>确认密码</span>
+              <input
+                type="password"
+                value={setupConfirm}
+                onChange={(event) => onSetupConfirmChange(event.target.value)}
+                placeholder="再次输入"
+              />
+            </label>
+          </div>
+          <button className="primary-button" type="button" onClick={onSetup} disabled={busy}>
+            {busy ? "启用中..." : "启用私密模式"}
+          </button>
+        </section>
+      ) : !unlocked ? (
+        <section className="private-mode-card">
+          <h2>输入密码进入私密空间</h2>
+          <p>关闭或刷新 KeepPage 页面后，会默认退出私密模式。</p>
+          <div className="private-mode-form">
+            <label>
+              <span>私密密码</span>
+              <input
+                type="password"
+                value={unlockPassword}
+                onChange={(event) => onUnlockPasswordChange(event.target.value)}
+                placeholder="输入私密密码"
+              />
+            </label>
+          </div>
+          <button className="primary-button" type="button" onClick={onUnlock} disabled={busy}>
+            {busy ? "进入中..." : "进入私密空间"}
+          </button>
+        </section>
+      ) : (
+        <section className="private-mode-card">
+          <div className="private-mode-card-head">
+            <div>
+              <h2>私密内容</h2>
+              <p>这里是独立私密工作区。内容不会出现在普通列表、普通搜索和普通统计里。</p>
+            </div>
+          </div>
+
+          {loadState === "loading" ? (
+            <p className="status-banner">正在加载私密内容...</p>
+          ) : items.length === 0 ? (
+            <div className="private-mode-empty">
+              <h3>还没有私密内容</h3>
+              <p>可以在扩展侧通过“保存到 KP 私密模式”把当前网页保存进来。</p>
+            </div>
+          ) : (
+            <div className="private-mode-list">
+              {items.map((bookmark) => (
+                <button
+                  className="private-mode-item"
+                  key={bookmark.id}
+                  type="button"
+                  onClick={() => onOpenBookmark(bookmark.id)}
+                >
+                  <div>
+                    <strong>{bookmark.title}</strong>
+                    <p>{bookmark.domain}</p>
+                  </div>
+                  <span>{formatRelativeWhen(bookmark.updatedAt)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {error ? (
+        <p className="status-banner is-error">{error}</p>
+      ) : null}
+    </section>
+  );
+}
+
+function PrivateDetailPage({
+  detail,
+  selectedVersion,
+  previewState,
+  preferredPreviewMode,
+  activePreviewMode,
+  onGoBack,
+  onSelectVersion,
+  onPreviewModeChange,
+}: {
+  detail: BookmarkDetailResult;
+  selectedVersion: BookmarkViewerVersion;
+  previewState: ArchivePreviewState;
+  preferredPreviewMode: ArchiveViewMode;
+  activePreviewMode: ArchiveViewMode | null;
+  onGoBack: () => void;
+  onSelectVersion: (bookmarkId: string, versionId?: string) => void;
+  onPreviewModeChange: (mode: ArchiveViewMode) => void;
+}) {
+  const displayedArchiveSize = activePreviewMode === "reader"
+    ? selectedVersion.readerArchiveSizeBytes ?? selectedVersion.archiveSizeBytes
+    : selectedVersion.archiveSizeBytes ?? selectedVersion.readerArchiveSizeBytes;
+  const readerPreviewAvailable = Boolean(
+    selectedVersion.readerHtmlObjectKey && selectedVersion.readerArchiveAvailable,
+  );
+  const originalPreviewAvailable = selectedVersion.archiveAvailable;
+  const fallbackMessage = activePreviewMode && preferredPreviewMode !== activePreviewMode
+    ? "当前版本没有首选预览对象，已自动回退。"
+    : null;
+
+  return (
+    <section className="detail-shell">
+      <section className="detail-preview-panel">
+        {!activePreviewMode ? (
+          <section className="empty-state preview-empty">
+            <h2>归档对象不可用</h2>
+            <p>当前私密版本没有可读取的归档对象。</p>
+          </section>
+        ) : previewState.status === "loading" ? (
+          <section className="loading preview-empty">正在加载私密预览...</section>
+        ) : previewState.status === "error" ? (
+          <section className="empty-state preview-empty">
+            <h2>加载失败</h2>
+            <p>{previewState.error}</p>
+          </section>
+        ) : previewState.status === "ready" ? (
+          <iframe
+            className="archive-frame"
+            src={previewState.url}
+            title={`${detail.bookmark.title} v${selectedVersion.versionNo}`}
+          />
+        ) : null}
+      </section>
+
+      <aside className="detail-panel">
+        <div className="detail-top-bar">
+          <button className="detail-back-button" type="button" onClick={onGoBack}>
+            <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+          </button>
+          <div className="preview-mode-switch preview-mode-switch--compact" role="tablist" aria-label="私密归档预览模式">
+            <button
+              className={activePreviewMode === "reader" ? "preview-mode-button is-active" : "preview-mode-button"}
+              type="button"
+              onClick={() => onPreviewModeChange("reader")}
+              disabled={!readerPreviewAvailable}
+            >
+              阅读视图
+            </button>
+            <button
+              className={activePreviewMode === "original" ? "preview-mode-button is-active" : "preview-mode-button"}
+              type="button"
+              onClick={() => onPreviewModeChange("original")}
+              disabled={!originalPreviewAvailable}
+            >
+              原始归档
+            </button>
+          </div>
+        </div>
+        {fallbackMessage ? <p className="preview-mode-note">{fallbackMessage}</p> : null}
+
+        <div className="detail-block">
+          <div className="detail-header-label">
+            <span className="detail-header-label-text">Private View</span>
+            <span className="detail-header-label-id">#{detail.bookmark.id.slice(0, 8).toUpperCase()}</span>
+          </div>
+          <div className="detail-title-row">
+            <h2 className="detail-title">{detail.bookmark.title}</h2>
+          </div>
+          <div className="detail-url-row">
+            <span className="material-symbols-outlined" aria-hidden="true">link</span>
+            <a href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
+              {detail.bookmark.sourceUrl}
+            </a>
+          </div>
+        </div>
+
+        <div className="detail-meta-grid">
+          <div className="detail-meta-cell">
+            <span className="detail-meta-cell-label">Added</span>
+            <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.createdAt)}</span>
+          </div>
+          <div className="detail-meta-cell">
+            <span className="detail-meta-cell-label">Last Sync</span>
+            <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.updatedAt)}</span>
+          </div>
+          <div className="detail-meta-cell">
+            <span className="detail-meta-cell-label">Versions</span>
+            <span className="detail-meta-cell-value">{detail.versions.length}</span>
+          </div>
+          <div className="detail-meta-cell">
+            <span className="detail-meta-cell-label">File Size</span>
+            <span className="detail-meta-cell-value">
+              {displayedArchiveSize ? `${Math.round(displayedArchiveSize / 1024)} KB` : "未知"}
+            </span>
+          </div>
+        </div>
+
+        <details className="detail-collapsible" open>
+          <summary>
+            <span className="detail-summary-label">
+              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
+                history
+              </span>
+              <span>版本历史</span>
+            </span>
+            <span className="badge">{detail.versions.length}</span>
+          </summary>
+          <div className="detail-collapsible-body">
+            <div className="version-list">
+              {detail.versions.map((version, index) => {
+                const active = version.id === selectedVersion.id;
+                const isLatest = index === 0;
+                return (
+                  <button
+                    key={version.id}
+                    className={`version-item${active ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => onSelectVersion(detail.bookmark.id, version.id)}
+                  >
+                    <span className="version-item-icon material-symbols-outlined" aria-hidden="true">refresh</span>
+                    <div>
+                      <strong>v{version.versionNo}{isLatest ? " (Latest)" : ""}</strong>
+                      <span>{formatWhen(version.createdAt)}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </details>
+      </aside>
+    </section>
   );
 }
 
@@ -2882,6 +3272,22 @@ export function App({
     status: "idle",
   });
   const [preferredPreviewMode, setPreferredPreviewMode] = useState<ArchiveViewMode>("reader");
+  const [privateSummary, setPrivateSummary] = useState<PrivateVaultSummary | null>(null);
+  const [privateToken, setPrivateToken] = useState<string | null>(null);
+  const [privateItems, setPrivateItems] = useState<Bookmark[]>([]);
+  const [privateLoadState, setPrivateLoadState] = useState<LoadState>("idle");
+  const [privateError, setPrivateError] = useState<string | null>(null);
+  const [privateSetupPassword, setPrivateSetupPassword] = useState("");
+  const [privateSetupConfirm, setPrivateSetupConfirm] = useState("");
+  const [privateUnlockPassword, setPrivateUnlockPassword] = useState("");
+  const [privateBusy, setPrivateBusy] = useState(false);
+  const [privateDetail, setPrivateDetail] = useState<BookmarkDetailResult | null>(null);
+  const [privateDetailLoadState, setPrivateDetailLoadState] = useState<DetailLoadState>("idle");
+  const [privateDetailError, setPrivateDetailError] = useState<string | null>(null);
+  const [privateArchivePreview, setPrivateArchivePreview] = useState<ArchivePreviewState>({
+    status: "idle",
+  });
+  const [privatePreferredPreviewMode, setPrivatePreferredPreviewMode] = useState<ArchiveViewMode>("reader");
   const [managerBusy, setManagerBusy] = useState(false);
   const [managerFeedback, setManagerFeedback] = useState<InlineFeedback | null>(null);
   const [managerDialog, setManagerDialog] = useState<ManagerDialogState>({ kind: "closed" });
@@ -2924,6 +3330,23 @@ export function App({
   const hasMoreItems = items.length < listTotal;
   const importAdapter = appDataSource.importAdapter;
 
+  function clearPrivateState() {
+    setPrivateToken(null);
+    setPrivateSummary(null);
+    setPrivateItems([]);
+    setPrivateLoadState("idle");
+    setPrivateError(null);
+    setPrivateSetupPassword("");
+    setPrivateSetupConfirm("");
+    setPrivateUnlockPassword("");
+    setPrivateBusy(false);
+    setPrivateDetail(null);
+    setPrivateDetailLoadState("idle");
+    setPrivateDetailError(null);
+    setPrivateArchivePreview({ status: "idle" });
+    setPrivatePreferredPreviewMode("reader");
+  }
+
   function logout(message?: string) {
     if (isDemoMode) {
       const nextSession = appDataSource.resetSession();
@@ -2949,6 +3372,7 @@ export function App({
         setDetailLoadState("idle");
         setDetailError(null);
         setArchivePreview({ status: "idle" });
+        clearPrivateState();
         setManagerFeedback({
           kind: "success",
           message: "Mock 数据已重置到初始状态。",
@@ -2983,6 +3407,7 @@ export function App({
       setDetailLoadState("idle");
       setDetailError(null);
       setArchivePreview({ status: "idle" });
+      clearPrivateState();
       setManagerFeedback(null);
       setManagerDialog({ kind: "closed" });
       setContextMenu({ kind: "closed" });
@@ -3266,6 +3691,25 @@ export function App({
     return false;
   }
 
+  function handlePrivateModeApiError(error: unknown) {
+    if (
+      error instanceof ApiError &&
+      (error.status === 401 || error.status === 403) &&
+      /(私密|密码|PrivateMode|locked)/i.test(error.message)
+    ) {
+      setPrivateToken(null);
+      setPrivateItems([]);
+      setPrivateDetail(null);
+      setPrivateArchivePreview({ status: "idle" });
+      setPrivateError("私密模式已锁定或会话已失效，请重新输入密码。");
+      if (route.page === "private-detail") {
+        goToPrivateMode();
+      }
+      return true;
+    }
+    return handleProtectedApiError(error);
+  }
+
   useEffect(() => {
     closeContextMenu();
   }, [route]);
@@ -3320,6 +3764,40 @@ export function App({
       cancelled = true;
     };
   }, [appDataSource]);
+
+  useEffect(() => {
+    if (!authToken) {
+      setPrivateSummary(null);
+      setPrivateToken(null);
+      setPrivateItems([]);
+      setPrivateLoadState("idle");
+      setPrivateError(null);
+      return;
+    }
+
+    let cancelled = false;
+    appDataSource.fetchPrivateModeStatus(authToken, privateToken ?? undefined)
+      .then((summary) => {
+        if (cancelled) {
+          return;
+        }
+        setPrivateSummary(summary);
+        if (!summary.unlocked) {
+          setPrivateToken(null);
+        }
+      })
+      .catch((error) => {
+        if (cancelled || handleProtectedApiError(error)) {
+          return;
+        }
+        setPrivateSummary(null);
+        setPrivateError(toErrorMessage(error));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appDataSource, authToken, privateToken]);
 
   useEffect(() => {
     if (!authToken) {
@@ -3479,6 +3957,96 @@ export function App({
   }, [appDataSource, authToken, route]);
 
   useEffect(() => {
+    if (!authToken || route.page !== "private-mode" || !privateToken) {
+      setPrivateLoadState("idle");
+      setPrivateError((current) => (
+        route.page === "private-detail" ? current : null
+      ));
+      if (route.page !== "private-mode") {
+        setPrivateItems([]);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setPrivateLoadState("loading");
+    setPrivateError(null);
+
+    appDataSource.searchPrivateBookmarks(
+      {
+        search: deferredSearch,
+        quality: qualityFilter,
+        view: bookmarkView,
+        limit: BOOKMARKS_PAGE_SIZE,
+        offset: 0,
+      },
+      authToken,
+      privateToken,
+    )
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        startTransition(() => {
+          setPrivateItems(result.items);
+          setPrivateLoadState("ready");
+        });
+      })
+      .catch((error) => {
+        if (cancelled || handlePrivateModeApiError(error)) {
+          return;
+        }
+        startTransition(() => {
+          setPrivateItems([]);
+          setPrivateLoadState("error");
+          setPrivateError(toErrorMessage(error));
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appDataSource, authToken, bookmarkView, deferredSearch, privateToken, qualityFilter, route.page]);
+
+  useEffect(() => {
+    if (!authToken || route.page !== "private-detail" || !privateToken) {
+      setPrivateDetailLoadState("idle");
+      setPrivateDetailError(null);
+      setPrivateDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPrivateDetailLoadState("loading");
+    setPrivateDetailError(null);
+
+    appDataSource.fetchPrivateBookmarkDetail(route.bookmarkId, authToken, privateToken)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        startTransition(() => {
+          setPrivateDetail(result);
+          setPrivateDetailLoadState(result ? "ready" : "not-found");
+        });
+      })
+      .catch((error) => {
+        if (cancelled || handlePrivateModeApiError(error)) {
+          return;
+        }
+        startTransition(() => {
+          setPrivateDetail(null);
+          setPrivateDetailLoadState("error");
+          setPrivateDetailError(toErrorMessage(error));
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appDataSource, authToken, privateToken, route]);
+
+  useEffect(() => {
     if (!detail) {
       setMetadataNote("");
       setMetadataIsFavorite(false);
@@ -3573,12 +4141,32 @@ export function App({
     );
   }, [detail, route]);
 
+  const selectedPrivateVersion = useMemo(() => {
+    if (!privateDetail || route.page !== "private-detail") {
+      return null;
+    }
+
+    return (
+      privateDetail.versions.find((version) => version.id === route.versionId) ??
+      privateDetail.versions.find((version) => version.id === privateDetail.bookmark.latestVersionId) ??
+      privateDetail.versions[0] ??
+      null
+    );
+  }, [privateDetail, route]);
+
   const previewSourceUrl = detail
     ? (detail.bookmark.canonicalUrl ?? detail.bookmark.sourceUrl)
     : null;
   const previewSelection = useMemo(
     () => resolvePreviewSelection(selectedVersion, preferredPreviewMode),
     [preferredPreviewMode, selectedVersion],
+  );
+  const privatePreviewSourceUrl = privateDetail
+    ? (privateDetail.bookmark.canonicalUrl ?? privateDetail.bookmark.sourceUrl)
+    : null;
+  const privatePreviewSelection = useMemo(
+    () => resolvePreviewSelection(selectedPrivateVersion, privatePreferredPreviewMode),
+    [privatePreferredPreviewMode, selectedPrivateVersion],
   );
 
   useEffect(() => {
@@ -3645,6 +4233,74 @@ export function App({
     previewSelection?.mode,
     previewSourceUrl,
     selectedVersion?.id,
+  ]);
+
+  useEffect(() => {
+    let revokedUrl: string | null = null;
+    let cancelled = false;
+
+    if (!authToken || !privateToken || !privatePreviewSelection?.objectKey || !privatePreviewSourceUrl) {
+      setPrivateArchivePreview({ status: "idle" });
+      return;
+    }
+
+    setPrivateArchivePreview({ status: "loading" });
+
+    appDataSource.createArchivePreviewUrl(
+      selectedPrivateVersion?.id ?? null,
+      privatePreviewSelection?.objectKey ?? null,
+      privatePreviewSourceUrl,
+      authToken,
+      privateToken,
+    )
+      .then((url) => {
+        if (!url) {
+          setPrivateArchivePreview({ status: "idle" });
+          return;
+        }
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        revokedUrl = url;
+        setPrivateArchivePreview({
+          status: "ready",
+          url,
+        });
+      })
+      .catch((error) => {
+        if (cancelled || handlePrivateModeApiError(error)) {
+          return;
+        }
+        if (
+          error instanceof ApiError &&
+          error.status === 404 &&
+          privatePreviewSelection?.mode === "reader" &&
+          selectedPrivateVersion?.archiveAvailable
+        ) {
+          setPrivatePreferredPreviewMode("original");
+          return;
+        }
+        setPrivateArchivePreview({
+          status: "error",
+          error: toErrorMessage(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+      if (revokedUrl) {
+        URL.revokeObjectURL(revokedUrl);
+      }
+    };
+  }, [
+    appDataSource,
+    authToken,
+    privatePreviewSelection?.objectKey,
+    privatePreviewSelection?.mode,
+    privatePreviewSourceUrl,
+    privateToken,
+    selectedPrivateVersion?.id,
   ]);
 
   async function refreshSidebarFolderCounts(currentToken: string) {
@@ -3735,6 +4391,135 @@ export function App({
     setDetailError(null);
     setDetail(result);
     setDetailLoadState(result ? "ready" : "not-found");
+  }
+
+  async function refreshPrivateSummary(currentToken: string, currentPrivateToken?: string | null) {
+    const summary = await appDataSource.fetchPrivateModeStatus(currentToken, currentPrivateToken ?? undefined);
+    setPrivateSummary(summary);
+    if (!summary.unlocked) {
+      setPrivateToken(null);
+    }
+    return summary;
+  }
+
+  async function refreshPrivateBookmarksList(currentToken: string, currentPrivateToken: string) {
+    const limit = Math.max(privateItems.length, BOOKMARKS_PAGE_SIZE);
+    const result = await appDataSource.searchPrivateBookmarks(
+      {
+        search: deferredSearch,
+        quality: qualityFilter,
+        view: bookmarkView,
+        limit,
+        offset: 0,
+      },
+      currentToken,
+      currentPrivateToken,
+    );
+    setPrivateItems(result.items);
+    setPrivateLoadState("ready");
+    setPrivateError(null);
+  }
+
+  async function refreshPrivateBookmarkDetail(
+    currentToken: string,
+    currentPrivateToken: string,
+    bookmarkId: string,
+  ) {
+    const result = await appDataSource.fetchPrivateBookmarkDetail(bookmarkId, currentToken, currentPrivateToken);
+    setPrivateDetail(result);
+    setPrivateDetailLoadState(result ? "ready" : "not-found");
+    setPrivateDetailError(null);
+  }
+
+  async function handleSetupPrivateMode() {
+    if (!authToken) {
+      return;
+    }
+    const password = privateSetupPassword.trim();
+    if (password.length < 8) {
+      setPrivateError("私密密码至少需要 8 位。");
+      return;
+    }
+    if (password !== privateSetupConfirm) {
+      setPrivateError("两次输入的私密密码不一致。");
+      return;
+    }
+
+    setPrivateBusy(true);
+    setPrivateError(null);
+    try {
+      const result = await appDataSource.setupPrivateMode(password, authToken);
+      setPrivateSummary(result.summary);
+      setPrivateToken(result.privateToken);
+      setPrivateSetupPassword("");
+      setPrivateSetupConfirm("");
+      setPrivateUnlockPassword("");
+      await refreshPrivateBookmarksList(authToken, result.privateToken);
+    } catch (error) {
+      if (handleProtectedApiError(error)) {
+        return;
+      }
+      setPrivateError(toErrorMessage(error));
+    } finally {
+      setPrivateBusy(false);
+    }
+  }
+
+  async function handleUnlockPrivateMode() {
+    if (!authToken) {
+      return;
+    }
+    if (!privateUnlockPassword) {
+      setPrivateError("请输入私密密码。");
+      return;
+    }
+
+    setPrivateBusy(true);
+    setPrivateError(null);
+    try {
+      const result = await appDataSource.unlockPrivateMode(privateUnlockPassword, authToken);
+      setPrivateSummary(result.summary);
+      setPrivateToken(result.privateToken);
+      setPrivateUnlockPassword("");
+      await refreshPrivateBookmarksList(authToken, result.privateToken);
+    } catch (error) {
+      if (handleProtectedApiError(error)) {
+        return;
+      }
+      setPrivateError(toErrorMessage(error));
+    } finally {
+      setPrivateBusy(false);
+    }
+  }
+
+  async function handleLockPrivateMode() {
+    if (!authToken) {
+      return;
+    }
+
+    setPrivateBusy(true);
+    setPrivateError(null);
+    try {
+      const summary = await appDataSource.lockPrivateMode(authToken);
+      setPrivateSummary(summary);
+      setPrivateToken(null);
+      setPrivateItems([]);
+      setPrivateDetail(null);
+      setPrivateArchivePreview({ status: "idle" });
+      setPrivateDetailLoadState("idle");
+      setPrivateDetailError(null);
+      setPrivateUnlockPassword("");
+      if (route.page === "private-detail") {
+        goToPrivateMode();
+      }
+    } catch (error) {
+      if (handleProtectedApiError(error)) {
+        return;
+      }
+      setPrivateError(toErrorMessage(error));
+    } finally {
+      setPrivateBusy(false);
+    }
   }
 
   async function runManagerAction(action: () => Promise<string>) {
@@ -4427,6 +5212,7 @@ export function App({
         onGoHome={goToList}
         onCreateRootFolder={() => openManagerDialog({ kind: "create-folder" })}
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
+        onOpenPrivateMode={goToPrivateMode}
         onOpenApiTokens={goToApiTokens}
         onOpenImportNew={goToImportNew}
         onOpenImportHistory={goToImportList}
@@ -4477,6 +5263,68 @@ export function App({
             onOpenBookmarkContextMenuAt={openBookmarkContextMenuAt}
             onToggleSelect={toggleSelected}
           />
+        ) : route.page === "private-mode" ? (
+          <PrivateModePage
+            summary={privateSummary}
+            privateToken={privateToken}
+            items={privateItems}
+            loadState={privateLoadState}
+            error={privateError}
+            setupPassword={privateSetupPassword}
+            setupConfirm={privateSetupConfirm}
+            unlockPassword={privateUnlockPassword}
+            busy={privateBusy}
+            onSetupPasswordChange={setPrivateSetupPassword}
+            onSetupConfirmChange={setPrivateSetupConfirm}
+            onUnlockPasswordChange={setPrivateUnlockPassword}
+            onSetup={() => void handleSetupPrivateMode()}
+            onUnlock={() => void handleUnlockPrivateMode()}
+            onLock={() => void handleLockPrivateMode()}
+            onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
+          />
+        ) : route.page === "private-detail" ? (
+          privateToken && privateDetail && selectedPrivateVersion ? (
+            <PrivateDetailPage
+              detail={privateDetail}
+              selectedVersion={selectedPrivateVersion}
+              previewState={privateArchivePreview}
+              preferredPreviewMode={privatePreferredPreviewMode}
+              activePreviewMode={privatePreviewSelection?.mode ?? null}
+              onGoBack={goToPrivateMode}
+              onSelectVersion={openPrivateBookmark}
+              onPreviewModeChange={setPrivatePreferredPreviewMode}
+            />
+          ) : privateToken && privateDetailLoadState === "loading" ? (
+            <section className="detail-shell">
+              <section className="loading preview-empty">正在加载私密详情...</section>
+            </section>
+          ) : privateToken && privateDetailLoadState === "not-found" ? (
+            <section className="detail-shell">
+              <section className="empty-state preview-empty">
+                <h2>私密内容不存在</h2>
+                <p>这条私密内容可能已被删除，或当前会话没有权限查看。</p>
+              </section>
+            </section>
+          ) : (
+            <PrivateModePage
+              summary={privateSummary}
+              privateToken={privateToken}
+              items={privateItems}
+              loadState={privateLoadState}
+              error={privateDetailError ?? privateError}
+              setupPassword={privateSetupPassword}
+              setupConfirm={privateSetupConfirm}
+              unlockPassword={privateUnlockPassword}
+              busy={privateBusy}
+              onSetupPasswordChange={setPrivateSetupPassword}
+              onSetupConfirmChange={setPrivateSetupConfirm}
+              onUnlockPasswordChange={setPrivateUnlockPassword}
+              onSetup={() => void handleSetupPrivateMode()}
+              onUnlock={() => void handleUnlockPrivateMode()}
+              onLock={() => void handleLockPrivateMode()}
+              onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
+            />
+          )
         ) : route.page === "detail" ? (
           <BookmarkDetailRoute
             detailLoadState={detailLoadState}
