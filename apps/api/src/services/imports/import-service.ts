@@ -2,7 +2,6 @@ import {
   importPreviewResponseSchema,
   importTaskDetailResponseSchema,
   importTaskListResponseSchema,
-  type CloudArchiveRequest,
   type ImportExecutionOptions,
   type ImportSource,
 } from "@keeppage/domain";
@@ -15,22 +14,15 @@ import {
 } from "../../lib/imports";
 import type { ImportRepository } from "../../repositories";
 
-export interface CloudArchiveSubmitter {
-  submit(userId: string, input: CloudArchiveRequest): unknown;
-}
-
 type ImportServiceOptions = {
   repository: ImportRepository;
-  cloudArchiveManager: CloudArchiveSubmitter | null;
 };
 
 export class ImportService {
   private readonly repository: ImportRepository;
-  private readonly cloudArchiveManager: CloudArchiveSubmitter | null;
 
   constructor(options: ImportServiceOptions) {
     this.repository = options.repository;
-    this.cloudArchiveManager = options.cloudArchiveManager;
   }
 
   async previewImport(userId: string, body: unknown) {
@@ -76,14 +68,6 @@ export class ImportService {
       preview,
       items,
     });
-
-    if (this.cloudArchiveManager && normalized.options.mode !== "links_only") {
-      for (const item of detail.items) {
-        if (item.status === "created_bookmark" && item.url && item.bookmarkId) {
-          this.cloudArchiveManager.submit(userId, { url: item.url });
-        }
-      }
-    }
 
     return {
       taskId: detail.task.id,
@@ -184,12 +168,6 @@ function normalizeSourceType(value: unknown, fileName?: string): ImportSource {
 }
 
 function normalizeMode(value: unknown): ImportExecutionOptions["mode"] {
-  if (value === "links_only" || value === "queue_archive" || value === "start_archive") {
-    return value;
-  }
-  if (value === "archive_now") {
-    return "start_archive";
-  }
   return "links_only";
 }
 

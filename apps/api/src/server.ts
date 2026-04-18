@@ -8,7 +8,6 @@ import { ApiTokenService } from "./services/api-tokens/api-token-service";
 import { AuthService } from "./services/auth/auth-service";
 import { PrivateModeService } from "./services/auth/private-mode-service";
 import { BookmarkService } from "./services/bookmarks/bookmark-service";
-import { CloudArchiveManager } from "./services/cloud-archive/cloud-archive-manager";
 import { ImportService } from "./services/imports/import-service";
 import { UploadService } from "./services/uploads/upload-service";
 import { createObjectStorage } from "./storage/object-storage";
@@ -115,12 +114,8 @@ export function buildServer(config: ApiConfig) {
     };
   });
 
-  const cloudArchiveManager = config.CLOUD_ARCHIVE_ENABLED
-    ? new CloudArchiveManager(config, repository, objectStorage)
-    : null;
   const importService = new ImportService({
     repository,
-    cloudArchiveManager,
   });
 
   app.register(async (instance) => {
@@ -131,7 +126,6 @@ export function buildServer(config: ApiConfig) {
       privateModeService,
       apiTokenService,
       repository,
-      cloudArchiveManager,
       bookmarkService,
       importService,
       uploadService,

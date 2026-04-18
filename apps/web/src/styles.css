@@ -512,11 +512,36 @@ select {
     0 4px 10px rgba(45, 51, 56, 0.08);
 }
 
+.bookmark-delete-card-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(240, 242, 245, 0.88));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 4px 10px rgba(45, 51, 56, 0.08);
+  color: #5d646b;
+}
+
+.bookmark-delete-card-icon .material-symbols-outlined {
+  font-size: 20px;
+  line-height: 1;
+}
+
 .bookmark-delete-card-body {
   min-width: 0;
   display: flex;
   align-items: baseline;
   gap: 0.55rem;
+}
+
+.bookmark-delete-card-body.is-folder-delete {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.18rem;
 }
 
 .batch-delete-card-body {

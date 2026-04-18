@@ -10,8 +10,6 @@ import {
   bookmarkSidebarStatsResponseSchema,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
-  cloudArchiveResponseSchema,
-  cloudArchiveTaskSchema,
   ensureArchiveBaseHref,
   folderListResponseSchema,
   folderSchema,
@@ -34,9 +32,6 @@ import {
   type BookmarkListView,
   type BookmarkMetadataUpdateRequest,
   type BookmarkDetailVersion,
-  type CloudArchiveRequest,
-  type CloudArchiveResponse,
-  type CloudArchiveTask,
   type Folder,
   type FolderCreateRequest,
   type FolderUpdateRequest,
@@ -843,35 +838,6 @@ export async function fetchImportTaskDetail(taskId: string, token: string): Prom
       task,
       items: rows.map(toImportItem),
     };
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-export async function submitCloudArchive(
-  input: CloudArchiveRequest,
-  token: string,
-): Promise<CloudArchiveResponse> {
-  return requestJson("/cloud-archive", cloudArchiveResponseSchema, {
-    method: "POST",
-    token,
-    body: input,
-  });
-}
-
-export async function fetchCloudArchiveTask(
-  taskId: string,
-  token: string,
-): Promise<CloudArchiveTask | null> {
-  try {
-    return await requestJson(
-      `/cloud-archive/${encodeURIComponent(taskId)}`,
-      cloudArchiveTaskSchema,
-      { token },
-    );
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) {
       return null;

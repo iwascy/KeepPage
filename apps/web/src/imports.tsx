@@ -307,10 +307,8 @@ export function ImportNewPanel({
 
         <div className="import-section">
           <label className="field">
-            <select value={mode} onChange={(event) => setMode(event.target.value as ImportMode)}>
+            <select value={mode} onChange={(event) => setMode(event.target.value as ImportMode)} disabled>
               <option value="links_only">仅导入链接</option>
-              <option value="queue_archive">导入后排队归档</option>
-              <option value="archive_now">导入并立即归档</option>
             </select>
           </label>
 
