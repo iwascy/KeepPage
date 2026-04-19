@@ -95,7 +95,7 @@ export class PostgresRepositoryCore {
   constructor(options: PostgresBookmarkRepositoryOptions) {
     this.pool = new Pool({
       connectionString: options.databaseUrl,
-      max: 8,
+      max: 16,
     });
     this.db = drizzle(this.pool, {
       schema: dbSchema,

@@ -14,6 +14,7 @@ import {
   type ImportTaskStatus,
   type ImportTaskSummary,
 } from "./api";
+import { formatWhen } from "./lib/date-format";
 
 export type ImportPanelAdapter = {
   previewImport?: (input: ImportPreviewRequest, token: string) => Promise<ImportPreviewResult>;
@@ -46,23 +47,6 @@ function toErrorMessage(error: unknown) {
     return error.message;
   }
   return "请求失败，请稍后重试。";
-}
-
-function formatWhen(input: string) {
-  if (!input) {
-    return "未知";
-  }
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) {
-    return input;
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
 }
 
 function importModeLabel(mode: ImportMode) {

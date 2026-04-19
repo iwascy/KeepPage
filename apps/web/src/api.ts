@@ -46,6 +46,8 @@ import {
   type Tag,
   type TagCreateRequest,
   type TagUpdateRequest,
+  workspaceBootstrapResponseSchema,
+  type WorkspaceBootstrapResponse,
 } from "@keeppage/domain";
 import type { ZodType } from "zod";
 
@@ -78,6 +80,8 @@ export type BookmarkResult = {
   total: number;
   source: DataSource;
 };
+
+export type WorkspaceBootstrapResult = WorkspaceBootstrapResponse;
 
 export type BookmarkViewerVersion = BookmarkDetailVersion & {
   readerHtmlObjectKey?: string;
@@ -563,6 +567,12 @@ export async function fetchBookmarkFolderCounts(token: string): Promise<Record<s
     accumulator[item.folderId] = item.count;
     return accumulator;
   }, {});
+}
+
+export async function fetchWorkspaceBootstrap(token: string): Promise<WorkspaceBootstrapResult> {
+  return requestJson("/workspace/bootstrap", workspaceBootstrapResponseSchema, {
+    token,
+  });
 }
 
 export async function fetchPrivateBookmarkDetail(

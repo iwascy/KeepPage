@@ -1,7 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block");
-
 /* Global Material Symbols configuration for refined look */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -114,7 +110,7 @@ select {
 .manager-dialog-backdrop.is-create-folder {
   padding: 1.5rem;
   background: rgba(12, 14, 16, 0.1);
-  backdrop-filter: blur(22px);
+  backdrop-filter: blur(14px);
 }
 
 .create-folder-dialog {
@@ -126,7 +122,7 @@ select {
     0 24px 60px rgba(45, 51, 56, 0.16),
     0 10px 28px rgba(45, 51, 56, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(42px);
+  backdrop-filter: blur(18px);
   animation: dialog-rise 180ms ease;
 }
 
@@ -403,8 +399,8 @@ select {
     0 20px 40px rgba(45, 51, 56, 0.12),
     0 12px 28px rgba(45, 51, 56, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .bookmark-delete-dialog-shell {
@@ -633,7 +629,7 @@ select {
   box-shadow:
     0 34px 90px rgba(45, 51, 56, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(40px);
+  backdrop-filter: blur(18px);
   animation: dialog-rise 180ms ease;
 }
 
@@ -952,8 +948,8 @@ button {
   width: min(440px, 100%);
   border-radius: 34px;
   background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(34px);
-  -webkit-backdrop-filter: blur(34px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   padding: 2.2rem 2rem;
   box-shadow: var(--shadow);
 }
@@ -1078,8 +1074,8 @@ button {
     linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(247, 249, 252, 0.42)),
     linear-gradient(90deg, rgba(255, 255, 255, 0) 74%, rgba(255, 255, 255, 0.22) 100%),
     rgba(255, 255, 255, 0.52);
-  backdrop-filter: blur(34px);
-  -webkit-backdrop-filter: blur(34px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   transform: translateZ(0);
   box-shadow: 10px 0 42px rgba(45, 51, 56, 0.05);
   overflow: hidden;
@@ -1139,7 +1135,7 @@ button {
   background: transparent;
   color: #71717a;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .home-brand-action:hover {
@@ -1218,7 +1214,7 @@ button {
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, color 0.3s ease, transform 0.3s ease;
   background: transparent;
   border: none;
   width: 100%;
@@ -1370,7 +1366,7 @@ button {
   cursor: pointer;
   text-align: left;
   font-family: "Inter", ui-sans-serif, sans-serif;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .home-folder-main:hover {
@@ -1443,7 +1439,7 @@ button {
   background: transparent;
   color: #71717a;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .home-folder-toggle:hover {
@@ -1517,7 +1513,7 @@ button {
   border: none;
   cursor: pointer;
   box-shadow: 0 16px 30px rgba(94, 94, 94, 0.18);
-  transition: all 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 
 .home-add-new-btn:hover {
@@ -1653,7 +1649,7 @@ button {
   color: #27272a;
   width: 100%;
   text-align: left;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .home-settings-item:hover {
@@ -1715,8 +1711,8 @@ button {
     0 24px 52px rgba(45, 51, 56, 0.09),
     0 10px 22px rgba(45, 51, 56, 0.04),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(34px) saturate(150%);
-  -webkit-backdrop-filter: blur(34px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
 }
 
 .api-token-hero::before,
@@ -2366,7 +2362,13 @@ button {
   appearance: none;
   border: 0;
   cursor: pointer;
-  transition: all 160ms ease;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    opacity 160ms ease;
   min-width: 0;
 }
 
@@ -2512,8 +2514,8 @@ button {
   box-shadow:
     0 24px 44px rgba(45, 51, 56, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .home-profile-menu-item {
@@ -2638,7 +2640,7 @@ button {
     0 28px 72px rgba(29, 38, 55, 0.18),
     0 12px 28px rgba(29, 38, 55, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(34px) saturate(165%);
+  backdrop-filter: blur(16px) saturate(135%);
   pointer-events: auto;
   overflow: hidden;
 }
@@ -3371,8 +3373,8 @@ button {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(247, 249, 252, 0.68)),
     rgba(255, 255, 255, 0.58);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   box-shadow:
     0 -4px 20px rgba(0, 0, 0, 0.03),
     0 22px 44px rgba(45, 51, 56, 0.08),
@@ -3597,6 +3599,36 @@ button {
   box-shadow: 0 20px 40px rgba(45, 51, 56, 0.06);
 }
 
+.detail-skeleton {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.detail-skeleton--preview {
+  min-height: 360px;
+}
+
+.detail-skeleton-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.detail-skeleton-block {
+  min-height: 88px;
+  border-radius: 18px;
+  background: linear-gradient(90deg, rgba(227, 231, 236, 0.9), rgba(245, 247, 250, 0.95), rgba(227, 231, 236, 0.9));
+  background-size: 220% 100%;
+  animation: homeShimmer 1.4s linear infinite;
+}
+
+.detail-skeleton-block.is-hero {
+  min-height: 180px;
+}
+
 .detail-panel {
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.65);
@@ -3672,7 +3704,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  transition: all 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
 .detail-collapsible summary::-webkit-details-marker {
@@ -3760,7 +3792,13 @@ button {
 .detail-shell a,
 .detail-shell summary,
 .detail-shell .tag-check {
-  transition: all 160ms ease;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    opacity 160ms ease;
 }
 
 .detail-panel button:active:not(:disabled),
@@ -3780,7 +3818,7 @@ button {
   border-radius: 16px;
   padding: 0.9rem 1rem;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
-  transition: all 160ms ease;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 
 .detail-panel textarea:focus,
@@ -3831,7 +3869,7 @@ button {
   cursor: pointer;
   font: inherit;
   color: inherit;
-  transition: all 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
 .version-item--source {
@@ -3911,7 +3949,7 @@ button {
   font: inherit;
   font-size: 0.8rem;
   font-weight: 700;
-  transition: all 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
 .preview-mode-button:hover:not(:disabled) {
@@ -4046,7 +4084,7 @@ button {
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
   color: #52525b;
 }
 
@@ -4252,7 +4290,7 @@ button {
   font-weight: 600;
   color: #71717a;
   cursor: pointer;
-  transition: all 160ms ease;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
   line-height: 1.4;
 }
 
@@ -4342,7 +4380,7 @@ button {
   min-height: 80px;
   resize: vertical;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
-  transition: all 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .detail-notes-edit textarea:focus {
@@ -4395,7 +4433,7 @@ button {
   font-weight: 700;
   color: #3f3f46;
   cursor: pointer;
-  transition: all 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .detail-action-button:hover {
@@ -4506,8 +4544,8 @@ button {
   box-shadow:
     0 20px 40px rgba(45, 51, 56, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.76);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .import-form {
@@ -4787,8 +4825,8 @@ button {
   box-shadow:
     0 24px 48px rgba(45, 51, 56, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   text-align: left;
   cursor: pointer;
   transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
@@ -4999,8 +5037,8 @@ button {
   box-shadow:
     0 20px 40px rgba(45, 51, 56, 0.07),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .import-item-card-copy {
@@ -5190,8 +5228,8 @@ button {
     padding: 0.35rem 0.2rem;
     border-radius: 999px;
     background: rgba(249, 249, 250, 0.72);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     box-shadow:
       0 14px 30px rgba(45, 51, 56, 0.06),
       inset 0 1px 0 rgba(255, 255, 255, 0.78);
@@ -5211,8 +5249,8 @@ button {
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(247, 249, 252, 0.58)),
       rgba(255, 255, 255, 0.56);
-    backdrop-filter: blur(28px);
-    -webkit-backdrop-filter: blur(28px);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     box-shadow:
       0 20px 40px rgba(45, 51, 56, 0.06),
       inset 0 1px 0 rgba(255, 255, 255, 0.8);
@@ -5234,8 +5272,7 @@ button {
   }
 
   .home-bookmark-menu-button {
-    opacity: 1;
-    pointer-events: auto;
+    display: none;
   }
 
   .home-bookmark-card.is-mobile-featured {
@@ -5824,7 +5861,7 @@ button {
   font-size: 11px;
   font-weight: 700;
   color: #fff;
-  transition: all 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
   flex-shrink: 0;
 }
 
@@ -6000,7 +6037,7 @@ button {
   color: #fff;
   font-size: 12px;
   font-weight: 700;
-  transition: all 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
   pointer-events: none;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);

@@ -8,6 +8,7 @@ import type {
   BookmarkDetailResult,
   BookmarkViewerVersion,
 } from "../../../api";
+import { formatWhen } from "../../../lib/date-format";
 
 type DetailLoadState = "idle" | "loading" | "ready" | "not-found" | "error";
 type ArchiveViewMode = "reader" | "original";
@@ -22,17 +23,6 @@ type InlineFeedback = {
   kind: "success" | "error";
   message: string;
 };
-
-function formatWhen(input: string) {
-  const date = new Date(input);
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
 
 function formatFileSize(input?: number) {
   if (!input || input <= 0) {

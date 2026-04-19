@@ -22,6 +22,7 @@ import { registerPrivateCaptureRoutes } from "./private-captures";
 import { registerPrivateModeRoutes } from "./private-mode";
 import { registerTagRoutes } from "./tags";
 import { registerUploadRoutes } from "./uploads";
+import { registerWorkspaceRoutes } from "./workspace";
 
 export async function registerRoutes(
   app: FastifyInstance,
@@ -43,6 +44,7 @@ export async function registerRoutes(
   await registerPrivateCaptureRoutes(app, config, authService, privateModeService, repository);
   await registerIngestRoutes(app, apiTokenService, repository);
   await registerUploadRoutes(app, authService, privateModeService, uploadService);
+  await registerWorkspaceRoutes(app, authService, repository, bookmarkService);
   await registerBookmarkRoutes(app, authService, bookmarkService);
   await registerPrivateBookmarkRoutes(app, authService, privateModeService, bookmarkService);
   await registerFolderRoutes(app, authService, repository);

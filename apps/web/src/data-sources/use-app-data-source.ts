@@ -34,6 +34,7 @@ import {
   fetchCurrentUser,
   fetchFolders,
   fetchTags,
+  fetchWorkspaceBootstrap,
   lockPrivateMode,
   loginAccount,
   registerAccount,
@@ -49,6 +50,7 @@ import {
   type BookmarkQuery,
   type BookmarkResult,
   type BookmarkViewerVersion,
+  type WorkspaceBootstrapResult,
 } from "../api";
 import {
   createDemoFolder,
@@ -128,6 +130,7 @@ export type AppDataSource = {
   fetchFolders(token: string): Promise<Folder[]>;
   fetchTags(token: string): Promise<Tag[]>;
   fetchBookmarkFolderCounts(token: string): Promise<Record<string, number>>;
+  fetchWorkspaceBootstrap(token: string): Promise<WorkspaceBootstrapResult>;
   searchBookmarks(query: BookmarkQuery, token: string): Promise<BookmarkResult>;
   fetchBookmarkDetail(bookmarkId: string, token: string): Promise<BookmarkDetailResult | null>;
   createArchivePreviewUrl(
@@ -242,6 +245,16 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
         },
         async fetchBookmarkFolderCounts() {
           return buildFolderCountRecord(demoState.bookmarks);
+        },
+        async fetchWorkspaceBootstrap() {
+          return {
+            folders: demoState.folders,
+            tags: demoState.tags,
+            folderCounts: Object.entries(buildFolderCountRecord(demoState.bookmarks)).map(([folderId, count]) => ({
+              folderId,
+              count,
+            })),
+          };
         },
         async searchBookmarks(query) {
           const filtered = filterDemoBookmarks(demoState, query);
@@ -457,6 +470,7 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
       fetchFolders,
       fetchTags,
       fetchBookmarkFolderCounts,
+      fetchWorkspaceBootstrap,
       searchBookmarks: fetchBookmarks,
       fetchBookmarkDetail,
       async createArchivePreviewUrl(_versionId, objectKey, sourceUrl, token, privateToken) {

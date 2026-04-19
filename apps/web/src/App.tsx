@@ -2,16 +2,16 @@ import {
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  Suspense,
   useCallback,
-  useDeferredValue,
   useEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
   useTransition,
 } from "react";
 import type {
-  ApiToken,
   AuthUser,
   Bookmark,
   BookmarkListView,
@@ -20,7 +20,6 @@ import type {
   Folder,
   PrivateVaultSummary,
   QualityGrade,
-  QualityReport,
   Tag,
 } from "@keeppage/domain";
 import {
@@ -28,16 +27,46 @@ import {
   type BookmarkDetailResult,
   type BookmarkViewerVersion,
 } from "./api";
-import {
-  ImportDetailPanel,
-  ImportHistoryPanel,
-  ImportNewPanel,
-  type ImportPanelAdapter,
-} from "./features/imports";
-import { BookmarkDetailRoute } from "./features/bookmarks/detail";
+import type { ImportPanelAdapter } from "./features/imports";
 import { BookmarksListRoute } from "./features/bookmarks/list";
 import { buildBookmarkSiteIconCandidates } from "./features/bookmarks/shared/site-icon";
+import { useDebouncedValue } from "./hooks/use-debounced-value";
 import { type AppDataSource, useAppDataSource } from "./data-sources/use-app-data-source";
+
+const BookmarkDetailRoute = lazy(async () => {
+  const module = await import("./features/bookmarks/detail");
+  return { default: module.BookmarkDetailRoute };
+});
+
+const ImportNewPanel = lazy(async () => {
+  const module = await import("./features/imports");
+  return { default: module.ImportNewPanel };
+});
+
+const ImportHistoryPanel = lazy(async () => {
+  const module = await import("./features/imports");
+  return { default: module.ImportHistoryPanel };
+});
+
+const ImportDetailPanel = lazy(async () => {
+  const module = await import("./features/imports");
+  return { default: module.ImportDetailPanel };
+});
+
+const PrivateModePage = lazy(async () => {
+  const module = await import("./features/private");
+  return { default: module.PrivateModePage };
+});
+
+const PrivateDetailPage = lazy(async () => {
+  const module = await import("./features/private");
+  return { default: module.PrivateDetailPage };
+});
+
+const ApiTokensPanel = lazy(async () => {
+  const module = await import("./features/api-tokens");
+  return { default: module.ApiTokensPanel };
+});
 
 type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -103,43 +132,7 @@ type ContextMenuGroup = {
 };
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
-const API_TOKEN_SECRET_STORAGE_PREFIX = "keeppage.api-token-secrets";
 const BOOKMARKS_PAGE_SIZE = 24;
-
-type ApiTokenSecretRecord = {
-  value: string;
-  savedAt: string;
-};
-
-function qualityLabel(grade?: QualityGrade) {
-  if (!grade) {
-    return "未知";
-  }
-  if (grade === "high") {
-    return "高";
-  }
-  if (grade === "medium") {
-    return "中";
-  }
-  return "低";
-}
-
-function qualityClass(grade?: QualityGrade) {
-  if (grade === "high") {
-    return "quality quality-high";
-  }
-  if (grade === "medium") {
-    return "quality quality-medium";
-  }
-  if (grade === "low") {
-    return "quality quality-low";
-  }
-  return "quality quality-unknown";
-}
-
-function previewModeLabel(mode: ArchiveViewMode) {
-  return mode === "reader" ? "阅读视图" : "原始归档";
-}
 
 function resolvePreviewSelection(
   version: BookmarkViewerVersion | null,
@@ -177,70 +170,6 @@ function resolvePreviewSelection(
   return null;
 }
 
-function formatWhen(input: string) {
-  const date = new Date(input);
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function formatRelativeWhen(input: string) {
-  const target = new Date(input);
-  const diffMs = target.getTime() - Date.now();
-  if (Number.isNaN(diffMs)) {
-    return formatWhen(input);
-  }
-
-  const absMs = Math.abs(diffMs);
-  if (absMs < 60_000) {
-    return "刚刚";
-  }
-
-  const formatter = new Intl.RelativeTimeFormat("zh-CN", {
-    numeric: "auto",
-  });
-  const units = [
-    { unit: "year", ms: 365 * 24 * 60 * 60 * 1000 },
-    { unit: "month", ms: 30 * 24 * 60 * 60 * 1000 },
-    { unit: "week", ms: 7 * 24 * 60 * 60 * 1000 },
-    { unit: "day", ms: 24 * 60 * 60 * 1000 },
-    { unit: "hour", ms: 60 * 60 * 1000 },
-    { unit: "minute", ms: 60 * 1000 },
-  ] as const;
-
-  for (const { unit, ms } of units) {
-    if (absMs >= ms) {
-      return formatter.format(Math.round(diffMs / ms), unit);
-    }
-  }
-
-  return formatWhen(input);
-}
-
-function formatDateTimeInputValue(input?: string) {
-  if (!input) {
-    return "";
-  }
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
-function isApiTokenExpired(token: ApiToken) {
-  return Boolean(token.expiresAt && new Date(token.expiresAt).getTime() <= Date.now());
-}
-
-function isApiTokenActive(token: ApiToken) {
-  return !token.revokedAt && !isApiTokenExpired(token);
-}
-
 async function copyTextToClipboard(value: string) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(value);
@@ -266,99 +195,6 @@ function buildAppUrl(hash: string) {
   return new URL(hash, window.location.href).toString();
 }
 
-function getApiTokenSecretStorageKey(userId: string) {
-  return `${API_TOKEN_SECRET_STORAGE_PREFIX}:${userId}`;
-}
-
-function readApiTokenSecrets(userId: string): Record<string, ApiTokenSecretRecord> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  try {
-    const raw = window.localStorage.getItem(getApiTokenSecretStorageKey(userId));
-    if (!raw) {
-      return {};
-    }
-
-    const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== "object" || parsed === null) {
-      return {};
-    }
-
-    return Object.entries(parsed as Record<string, unknown>).reduce<Record<string, ApiTokenSecretRecord>>((accumulator, [tokenId, value]) => {
-      if (typeof value !== "object" || value === null) {
-        return accumulator;
-      }
-
-      const record = value as {
-        value?: unknown;
-        savedAt?: unknown;
-      };
-      if (typeof record.value !== "string" || !record.value.trim()) {
-        return accumulator;
-      }
-
-      accumulator[tokenId] = {
-        value: record.value.trim(),
-        savedAt: typeof record.savedAt === "string" ? record.savedAt : new Date(0).toISOString(),
-      };
-      return accumulator;
-    }, {});
-  } catch {
-    return {};
-  }
-}
-
-function writeApiTokenSecrets(userId: string, secrets: Record<string, ApiTokenSecretRecord>) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    if (Object.keys(secrets).length === 0) {
-      window.localStorage.removeItem(getApiTokenSecretStorageKey(userId));
-      return;
-    }
-    window.localStorage.setItem(getApiTokenSecretStorageKey(userId), JSON.stringify(secrets));
-  } catch {
-    // Ignore storage write failures and keep the UI usable.
-  }
-}
-
-function resolveApiBaseForCurl() {
-  const configuredBase = (import.meta.env.VITE_API_BASE_URL ?? "/api").trim() || "/api";
-  const normalizedBase = configuredBase.replace(/\/$/, "");
-  if (/^https?:\/\//i.test(normalizedBase)) {
-    return normalizedBase;
-  }
-  return new URL(normalizedBase, window.location.origin).toString().replace(/\/$/, "");
-}
-
-function buildBookmarkIngestCurl(
-  apiBaseUrl: string,
-  tokenValue: string,
-  authMode: "authorization" | "x-api-key" = "authorization",
-) {
-  const authHeader = authMode === "authorization"
-    ? `  -H 'Authorization: Bearer ${tokenValue}' \\`
-    : `  -H 'X-KeepPage-Api-Key: ${tokenValue}' \\`;
-
-  return [
-    `curl -X POST '${apiBaseUrl}/ingest/bookmarks' \\`,
-    authHeader,
-    "  -H 'Content-Type: application/json' \\",
-    "  -d '{",
-    '    "url": "https://example.com/article",',
-    '    "title": "KeepPage API 密钥测试",',
-    '    "note": "来自 API 密钥页面",',
-    '    "tags": ["api-key", "curl"],',
-    '    "folderPath": "Inbox/API",',
-    '    "dedupeStrategy": "merge"',
-    "  }'",
-  ].join("\n");
-}
-
 function clampContextMenuPosition(x: number, y: number, width: number, height: number) {
   const horizontalGap = 20;
   const verticalGap = 20;
@@ -371,13 +207,6 @@ function clampContextMenuPosition(x: number, y: number, width: number, height: n
     Math.max(verticalGap, window.innerHeight - height - verticalGap),
   );
   return { left, top };
-}
-
-function retentionLabel(numerator: number, denominator: number) {
-  if (denominator <= 0) {
-    return "—";
-  }
-  return `${Math.round((numerator / denominator) * 100)}%`;
 }
 
 function parseRoute(hash: string): ViewRoute {
@@ -1281,991 +1110,6 @@ function AppShell({
   );
 }
 
-function PrivateModePage({
-  summary,
-  privateToken,
-  items,
-  loadState,
-  error,
-  setupPassword,
-  setupConfirm,
-  unlockPassword,
-  busy,
-  onSetupPasswordChange,
-  onSetupConfirmChange,
-  onUnlockPasswordChange,
-  onSetup,
-  onUnlock,
-  onLock,
-  onOpenBookmark,
-}: {
-  summary: PrivateVaultSummary | null;
-  privateToken: string | null;
-  items: Bookmark[];
-  loadState: LoadState;
-  error: string | null;
-  setupPassword: string;
-  setupConfirm: string;
-  unlockPassword: string;
-  busy: boolean;
-  onSetupPasswordChange: (value: string) => void;
-  onSetupConfirmChange: (value: string) => void;
-  onUnlockPasswordChange: (value: string) => void;
-  onSetup: () => void;
-  onUnlock: () => void;
-  onLock: () => void;
-  onOpenBookmark: (bookmarkId: string) => void;
-}) {
-  const enabled = Boolean(summary?.enabled);
-  const unlocked = Boolean(privateToken);
-
-  if (!summary) {
-    return (
-      <section className="private-mode-page">
-        <header className="private-mode-hero">
-          <div>
-            <p className="eyebrow">设置</p>
-            <h1>私密模式</h1>
-            <p>正在读取私密模式状态...</p>
-          </div>
-        </header>
-        {error ? (
-          <p className="status-banner is-error">{error}</p>
-        ) : (
-          <p className="status-banner">正在加载私密模式状态...</p>
-        )}
-      </section>
-    );
-  }
-
-  return (
-    <section className="private-mode-page">
-      <header className="private-mode-hero">
-        <div>
-          <p className="eyebrow">设置</p>
-          <h1>私密模式</h1>
-          <p>
-            私密模式用于默认隐藏和密码进入，不等同于加密保险箱。
-            当前版本会把私密内容存到独立私密链路中，首页默认不会展示。
-          </p>
-        </div>
-        {enabled && unlocked ? (
-          <button className="secondary-button" type="button" onClick={onLock} disabled={busy}>
-            退出私密模式
-          </button>
-        ) : null}
-      </header>
-
-      <div className="private-mode-stats">
-        <article className="private-mode-stat-card">
-          <span>当前状态</span>
-          <strong>{!enabled ? "未启用" : unlocked ? "已进入" : "已锁定"}</strong>
-          <small>登录账号后仍需单独输入私密密码</small>
-        </article>
-        <article className="private-mode-stat-card">
-          <span>私密条目</span>
-          <strong>{summary?.totalItems ?? 0}</strong>
-          <small>默认不会出现在普通首页和普通搜索中</small>
-        </article>
-        <article className="private-mode-stat-card">
-          <span>最近更新</span>
-          <strong>{summary?.lastUpdatedAt ? formatRelativeWhen(summary.lastUpdatedAt) : "暂无"}</strong>
-          <small>{summary?.lastUpdatedAt ? formatWhen(summary.lastUpdatedAt) : "还没有私密内容"}</small>
-        </article>
-      </div>
-
-      {!enabled ? (
-        <section className="private-mode-card">
-          <h2>启用私密模式</h2>
-          <p>设置一个独立密码后，扩展和 Web 都可以把内容保存到私密工作区。</p>
-          <div className="private-mode-form">
-            <label>
-              <span>私密密码</span>
-              <input
-                type="password"
-                value={setupPassword}
-                onChange={(event) => onSetupPasswordChange(event.target.value)}
-                placeholder="至少 8 位"
-              />
-            </label>
-            <label>
-              <span>确认密码</span>
-              <input
-                type="password"
-                value={setupConfirm}
-                onChange={(event) => onSetupConfirmChange(event.target.value)}
-                placeholder="再次输入"
-              />
-            </label>
-          </div>
-          <button className="primary-button" type="button" onClick={onSetup} disabled={busy}>
-            {busy ? "启用中..." : "启用私密模式"}
-          </button>
-        </section>
-      ) : !unlocked ? (
-        <section className="private-mode-card">
-          <h2>输入密码进入私密空间</h2>
-          <p>关闭或刷新 KeepPage 页面后，会默认退出私密模式。</p>
-          <div className="private-mode-form">
-            <label>
-              <span>私密密码</span>
-              <input
-                type="password"
-                value={unlockPassword}
-                onChange={(event) => onUnlockPasswordChange(event.target.value)}
-                placeholder="输入私密密码"
-              />
-            </label>
-          </div>
-          <button className="primary-button" type="button" onClick={onUnlock} disabled={busy}>
-            {busy ? "进入中..." : "进入私密空间"}
-          </button>
-        </section>
-      ) : (
-        <section className="private-mode-card">
-          <div className="private-mode-card-head">
-            <div>
-              <h2>私密内容</h2>
-              <p>这里是独立私密工作区。内容不会出现在普通列表、普通搜索和普通统计里。</p>
-            </div>
-          </div>
-
-          {loadState === "loading" ? (
-            <p className="status-banner">正在加载私密内容...</p>
-          ) : items.length === 0 ? (
-            <div className="private-mode-empty">
-              <h3>还没有私密内容</h3>
-              <p>可以在扩展侧通过“保存到 KP 私密模式”把当前网页保存进来。</p>
-            </div>
-          ) : (
-            <div className="private-mode-list">
-              {items.map((bookmark) => (
-                <button
-                  className="private-mode-item"
-                  key={bookmark.id}
-                  type="button"
-                  onClick={() => onOpenBookmark(bookmark.id)}
-                >
-                  <div>
-                    <strong>{bookmark.title}</strong>
-                    <p>{bookmark.domain}</p>
-                  </div>
-                  <span>{formatRelativeWhen(bookmark.updatedAt)}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {error ? (
-        <p className="status-banner is-error">{error}</p>
-      ) : null}
-    </section>
-  );
-}
-
-function PrivateDetailPage({
-  detail,
-  selectedVersion,
-  previewState,
-  preferredPreviewMode,
-  activePreviewMode,
-  onGoBack,
-  onSelectVersion,
-  onPreviewModeChange,
-}: {
-  detail: BookmarkDetailResult;
-  selectedVersion: BookmarkViewerVersion;
-  previewState: ArchivePreviewState;
-  preferredPreviewMode: ArchiveViewMode;
-  activePreviewMode: ArchiveViewMode | null;
-  onGoBack: () => void;
-  onSelectVersion: (bookmarkId: string, versionId?: string) => void;
-  onPreviewModeChange: (mode: ArchiveViewMode) => void;
-}) {
-  const displayedArchiveSize = activePreviewMode === "reader"
-    ? selectedVersion.readerArchiveSizeBytes ?? selectedVersion.archiveSizeBytes
-    : selectedVersion.archiveSizeBytes ?? selectedVersion.readerArchiveSizeBytes;
-  const readerPreviewAvailable = Boolean(
-    selectedVersion.readerHtmlObjectKey && selectedVersion.readerArchiveAvailable,
-  );
-  const originalPreviewAvailable = selectedVersion.archiveAvailable;
-  const fallbackMessage = activePreviewMode && preferredPreviewMode !== activePreviewMode
-    ? "当前版本没有首选预览对象，已自动回退。"
-    : null;
-
-  return (
-    <section className="detail-shell">
-      <section className="detail-preview-panel">
-        {!activePreviewMode ? (
-          <section className="empty-state preview-empty">
-            <h2>归档对象不可用</h2>
-            <p>当前私密版本没有可读取的归档对象。</p>
-          </section>
-        ) : previewState.status === "loading" ? (
-          <section className="loading preview-empty">正在加载私密预览...</section>
-        ) : previewState.status === "error" ? (
-          <section className="empty-state preview-empty">
-            <h2>加载失败</h2>
-            <p>{previewState.error}</p>
-          </section>
-        ) : previewState.status === "ready" ? (
-          <iframe
-            className="archive-frame"
-            src={previewState.url}
-            title={`${detail.bookmark.title} v${selectedVersion.versionNo}`}
-          />
-        ) : null}
-      </section>
-
-      <aside className="detail-panel">
-        <div className="detail-top-bar">
-          <button className="detail-back-button" type="button" onClick={onGoBack}>
-            <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
-          </button>
-          <div className="preview-mode-switch preview-mode-switch--compact" role="tablist" aria-label="私密归档预览模式">
-            <button
-              className={activePreviewMode === "reader" ? "preview-mode-button is-active" : "preview-mode-button"}
-              type="button"
-              onClick={() => onPreviewModeChange("reader")}
-              disabled={!readerPreviewAvailable}
-            >
-              阅读视图
-            </button>
-            <button
-              className={activePreviewMode === "original" ? "preview-mode-button is-active" : "preview-mode-button"}
-              type="button"
-              onClick={() => onPreviewModeChange("original")}
-              disabled={!originalPreviewAvailable}
-            >
-              原始归档
-            </button>
-          </div>
-        </div>
-        {fallbackMessage ? <p className="preview-mode-note">{fallbackMessage}</p> : null}
-
-        <div className="detail-block">
-          <div className="detail-header-label">
-            <span className="detail-header-label-text">Private View</span>
-            <span className="detail-header-label-id">#{detail.bookmark.id.slice(0, 8).toUpperCase()}</span>
-          </div>
-          <div className="detail-title-row">
-            <h2 className="detail-title">{detail.bookmark.title}</h2>
-          </div>
-          <div className="detail-url-row">
-            <span className="material-symbols-outlined" aria-hidden="true">link</span>
-            <a href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
-              {detail.bookmark.sourceUrl}
-            </a>
-          </div>
-        </div>
-
-        <div className="detail-meta-grid">
-          <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">Added</span>
-            <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.createdAt)}</span>
-          </div>
-          <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">Last Sync</span>
-            <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.updatedAt)}</span>
-          </div>
-          <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">Versions</span>
-            <span className="detail-meta-cell-value">{detail.versions.length}</span>
-          </div>
-          <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">File Size</span>
-            <span className="detail-meta-cell-value">
-              {displayedArchiveSize ? `${Math.round(displayedArchiveSize / 1024)} KB` : "未知"}
-            </span>
-          </div>
-        </div>
-
-        <details className="detail-collapsible" open>
-          <summary>
-            <span className="detail-summary-label">
-              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
-                history
-              </span>
-              <span>版本历史</span>
-            </span>
-            <span className="badge">{detail.versions.length}</span>
-          </summary>
-          <div className="detail-collapsible-body">
-            <div className="version-list">
-              {detail.versions.map((version, index) => {
-                const active = version.id === selectedVersion.id;
-                const isLatest = index === 0;
-                return (
-                  <button
-                    key={version.id}
-                    className={`version-item${active ? " is-active" : ""}`}
-                    type="button"
-                    onClick={() => onSelectVersion(detail.bookmark.id, version.id)}
-                  >
-                    <span className="version-item-icon material-symbols-outlined" aria-hidden="true">refresh</span>
-                    <div>
-                      <strong>v{version.versionNo}{isLatest ? " (Latest)" : ""}</strong>
-                      <span>{formatWhen(version.createdAt)}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </details>
-      </aside>
-    </section>
-  );
-}
-
-function ApiTokensPanel({
-  token,
-  userId,
-  dataSource,
-  onApiError,
-  onBack,
-}: {
-  token: string;
-  userId: string;
-  dataSource: AppDataSource;
-  onApiError: (error: unknown) => boolean;
-  onBack: () => void;
-}) {
-  const isDemoMode = dataSource.kind === "demo";
-  const storageUserId = isDemoMode ? "demo" : userId;
-  const [loadState, setLoadState] = useState<LoadState>("idle");
-  const [items, setItems] = useState<ApiToken[]>([]);
-  const [storedTokenSecrets, setStoredTokenSecrets] = useState<Record<string, ApiTokenSecretRecord>>(
-    () => readApiTokenSecrets(storageUserId),
-  );
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<InlineFeedback | null>(null);
-  const [revealedToken, setRevealedToken] = useState<{ id: string; name: string; value: string } | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createExpiresAt, setCreateExpiresAt] = useState("");
-  const [createBusy, setCreateBusy] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [revokeTarget, setRevokeTarget] = useState<ApiToken | null>(null);
-  const [revokeBusy, setRevokeBusy] = useState(false);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
-  const apiBaseUrl = useMemo(() => resolveApiBaseForCurl(), []);
-
-  useEffect(() => {
-    setStoredTokenSecrets(readApiTokenSecrets(storageUserId));
-  }, [storageUserId]);
-
-  useEffect(() => {
-    setFeedback(null);
-    let cancelled = false;
-    setLoadState("loading");
-    dataSource.fetchApiTokens(token)
-      .then((nextItems) => {
-        if (cancelled) {
-          return;
-        }
-        setItems(nextItems);
-        setLoadError(null);
-        setLoadState("ready");
-      })
-      .catch((error) => {
-        if (cancelled || onApiError(error)) {
-          return;
-        }
-        setLoadError(toErrorMessage(error));
-        setLoadState("error");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dataSource, token]);
-
-  const activeCount = useMemo(
-    () => items.filter((item) => isApiTokenActive(item)).length,
-    [items],
-  );
-  const revokedCount = useMemo(
-    () => items.filter((item) => Boolean(item.revokedAt)).length,
-    [items],
-  );
-  const latestUsedAt = useMemo(() => {
-    const candidates = items
-      .map((item) => item.lastUsedAt)
-      .filter((value): value is string => Boolean(value))
-      .sort((left, right) => new Date(right).getTime() - new Date(left).getTime());
-    return candidates[0];
-  }, [items]);
-  const locallyStoredCount = useMemo(
-    () => items.filter((item) => Boolean(storedTokenSecrets[item.id]?.value)).length,
-    [items, storedTokenSecrets],
-  );
-
-  function updateStoredTokenSecrets(
-    updater: (current: Record<string, ApiTokenSecretRecord>) => Record<string, ApiTokenSecretRecord>,
-  ) {
-    setStoredTokenSecrets((current) => {
-      const next = updater(current);
-      writeApiTokenSecrets(storageUserId, next);
-      return next;
-    });
-  }
-
-  function openCreateDialog() {
-    setCreateName("");
-    setCreateExpiresAt("");
-    setCreateError(null);
-    setCreateOpen(true);
-  }
-
-  function closeCreateDialog() {
-    if (createBusy) {
-      return;
-    }
-    setCreateOpen(false);
-    setCreateError(null);
-  }
-
-  async function handleCopyRevealedToken() {
-    if (!revealedToken) {
-      return;
-    }
-    try {
-      await copyTextToClipboard(revealedToken.value);
-      setFeedback({
-        kind: "success",
-        message: `已复制 ${revealedToken.name} 的完整 API 密钥。`,
-      });
-    } catch (error) {
-      setFeedback({
-        kind: "error",
-        message: toErrorMessage(error),
-      });
-    }
-  }
-
-  async function handleCopyCurl(
-    itemName: string,
-    tokenValue: string,
-    authMode: "authorization" | "x-api-key",
-  ) {
-    const curlCommand = buildBookmarkIngestCurl(apiBaseUrl, tokenValue, authMode);
-    try {
-      await copyTextToClipboard(curlCommand);
-      setFeedback({
-        kind: "success",
-        message: authMode === "authorization"
-          ? `已复制 ${itemName} 的 Bearer curl 命令。`
-          : `已复制 ${itemName} 的 X-KeepPage-Api-Key curl 命令。`,
-      });
-    } catch (error) {
-      setFeedback({
-        kind: "error",
-        message: toErrorMessage(error),
-      });
-    }
-  }
-
-  async function handleCopyStoredToken(itemName: string, tokenValue: string) {
-    try {
-      await copyTextToClipboard(tokenValue);
-      setFeedback({
-        kind: "success",
-        message: `已复制 ${itemName} 的完整 API 密钥。`,
-      });
-    } catch (error) {
-      setFeedback({
-        kind: "error",
-        message: toErrorMessage(error),
-      });
-    }
-  }
-
-  async function handleCreateToken(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedName = createName.trim();
-    if (!trimmedName) {
-      setCreateError("请填写 API 密钥名称。");
-      return;
-    }
-
-    let expiresAt: string | undefined;
-    if (createExpiresAt.trim()) {
-      const parsed = new Date(createExpiresAt);
-      if (Number.isNaN(parsed.getTime())) {
-        setCreateError("请输入有效的过期时间。");
-        return;
-      }
-      expiresAt = parsed.toISOString();
-    }
-
-    setCreateBusy(true);
-    setCreateError(null);
-
-    try {
-      const result = await dataSource.createApiToken({
-        name: trimmedName,
-        scopes: ["bookmark:create"],
-        expiresAt,
-      }, token);
-      setItems((current) => [result.item, ...current]);
-      updateStoredTokenSecrets((current) => ({
-        ...current,
-        [result.item.id]: {
-          value: result.token,
-          savedAt: new Date().toISOString(),
-        },
-      }));
-      setRevealedToken({
-        id: result.item.id,
-        name: result.item.name,
-        value: result.token,
-      });
-
-      setCreateOpen(false);
-      setCreateName("");
-      setCreateExpiresAt("");
-      setFeedback({
-        kind: "success",
-        message: `已创建 API 密钥：${trimmedName}。完整明文已保存在当前浏览器，下面可以直接复制 curl 测试。`,
-      });
-    } catch (error) {
-      if (onApiError(error)) {
-        return;
-      }
-      setCreateError(toErrorMessage(error));
-    } finally {
-      setCreateBusy(false);
-    }
-  }
-
-  async function handleRevokeToken() {
-    if (!revokeTarget) {
-      return;
-    }
-
-    setRevokeBusy(true);
-    setRevokeError(null);
-    try {
-      const revokedAt = new Date().toISOString();
-      await dataSource.revokeApiToken(revokeTarget.id, token);
-      setItems((current) => current.map((item) => (
-        item.id === revokeTarget.id
-          ? { ...item, revokedAt }
-          : item
-      )));
-
-      updateStoredTokenSecrets((current) => {
-        if (!current[revokeTarget.id]) {
-          return current;
-        }
-        const next = { ...current };
-        delete next[revokeTarget.id];
-        return next;
-      });
-      if (revealedToken?.id === revokeTarget.id) {
-        setRevealedToken(null);
-      }
-
-      setFeedback({
-        kind: "success",
-        message: `已吊销 API 密钥：${revokeTarget.name}。`,
-      });
-      setRevokeTarget(null);
-    } catch (error) {
-      if (onApiError(error)) {
-        return;
-      }
-      setRevokeError(toErrorMessage(error));
-    } finally {
-      setRevokeBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <section className="api-token-page">
-        <header className="api-token-hero">
-          <div className="api-token-hero-copy">
-            <p className="eyebrow">设置</p>
-            <h1>API 密钥</h1>
-            <p>
-              给 Raycast、快捷指令、Zapier 或你自己的脚本一个受限写入口。
-              目前每个密钥只授予 <code>bookmark:create</code> 权限，适合只传 URL 的自动入库场景。
-            </p>
-          </div>
-
-          <div className="api-token-hero-actions">
-            <button className="secondary-button" type="button" onClick={onBack}>
-              返回书签
-            </button>
-            <button className="primary-button" type="button" onClick={openCreateDialog}>
-              <span className="material-symbols-outlined" aria-hidden="true">
-                add
-              </span>
-              <span>创建 API 密钥</span>
-            </button>
-          </div>
-
-          <div className="api-token-stat-grid">
-            <article className="api-token-stat-card">
-              <span className="api-token-stat-label">生效密钥</span>
-              <strong>{activeCount}</strong>
-              <small>{items.length} 个密钥中可用的写入入口</small>
-            </article>
-            <article className="api-token-stat-card">
-              <span className="api-token-stat-label">最近调用</span>
-              <strong>{latestUsedAt ? formatRelativeWhen(latestUsedAt) : "尚未调用"}</strong>
-              <small>{latestUsedAt ? formatWhen(latestUsedAt) : "创建后等待第一次接入请求"}</small>
-            </article>
-            <article className="api-token-stat-card">
-              <span className="api-token-stat-label">已吊销</span>
-              <strong>{revokedCount}</strong>
-              <small>建议定期清理停用的集成入口</small>
-            </article>
-            <article className="api-token-stat-card">
-              <span className="api-token-stat-label">本地明文</span>
-              <strong>{locallyStoredCount}</strong>
-              <small>完整密钥仅保存在当前浏览器，方便复制和 curl 调试</small>
-            </article>
-          </div>
-        </header>
-
-        {revealedToken ? (
-          <section className="api-token-reveal-card">
-            <div className="api-token-reveal-copy">
-              <p className="eyebrow">可立即测试</p>
-              <h2>{revealedToken.name}</h2>
-              <p>完整 API 密钥已保存在当前浏览器本地。服务端仍然只保存哈希，所以换浏览器后不会重新取回明文。</p>
-            </div>
-            <div className="api-token-secret-shell">
-              <code>{revealedToken.value}</code>
-              <div className="api-token-secret-actions">
-                <button className="secondary-button compact-button" type="button" onClick={() => setRevealedToken(null)}>
-                  关闭提示
-                </button>
-                <button className="primary-button compact-button" type="button" onClick={() => void handleCopyRevealedToken()}>
-                  复制完整密钥
-                </button>
-                <button
-                  className="secondary-button compact-button"
-                  type="button"
-                  onClick={() => void handleCopyCurl(revealedToken.name, revealedToken.value, "authorization")}
-                >
-                  复制 Bearer curl
-                </button>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {feedback ? (
-          <p className={feedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
-            {feedback.message}
-          </p>
-        ) : null}
-
-        {loadState === "loading" && items.length > 0 ? (
-          <p className="status-banner">正在刷新 API 密钥列表...</p>
-        ) : null}
-
-        {loadState === "loading" && items.length === 0 ? (
-          <section className="api-token-list api-token-list-skeleton">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <article className="api-token-card is-skeleton" key={index}>
-                <div className="api-token-skeleton-line is-eyebrow" />
-                <div className="api-token-skeleton-line is-title" />
-                <div className="api-token-skeleton-line" />
-                <div className="api-token-skeleton-row">
-                  <span className="api-token-skeleton-pill" />
-                  <span className="api-token-skeleton-pill" />
-                </div>
-              </article>
-            ))}
-          </section>
-        ) : loadState === "error" ? (
-          <section className="api-token-empty">
-            <h2>API 密钥列表加载失败</h2>
-            <p>{loadError ?? "暂时无法读取当前账号的 API 密钥。"}</p>
-            <button className="primary-button" type="button" onClick={openCreateDialog}>
-              继续创建
-            </button>
-          </section>
-        ) : items.length === 0 ? (
-          <section className="api-token-empty">
-            <h2>还没有 API 密钥</h2>
-            <p>创建一个只允许写入书签的 key，把外部网址流接进 KeepPage 的收集箱。</p>
-            <button className="primary-button" type="button" onClick={openCreateDialog}>
-              创建第一个 API 密钥
-            </button>
-          </section>
-        ) : (
-          <section className="api-token-list">
-            {items.map((item) => {
-              const expired = isApiTokenExpired(item);
-              const storedTokenValue = storedTokenSecrets[item.id]?.value;
-              const statusLabel = item.revokedAt
-                ? "已吊销"
-                : expired
-                  ? "已过期"
-                  : "可用";
-              const statusClass = item.revokedAt
-                ? "is-revoked"
-                : expired
-                  ? "is-expired"
-                  : "is-active";
-
-              return (
-                <article className="api-token-card" key={item.id}>
-                  <div className="api-token-card-head">
-                    <div className="api-token-card-copy">
-                      <p className="eyebrow">书签写入口</p>
-                      <h2>{item.name}</h2>
-                      <code className="api-token-preview">{item.tokenPreview}</code>
-                    </div>
-                    <span className={`api-token-status ${statusClass}`}>{statusLabel}</span>
-                  </div>
-
-                  <div className="api-token-meta-row">
-                    {item.scopes.map((scope) => (
-                      <span className="api-token-scope-chip" key={scope}>
-                        {scope}
-                      </span>
-                    ))}
-                    <span className="api-token-meta-pill">
-                      创建于 {formatWhen(item.createdAt)}
-                    </span>
-                    <span className="api-token-meta-pill">
-                      最近使用 {item.lastUsedAt ? formatRelativeWhen(item.lastUsedAt) : "尚未调用"}
-                    </span>
-                    <span className="api-token-meta-pill">
-                      {item.expiresAt ? `到期于 ${formatWhen(item.expiresAt)}` : "长期有效"}
-                    </span>
-                  </div>
-
-                  <section className="api-token-secret-box">
-                    <div className="api-token-section-head">
-                      <div>
-                        <p className="eyebrow">API 密钥</p>
-                        <p>
-                          {storedTokenValue
-                            ? "完整明文已保存在当前浏览器，可直接复制到脚本、Raycast 或快捷指令。"
-                            : "当前浏览器没有保存这把密钥的完整明文；服务端不会再次返回明文。"}
-                        </p>
-                      </div>
-                      {storedTokenValue ? (
-                        <button
-                          className="secondary-button compact-button"
-                          type="button"
-                          onClick={() => void handleCopyStoredToken(item.name, storedTokenValue)}
-                        >
-                          复制密钥
-                        </button>
-                      ) : null}
-                    </div>
-
-                    <code className="api-token-code-block">
-                      {storedTokenValue ?? item.tokenPreview}
-                    </code>
-
-                    <p className="api-token-secret-note">
-                      {storedTokenValue
-                        ? "为了方便测试，这个明文只保存在当前浏览器的本地存储里。"
-                        : "如果你需要直接测试，请重新创建一个新的 API 密钥。"}
-                    </p>
-                  </section>
-
-                  <section className="api-token-usage-box">
-                    <div className="api-token-section-head">
-                      <div>
-                        <p className="eyebrow">curl 调试</p>
-                        <p>默认示例使用 <code>Authorization: Bearer</code>。也支持复制 <code>X-KeepPage-Api-Key</code> 版本。</p>
-                      </div>
-                    </div>
-
-                    <code className="api-token-code-block">
-                      {buildBookmarkIngestCurl(apiBaseUrl, storedTokenValue ?? "<api-token>", "authorization")}
-                    </code>
-
-                    <div className="api-token-usage-actions">
-                      <button
-                        className="secondary-button compact-button"
-                        type="button"
-                        onClick={() => void handleCopyCurl(
-                          item.name,
-                          storedTokenValue ?? "<api-token>",
-                          "authorization",
-                        )}
-                      >
-                        {storedTokenValue ? "复制 Bearer curl" : "复制 curl 模板"}
-                      </button>
-                      <button
-                        className="secondary-button compact-button"
-                        type="button"
-                        onClick={() => void handleCopyCurl(
-                          item.name,
-                          storedTokenValue ?? "<api-token>",
-                          "x-api-key",
-                        )}
-                      >
-                        复制 Header 版本
-                      </button>
-                    </div>
-                  </section>
-
-                  <div className="api-token-card-foot">
-                    <p>
-                      轻量写入只会创建或合并书签，不会主动抓取网页正文。适合先把 URL 丢进 KeepPage 收集箱。
-                    </p>
-                    {!item.revokedAt ? (
-                      <button
-                        className="secondary-button compact-button danger-button"
-                        type="button"
-                        onClick={() => {
-                          setRevokeError(null);
-                          setRevokeTarget(item);
-                        }}
-                      >
-                        吊销
-                      </button>
-                    ) : (
-                      <span className="api-token-revoked-note">
-                        于 {formatWhen(item.revokedAt)} 停用
-                      </span>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </section>
-        )}
-      </section>
-
-      {createOpen ? (
-        <div className="manager-dialog-backdrop api-token-dialog-backdrop" aria-hidden="true" onClick={closeCreateDialog}>
-          <div
-            className="api-token-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="api-token-create-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="api-token-dialog-shell">
-              <div className="api-token-dialog-header">
-                <div className="api-token-dialog-heading">
-                  <p className="eyebrow">新建凭证</p>
-                  <h2 id="api-token-create-title">创建 API 密钥</h2>
-                  <p>生成一个只允许新增书签的写入密钥。创建成功后，完整明文会保存在当前浏览器，方便你直接复制和测试。</p>
-                </div>
-                <button className="create-folder-dialog-close" type="button" onClick={closeCreateDialog} disabled={createBusy}>
-                  <DialogCloseIcon />
-                </button>
-              </div>
-
-              <form className="api-token-dialog-form" onSubmit={handleCreateToken}>
-                <label className="api-token-field">
-                  <span className="api-token-field-label">密钥名称</span>
-                  <input
-                    type="text"
-                    value={createName}
-                    onChange={(event) => setCreateName(event.target.value)}
-                    placeholder="例如 Raycast 收件箱"
-                    autoFocus
-                    maxLength={120}
-                  />
-                </label>
-
-                <label className="api-token-field">
-                  <span className="api-token-field-label">过期时间（可选）</span>
-                  <input
-                    type="datetime-local"
-                    value={createExpiresAt}
-                    onChange={(event) => setCreateExpiresAt(event.target.value)}
-                  />
-                  <small>留空表示长期有效。当前固定授予 <code>bookmark:create</code> 作用域。</small>
-                </label>
-
-                <div className="api-token-scope-box">
-                  <span className="api-token-scope-chip">bookmark:create</span>
-                  <p>适合从外部工具传入一个 URL，由 KeepPage 负责合并或新建书签记录。</p>
-                </div>
-
-                {createError ? <p className="manager-dialog-error">{createError}</p> : null}
-
-                <div className="api-token-dialog-actions">
-                  <button className="secondary-button" type="button" onClick={closeCreateDialog} disabled={createBusy}>
-                    取消
-                  </button>
-                  <button className="primary-button" type="submit" disabled={createBusy}>
-                    {createBusy ? "创建中..." : "创建密钥"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {revokeTarget ? (
-        <div
-          className="manager-dialog-backdrop api-token-dialog-backdrop"
-          aria-hidden="true"
-          onClick={() => { if (!revokeBusy) { setRevokeTarget(null); setRevokeError(null); } }}
-        >
-          <div
-            className="api-token-dialog is-danger"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="api-token-revoke-title"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="api-token-dialog-shell">
-              <div className="api-token-dialog-header">
-                <div className="api-token-dialog-heading">
-                  <p className="eyebrow">吊销访问</p>
-                  <h2 id="api-token-revoke-title">吊销 API 密钥</h2>
-                  <p>吊销后，依赖这个密钥的自动化入口会立即失效，现有 URL 不会继续写入你的书签库。</p>
-                </div>
-                <button
-                  className="create-folder-dialog-close"
-                  type="button"
-                  onClick={() => { if (!revokeBusy) { setRevokeTarget(null); setRevokeError(null); } }}
-                  disabled={revokeBusy}
-                >
-                  <DialogCloseIcon />
-                </button>
-              </div>
-
-              <div className="api-token-revoke-card">
-                <strong>{revokeTarget.name}</strong>
-                <code>{revokeTarget.tokenPreview}</code>
-              </div>
-
-              {revokeError ? <p className="manager-dialog-error">{revokeError}</p> : null}
-
-              <div className="api-token-dialog-actions">
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => { if (!revokeBusy) { setRevokeTarget(null); setRevokeError(null); } }}
-                  disabled={revokeBusy}
-                >
-                  取消
-                </button>
-                <button className="primary-button danger-fill" type="button" onClick={() => void handleRevokeToken()} disabled={revokeBusy}>
-                  {revokeBusy ? "Revoking..." : "确认吊销"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
 function ManagerDialog({
   state,
   busy,
@@ -2978,21 +1822,13 @@ function ContextMenu({
       }
     }
 
-    function handleViewportChange() {
-      onClose();
-    }
-
     window.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("contextmenu", handleWindowContextMenu);
     window.addEventListener("keydown", handleEscape);
-    window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("scroll", handleViewportChange, true);
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("contextmenu", handleWindowContextMenu);
       window.removeEventListener("keydown", handleEscape);
-      window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("scroll", handleViewportChange, true);
     };
   }, [onClose]);
 
@@ -3320,7 +2156,7 @@ export function App({
   const cloudArchiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const deferredSearch = useDeferredValue(searchInput);
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
   const authToken = session.status === "authenticated" ? session.token : null;
   const logoutLabel = appDataSource.logoutLabel;
   const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
@@ -3710,6 +2546,23 @@ export function App({
     return handleProtectedApiError(error);
   }
 
+  function applyWorkspaceBootstrap(
+    payload: Awaited<ReturnType<AppDataSource["fetchWorkspaceBootstrap"]>>,
+  ) {
+    setFolders(payload.folders);
+    setTags(payload.tags);
+    setSidebarFolderCounts(payload.folderCounts.reduce<Record<string, number>>((accumulator, item) => {
+      accumulator[item.folderId] = item.count;
+      return accumulator;
+    }, {}));
+    setSelectedFolderId((current) => (
+      current && !payload.folders.some((folder) => folder.id === current) ? "" : current
+    ));
+    setSelectedTagId((current) => (
+      current && !payload.tags.some((tag) => tag.id === current) ? "" : current
+    ));
+  }
+
   useEffect(() => {
     closeContextMenu();
   }, [route]);
@@ -3803,24 +2656,18 @@ export function App({
     if (!authToken) {
       setFolders([]);
       setTags([]);
+      setSidebarFolderCounts({});
       setManagerFeedback(null);
       return;
     }
 
     let cancelled = false;
-    Promise.all([appDataSource.fetchFolders(authToken), appDataSource.fetchTags(authToken)])
-      .then(([nextFolders, nextTags]) => {
+    appDataSource.fetchWorkspaceBootstrap(authToken)
+      .then((payload) => {
         if (cancelled) {
           return;
         }
-        setFolders(nextFolders);
-        setTags(nextTags);
-        setSelectedFolderId((current) => (
-          current && !nextFolders.some((folder) => folder.id === current) ? "" : current
-        ));
-        setSelectedTagId((current) => (
-          current && !nextTags.some((tag) => tag.id === current) ? "" : current
-        ));
+        applyWorkspaceBootstrap(payload);
       })
       .catch((error) => {
         if (cancelled || handleProtectedApiError(error)) {
@@ -3836,31 +2683,6 @@ export function App({
       cancelled = true;
     };
   }, [appDataSource, authToken]);
-
-  useEffect(() => {
-    if (!authToken) {
-      setSidebarFolderCounts({});
-      return;
-    }
-
-    let cancelled = false;
-    appDataSource.fetchBookmarkFolderCounts(authToken)
-      .then((nextCounts) => {
-        if (cancelled) {
-          return;
-        }
-        setSidebarFolderCounts(nextCounts);
-      })
-      .catch((error) => {
-        if (cancelled || handleProtectedApiError(error)) {
-          return;
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appDataSource, authToken, route.page]);
 
   useEffect(() => {
     if (!authToken) {
@@ -3881,7 +2703,7 @@ export function App({
 
     appDataSource.searchBookmarks(
       {
-        search: deferredSearch,
+        search: debouncedSearch,
         quality: qualityFilter,
         view: bookmarkView,
         folderId: selectedFolderId || undefined,
@@ -3916,7 +2738,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, bookmarkView, deferredSearch, qualityFilter, selectedFolderId, selectedTagId]);
+  }, [appDataSource, authToken, bookmarkView, debouncedSearch, qualityFilter, selectedFolderId, selectedTagId]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
@@ -3974,7 +2796,7 @@ export function App({
 
     appDataSource.searchPrivateBookmarks(
       {
-        search: deferredSearch,
+        search: debouncedSearch,
         quality: qualityFilter,
         view: bookmarkView,
         limit: BOOKMARKS_PAGE_SIZE,
@@ -4006,7 +2828,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, bookmarkView, deferredSearch, privateToken, qualityFilter, route.page]);
+  }, [appDataSource, authToken, bookmarkView, debouncedSearch, privateToken, qualityFilter, route.page]);
 
   useEffect(() => {
     if (!authToken || route.page !== "private-detail" || !privateToken) {
@@ -4327,7 +3149,7 @@ export function App({
     const limit = Math.max(items.length, BOOKMARKS_PAGE_SIZE);
     const result = await appDataSource.searchBookmarks(
       {
-        search: deferredSearch,
+        search: debouncedSearch,
         quality: qualityFilter,
         view: bookmarkView,
         folderId: selectedFolderId || undefined,
@@ -4361,7 +3183,7 @@ export function App({
     try {
       const result = await appDataSource.searchBookmarks(
         {
-          search: deferredSearch,
+          search: debouncedSearch,
           quality: qualityFilter,
           view: bookmarkView,
           folderId: selectedFolderId || undefined,
@@ -4406,7 +3228,7 @@ export function App({
     const limit = Math.max(privateItems.length, BOOKMARKS_PAGE_SIZE);
     const result = await appDataSource.searchPrivateBookmarks(
       {
-        search: deferredSearch,
+        search: debouncedSearch,
         quality: qualityFilter,
         view: bookmarkView,
         limit,
@@ -5264,54 +4086,13 @@ export function App({
             onToggleSelect={toggleSelected}
           />
         ) : route.page === "private-mode" ? (
-          <PrivateModePage
-            summary={privateSummary}
-            privateToken={privateToken}
-            items={privateItems}
-            loadState={privateLoadState}
-            error={privateError}
-            setupPassword={privateSetupPassword}
-            setupConfirm={privateSetupConfirm}
-            unlockPassword={privateUnlockPassword}
-            busy={privateBusy}
-            onSetupPasswordChange={setPrivateSetupPassword}
-            onSetupConfirmChange={setPrivateSetupConfirm}
-            onUnlockPasswordChange={setPrivateUnlockPassword}
-            onSetup={() => void handleSetupPrivateMode()}
-            onUnlock={() => void handleUnlockPrivateMode()}
-            onLock={() => void handleLockPrivateMode()}
-            onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
-          />
-        ) : route.page === "private-detail" ? (
-          privateToken && privateDetail && selectedPrivateVersion ? (
-            <PrivateDetailPage
-              detail={privateDetail}
-              selectedVersion={selectedPrivateVersion}
-              previewState={privateArchivePreview}
-              preferredPreviewMode={privatePreferredPreviewMode}
-              activePreviewMode={privatePreviewSelection?.mode ?? null}
-              onGoBack={goToPrivateMode}
-              onSelectVersion={openPrivateBookmark}
-              onPreviewModeChange={setPrivatePreferredPreviewMode}
-            />
-          ) : privateToken && privateDetailLoadState === "loading" ? (
-            <section className="detail-shell">
-              <section className="loading preview-empty">正在加载私密详情...</section>
-            </section>
-          ) : privateToken && privateDetailLoadState === "not-found" ? (
-            <section className="detail-shell">
-              <section className="empty-state preview-empty">
-                <h2>私密内容不存在</h2>
-                <p>这条私密内容可能已被删除，或当前会话没有权限查看。</p>
-              </section>
-            </section>
-          ) : (
+          <Suspense fallback={<section className="loading preview-empty">正在加载私密模式...</section>}>
             <PrivateModePage
               summary={privateSummary}
               privateToken={privateToken}
               items={privateItems}
               loadState={privateLoadState}
-              error={privateDetailError ?? privateError}
+              error={privateError}
               setupPassword={privateSetupPassword}
               setupConfirm={privateSetupConfirm}
               unlockPassword={privateUnlockPassword}
@@ -5324,74 +4105,131 @@ export function App({
               onLock={() => void handleLockPrivateMode()}
               onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
             />
+          </Suspense>
+        ) : route.page === "private-detail" ? (
+          privateToken && privateDetail && selectedPrivateVersion ? (
+            <Suspense fallback={<section className="loading preview-empty">正在加载私密详情...</section>}>
+              <PrivateDetailPage
+                detail={privateDetail}
+                selectedVersion={selectedPrivateVersion}
+                previewState={privateArchivePreview}
+                preferredPreviewMode={privatePreferredPreviewMode}
+                activePreviewMode={privatePreviewSelection?.mode ?? null}
+                onGoBack={goToPrivateMode}
+                onSelectVersion={openPrivateBookmark}
+                onPreviewModeChange={setPrivatePreferredPreviewMode}
+              />
+            </Suspense>
+          ) : privateToken && privateDetailLoadState === "loading" ? (
+            <section className="detail-shell">
+              <section className="loading preview-empty">正在加载私密详情...</section>
+            </section>
+          ) : privateToken && privateDetailLoadState === "not-found" ? (
+            <section className="detail-shell">
+              <section className="empty-state preview-empty">
+                <h2>私密内容不存在</h2>
+                <p>这条私密内容可能已被删除，或当前会话没有权限查看。</p>
+              </section>
+            </section>
+          ) : (
+            <Suspense fallback={<section className="loading preview-empty">正在加载私密模式...</section>}>
+              <PrivateModePage
+                summary={privateSummary}
+                privateToken={privateToken}
+                items={privateItems}
+                loadState={privateLoadState}
+                error={privateDetailError ?? privateError}
+                setupPassword={privateSetupPassword}
+                setupConfirm={privateSetupConfirm}
+                unlockPassword={privateUnlockPassword}
+                busy={privateBusy}
+                onSetupPasswordChange={setPrivateSetupPassword}
+                onSetupConfirmChange={setPrivateSetupConfirm}
+                onUnlockPasswordChange={setPrivateUnlockPassword}
+                onSetup={() => void handleSetupPrivateMode()}
+                onUnlock={() => void handleUnlockPrivateMode()}
+                onLock={() => void handleLockPrivateMode()}
+                onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
+              />
+            </Suspense>
           )
         ) : route.page === "detail" ? (
-          <BookmarkDetailRoute
-            detailLoadState={detailLoadState}
-            detailError={detailError}
-            detail={detail}
-            selectedVersion={selectedVersion}
-            previewState={archivePreview}
-            preferredPreviewMode={preferredPreviewMode}
-            activePreviewMode={previewSelection?.mode ?? null}
-            folders={folders}
-            tags={tags}
-            cloudArchiveUpdating={detailCloudArchiveUpdating}
-            metadataNote={metadataNote}
-            metadataFolderId={metadataFolderId}
-            metadataTagIds={metadataTagIds}
-            metadataSaving={metadataSaving}
-            metadataFeedback={metadataFeedback}
-            isPending={isPending}
-            onGoBack={goToList}
-            onSelectVersion={openBookmark}
-            onCloudArchiveRefresh={() => void handleCloudArchiveRefreshCurrentBookmark()}
-            onMetadataNoteChange={setMetadataNote}
-            onMetadataFolderChange={setMetadataFolderId}
-            onMetadataTagToggle={(tagId) => {
-              setMetadataTagIds((current) => (
-                current.includes(tagId)
-                  ? current.filter((item) => item !== tagId)
-                  : [...current, tagId]
-              ));
-            }}
-            onPreviewModeChange={setPreferredPreviewMode}
-            onMetadataSave={() => void handleSaveMetadata()}
-          />
+          <Suspense fallback={<section className="loading preview-empty">正在加载详情视图...</section>}>
+            <BookmarkDetailRoute
+              detailLoadState={detailLoadState}
+              detailError={detailError}
+              detail={detail}
+              selectedVersion={selectedVersion}
+              previewState={archivePreview}
+              preferredPreviewMode={preferredPreviewMode}
+              activePreviewMode={previewSelection?.mode ?? null}
+              folders={folders}
+              tags={tags}
+              cloudArchiveUpdating={detailCloudArchiveUpdating}
+              metadataNote={metadataNote}
+              metadataFolderId={metadataFolderId}
+              metadataTagIds={metadataTagIds}
+              metadataSaving={metadataSaving}
+              metadataFeedback={metadataFeedback}
+              isPending={isPending}
+              onGoBack={goToList}
+              onSelectVersion={openBookmark}
+              onCloudArchiveRefresh={() => void handleCloudArchiveRefreshCurrentBookmark()}
+              onMetadataNoteChange={setMetadataNote}
+              onMetadataFolderChange={setMetadataFolderId}
+              onMetadataTagToggle={(tagId) => {
+                setMetadataTagIds((current) => (
+                  current.includes(tagId)
+                    ? current.filter((item) => item !== tagId)
+                    : [...current, tagId]
+                ));
+              }}
+              onPreviewModeChange={setPreferredPreviewMode}
+              onMetadataSave={() => void handleSaveMetadata()}
+            />
+          </Suspense>
         ) : route.page === "imports-new" ? (
-        <ImportNewPanel
-          token={session.token}
-          onApiError={handleProtectedApiError}
-          adapter={importAdapter}
-          onOpenHistory={goToImportList}
-          onOpenTask={openImportTask}
-        />
-      ) : route.page === "imports-list" ? (
-        <ImportHistoryPanel
-          token={session.token}
-          onApiError={handleProtectedApiError}
-          adapter={importAdapter}
-          onOpenTask={openImportTask}
-          onOpenNew={goToImportNew}
-        />
-      ) : route.page === "imports-detail" ? (
-        <ImportDetailPanel
-          token={session.token}
-          taskId={route.taskId}
-          onApiError={handleProtectedApiError}
-          adapter={importAdapter}
-          onOpenHistory={goToImportList}
-          onOpenBookmark={(bookmarkId) => openBookmark(bookmarkId)}
-        />
-      ) : route.page === "settings-api-tokens" ? (
-        <ApiTokensPanel
-          token={session.token}
-          userId={session.user.id}
-          dataSource={appDataSource}
-          onApiError={handleProtectedApiError}
-          onBack={goToList}
-        />
-      ) : null}
+          <Suspense fallback={<section className="loading preview-empty">正在加载导入向导...</section>}>
+            <ImportNewPanel
+              token={session.token}
+              onApiError={handleProtectedApiError}
+              adapter={importAdapter}
+              onOpenHistory={goToImportList}
+              onOpenTask={openImportTask}
+            />
+          </Suspense>
+        ) : route.page === "imports-list" ? (
+          <Suspense fallback={<section className="loading preview-empty">正在加载导入历史...</section>}>
+            <ImportHistoryPanel
+              token={session.token}
+              onApiError={handleProtectedApiError}
+              adapter={importAdapter}
+              onOpenTask={openImportTask}
+              onOpenNew={goToImportNew}
+            />
+          </Suspense>
+        ) : route.page === "imports-detail" ? (
+          <Suspense fallback={<section className="loading preview-empty">正在加载导入任务...</section>}>
+            <ImportDetailPanel
+              token={session.token}
+              taskId={route.taskId}
+              onApiError={handleProtectedApiError}
+              adapter={importAdapter}
+              onOpenHistory={goToImportList}
+              onOpenBookmark={(bookmarkId) => openBookmark(bookmarkId)}
+            />
+          </Suspense>
+        ) : route.page === "settings-api-tokens" ? (
+          <Suspense fallback={<section className="loading preview-empty">正在加载 API 密钥...</section>}>
+            <ApiTokensPanel
+              token={session.token}
+              userId={session.user.id}
+              dataSource={appDataSource}
+              onApiError={handleProtectedApiError}
+              onBack={goToList}
+            />
+          </Suspense>
+        ) : null}
       </AppShell>
       <ManagerDialog
         state={managerDialog}

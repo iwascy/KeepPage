@@ -124,6 +124,8 @@ export const bookmarks = pgTable(
   },
   (table) => ({
     bookmarkUserUrlIdx: index("bookmarks_user_url_idx").on(table.userId, table.normalizedUrlHash),
+    bookmarkUserUpdatedIdx: index("bookmarks_user_updated_idx").on(table.userId, table.updatedAt),
+    bookmarkUserFolderIdx: index("bookmarks_user_folder_idx").on(table.userId, table.folderId),
     bookmarkLatestVersionIdx: index("bookmarks_latest_version_idx").on(table.latestVersionId),
   }),
 );
@@ -173,6 +175,7 @@ export const privateBookmarks = pgTable(
   },
   (table) => ({
     privateBookmarkUserUrlIdx: index("private_bookmarks_user_url_idx").on(table.userId, table.normalizedUrlHash),
+    privateBookmarkUserUpdatedIdx: index("private_bookmarks_user_updated_idx").on(table.userId, table.updatedAt),
     privateBookmarkLatestVersionIdx: index("private_bookmarks_latest_version_idx").on(table.latestVersionId),
   }),
 );
@@ -306,6 +309,7 @@ export const bookmarkTags = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.bookmarkId, table.tagId] }),
+    bookmarkTagsTagIdx: index("bookmark_tags_tag_idx").on(table.tagId),
   }),
 );
 
