@@ -1182,7 +1182,7 @@ export class InMemoryRepositoryCore {
         items.push(this.createImportTaskItem(taskId, item, {
           status: "created_bookmark",
           dedupeResult: "created_bookmark",
-          reason: input.options.mode === "links_only" ? "已完成轻导入。" : "已完成轻导入，云端存档已排队。",
+          reason: "已完成轻导入。",
           bookmarkId: bookmark.id,
           hasArchive: false,
           createdAt: itemNow,

@@ -5,7 +5,6 @@ import type {
   AuthUser,
   Bookmark,
   BookmarkMetadataUpdateRequest,
-  CloudArchiveRequest,
   Folder,
   FolderCreateRequest,
   FolderUpdateRequest,
@@ -30,7 +29,6 @@ import {
   fetchPrivateBookmarkDetail,
   fetchPrivateBookmarks,
   fetchPrivateModeStatus,
-  fetchCloudArchiveTask,
   fetchCurrentUser,
   fetchFolders,
   fetchTags,
@@ -40,7 +38,6 @@ import {
   registerAccount,
   revokeApiToken,
   setupPrivateMode,
-  submitCloudArchive,
   unlockPrivateMode,
   updateBookmarkMetadata,
   updateFolder,
@@ -168,8 +165,6 @@ export type AppDataSource = {
     token: string,
   ): Promise<ApiTokenCreateResponse>;
   revokeApiToken(tokenId: string, token: string): Promise<void>;
-  submitCloudArchive(input: CloudArchiveRequest, token: string): Promise<Awaited<ReturnType<typeof submitCloudArchive>>>;
-  fetchCloudArchiveTask(taskId: string, token: string): Promise<Awaited<ReturnType<typeof fetchCloudArchiveTask>>>;
   enqueueLocalArchive(bookmarks: Bookmark[]): Promise<Awaited<ReturnType<typeof enqueueBookmarksToLocalExtension>>>;
 };
 
@@ -418,12 +413,6 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
               : item
           )));
         },
-        async submitCloudArchive() {
-          throw new Error("Mock 模式暂不支持云端存档，请切换到真实 API 环境后使用。");
-        },
-        async fetchCloudArchiveTask() {
-          throw new Error("Mock 模式暂不支持云端存档。");
-        },
         async enqueueLocalArchive() {
           throw new Error("Mock 模式暂不支持本地插件批量存档。");
         },
@@ -504,8 +493,6 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
       async revokeApiToken(tokenId, token) {
         await revokeApiToken(tokenId, token);
       },
-      submitCloudArchive,
-      fetchCloudArchiveTask,
       enqueueLocalArchive: enqueueBookmarksToLocalExtension,
     };
   }, [demoApiTokens, demoState, importAdapter, kind]);

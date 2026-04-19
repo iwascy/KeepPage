@@ -83,7 +83,6 @@ function DetailPanel({
   activePreviewMode,
   folders,
   tags,
-  cloudArchiveUpdating,
   metadataNote,
   metadataFolderId,
   metadataTagIds,
@@ -91,7 +90,6 @@ function DetailPanel({
   metadataFeedback,
   onGoBack,
   onSelectVersion,
-  onCloudArchiveRefresh,
   onMetadataNoteChange,
   onMetadataFolderChange,
   onMetadataTagToggle,
@@ -105,7 +103,6 @@ function DetailPanel({
   activePreviewMode: ArchiveViewMode | null;
   folders: Folder[];
   tags: Tag[];
-  cloudArchiveUpdating: boolean;
   metadataNote: string;
   metadataFolderId: string;
   metadataTagIds: string[];
@@ -113,7 +110,6 @@ function DetailPanel({
   metadataFeedback: InlineFeedback | null;
   onGoBack: () => void;
   onSelectVersion: (bookmarkId: string, versionId?: string) => void;
-  onCloudArchiveRefresh: () => void;
   onMetadataNoteChange: (value: string) => void;
   onMetadataFolderChange: (value: string) => void;
   onMetadataTagToggle: (tagId: string) => void;
@@ -366,15 +362,6 @@ function DetailPanel({
         </div>
 
         <div className="detail-actions-footer">
-          <button
-            className="detail-action-button is-primary"
-            type="button"
-            onClick={onCloudArchiveRefresh}
-            disabled={cloudArchiveUpdating}
-          >
-            <span className="material-symbols-outlined" aria-hidden="true">cloud_sync</span>
-            {cloudArchiveUpdating ? "更新中..." : "云端更新"}
-          </button>
           {previewState.status === "ready" && activePreviewMode ? (
             <a
               className="detail-action-button"
@@ -410,7 +397,6 @@ export function BookmarkDetailRoute({
   activePreviewMode,
   folders,
   tags,
-  cloudArchiveUpdating,
   metadataNote,
   metadataFolderId,
   metadataTagIds,
@@ -419,7 +405,6 @@ export function BookmarkDetailRoute({
   isPending,
   onGoBack,
   onSelectVersion,
-  onCloudArchiveRefresh,
   onMetadataNoteChange,
   onMetadataFolderChange,
   onMetadataTagToggle,
@@ -435,7 +420,6 @@ export function BookmarkDetailRoute({
   activePreviewMode: ArchiveViewMode | null;
   folders: Folder[];
   tags: Tag[];
-  cloudArchiveUpdating: boolean;
   metadataNote: string;
   metadataFolderId: string;
   metadataTagIds: string[];
@@ -444,7 +428,6 @@ export function BookmarkDetailRoute({
   isPending: boolean;
   onGoBack: () => void;
   onSelectVersion: (bookmarkId: string, versionId?: string) => void;
-  onCloudArchiveRefresh: () => void;
   onMetadataNoteChange: (value: string) => void;
   onMetadataFolderChange: (value: string) => void;
   onMetadataTagToggle: (tagId: string) => void;
@@ -507,7 +490,6 @@ export function BookmarkDetailRoute({
       activePreviewMode={activePreviewMode}
       folders={folders}
       tags={tags}
-      cloudArchiveUpdating={cloudArchiveUpdating}
       metadataNote={metadataNote}
       metadataFolderId={metadataFolderId}
       metadataTagIds={metadataTagIds}
@@ -515,7 +497,6 @@ export function BookmarkDetailRoute({
       metadataFeedback={metadataFeedback}
       onGoBack={onGoBack}
       onSelectVersion={onSelectVersion}
-      onCloudArchiveRefresh={onCloudArchiveRefresh}
       onMetadataNoteChange={onMetadataNoteChange}
       onMetadataFolderChange={onMetadataFolderChange}
       onMetadataTagToggle={onMetadataTagToggle}

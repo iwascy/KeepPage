@@ -15,8 +15,6 @@ import type {
   AuthUser,
   Bookmark,
   BookmarkListView,
-  CloudArchiveRequest,
-  CloudArchiveStatus,
   Folder,
   PrivateVaultSummary,
   QualityGrade,
@@ -390,7 +388,6 @@ function AppShell({
   onOpenApiTokens,
   onOpenImportNew,
   onOpenImportHistory,
-  onOpenCloudArchive,
   onLogout,
   contextMenuFolderId,
   onFolderContextMenu,
@@ -421,7 +418,6 @@ function AppShell({
   onOpenApiTokens: () => void;
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
-  onOpenCloudArchive: () => void;
   onLogout: () => void;
   contextMenuFolderId: string | null;
   onFolderContextMenu: (folder: Folder, event: ReactMouseEvent<HTMLElement>) => void;
@@ -671,20 +667,6 @@ function AppShell({
                   vpn_key
                 </span>
                 <span>API 密钥</span>
-              </button>
-              <button
-                className="home-settings-item"
-                type="button"
-                onClick={() => {
-                  setMobileSidebarOpen(false);
-                  setSidebarView("main");
-                  onOpenCloudArchive();
-                }}
-              >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  cloud_download
-                </span>
-                <span>云端存档</span>
               </button>
               <button
                 className="home-settings-item"
@@ -1229,8 +1211,11 @@ function ManagerDialog({
   const isDeleteDialog = state.kind === "delete-bookmark" || state.kind === "delete-bookmarks-batch" || state.kind === "delete-folder" || state.kind === "delete-tag";
   const isBookmarkDialog = state.kind === "delete-bookmark";
   const isBatchDeleteDialog = state.kind === "delete-bookmarks-batch";
-  const useBookmarkDeleteStyle = isBookmarkDialog || isBatchDeleteDialog;
+  const isFolderDeleteDialog = state.kind === "delete-folder";
+  const useBookmarkDeleteStyle = isBookmarkDialog || isBatchDeleteDialog || isFolderDeleteDialog;
   const bookmarkDeleteTarget = state.kind === "delete-bookmark" ? state.bookmark : null;
+  const folderDeleteTarget = state.kind === "delete-folder" ? state.folder : null;
+  const tagDeleteTarget = state.kind === "delete-tag" ? state.tag : null;
   const bookmarkDeleteFaviconSrc = bookmarkDeleteTarget
     ? buildBookmarkSiteIconCandidates(bookmarkDeleteTarget, 64)[0] ?? ""
     : "";
@@ -1388,7 +1373,53 @@ function ManagerDialog({
               </div>
             </div>
           </>
-        ) : isDeleteDialog ? (
+        ) : isFolderDeleteDialog && folderDeleteTarget ? (
+          <>
+            <div className="bookmark-delete-dialog-shell">
+              <div className="bookmark-delete-dialog-header">
+                <div className="bookmark-delete-dialog-heading">
+                  <p className="eyebrow">{eyebrow}</p>
+                  <h2 id="manager-dialog-title">{title}</h2>
+                  <p>{description}</p>
+                </div>
+                <button
+                  aria-label="关闭"
+                  className="bookmark-delete-dialog-close"
+                  type="button"
+                  onClick={onClose}
+                  disabled={busy}
+                >
+                  <DialogCloseIcon />
+                </button>
+              </div>
+
+              <section className="bookmark-delete-card">
+                <div className="bookmark-delete-card-icon" aria-hidden="true">
+                  <span className="material-symbols-outlined">folder_open</span>
+                </div>
+                <div className="bookmark-delete-card-body is-folder-delete">
+                  <strong>{folderDeleteTarget.path}</strong>
+                  <span className="bookmark-delete-card-domain">子收藏夹会自动上移一层</span>
+                </div>
+              </section>
+
+              <div className="bookmark-delete-warning">
+                <p>删除后，这个收藏夹会消失，当前文件夹里的网页会解除归档，但不会被删除。</p>
+              </div>
+
+              {error ? <p className="manager-dialog-error bookmark-delete-dialog-error">{error}</p> : null}
+
+              <div className="bookmark-delete-dialog-actions">
+                <button className="bookmark-delete-action is-secondary" type="button" onClick={onClose} disabled={busy}>
+                  取消
+                </button>
+                <button className="bookmark-delete-action is-danger" type="button" onClick={onConfirmDelete} disabled={busy}>
+                  {busy ? "处理中..." : submitLabel}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : isDeleteDialog && tagDeleteTarget ? (
           <>
             <div className="manager-dialog-accent" />
             <div className="manager-dialog-header">
@@ -1403,22 +1434,10 @@ function ManagerDialog({
             </div>
 
             <section className="manager-dialog-hero">
-              <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
-                {isFolderDialog ? "DIR" : "TAG"}
-              </div>
+              <div className="manager-dialog-mark is-tag">TAG</div>
               <div className="manager-dialog-hero-copy">
-                <strong>
-                  {state.kind === "delete-folder"
-                    ? state.folder.path
-                    : state.kind === "delete-tag"
-                    ? `#${state.tag.name}`
-                    : ""}
-                </strong>
-                <span>
-                  {state.kind === "delete-folder"
-                    ? "删除后会立即从收藏夹列表中消失。"
-                    : "删除后，这个标签会从所有相关网页上解绑。"}
-                </span>
+                <strong>{`#${tagDeleteTarget.name}`}</strong>
+                <span>删除后，这个标签会从所有相关网页上解绑。</span>
               </div>
             </section>
             <div className="manager-dialog-warning">
@@ -1537,12 +1556,6 @@ function ManagerDialog({
   );
 }
 
-type CloudArchiveDialogState =
-  | { step: "closed" }
-  | { step: "form" }
-  | { step: "progress"; taskId: string; status: CloudArchiveStatus; errorMessage?: string }
-  | { step: "done"; bookmarkId: string };
-
 type LocalArchiveDialogState =
   | { step: "closed" }
   | { step: "confirm"; bookmarks: Bookmark[] }
@@ -1553,228 +1566,6 @@ type LocalArchiveDialogState =
       skippedCount: number;
       queueSize: number;
     };
-
-function cloudArchiveStatusLabel(status: CloudArchiveStatus) {
-  switch (status) {
-    case "queued":
-      return "排队中...";
-    case "fetching":
-      return "正在抓取网页...";
-    case "processing":
-      return "处理存档...";
-    case "completed":
-      return "存档完成";
-    case "failed":
-      return "存档失败";
-    default:
-      return "处理中...";
-  }
-}
-
-function CloudArchiveDialog({
-  state,
-  isUpdateMode,
-  url,
-  title,
-  folderId,
-  folders,
-  tags,
-  selectedTagIds,
-  busy,
-  error,
-  onUrlChange,
-  onTitleChange,
-  onFolderChange,
-  onTagToggle,
-  onSubmit,
-  onRetry,
-  onClose,
-  onOpenBookmark,
-}: {
-  state: CloudArchiveDialogState;
-  isUpdateMode: boolean;
-  url: string;
-  title: string;
-  folderId: string;
-  folders: Folder[];
-  tags: Tag[];
-  selectedTagIds: string[];
-  busy: boolean;
-  error: string | null;
-  onUrlChange: (value: string) => void;
-  onTitleChange: (value: string) => void;
-  onFolderChange: (value: string) => void;
-  onTagToggle: (tagId: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onRetry: () => void;
-  onClose: () => void;
-  onOpenBookmark: (bookmarkId: string) => void;
-}) {
-  if (state.step === "closed") {
-    return null;
-  }
-
-  return (
-    <div
-      aria-hidden="true"
-      className="manager-dialog-backdrop is-create-folder"
-      onClick={() => {
-        if (!busy) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        aria-labelledby="cloud-archive-title"
-        aria-modal="true"
-        className="create-folder-dialog"
-        role="dialog"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="create-folder-dialog-shell">
-          <div className="create-folder-dialog-header">
-            <div className="create-folder-dialog-heading">
-              <h2 id="cloud-archive-title">{isUpdateMode ? "云端更新存档" : "云端存档"}</h2>
-              <p>
-                {state.step === "form"
-                  ? (isUpdateMode
-                      ? "重新抓取当前网页并为这条书签追加新版本。"
-                      : "输入网页 URL，服务端将自动抓取并生成存档。")
-                  : state.step === "progress"
-                    ? cloudArchiveStatusLabel(state.status)
-                    : (isUpdateMode ? "存档已更新完成。" : "存档已完成。")}
-              </p>
-            </div>
-            <button
-              className="create-folder-dialog-close"
-              type="button"
-              aria-label="关闭"
-              onClick={onClose}
-              disabled={busy}
-            >
-              <DialogCloseIcon />
-            </button>
-          </div>
-
-          {state.step === "form" ? (
-            <form className="create-folder-dialog-form" onSubmit={onSubmit}>
-              {error ? <p className="manager-dialog-error create-folder-dialog-error">{error}</p> : null}
-              <label className="create-folder-dialog-section">
-                <span className="create-folder-dialog-label">URL</span>
-                <input
-                  className="create-folder-dialog-input"
-                  type="url"
-                  value={url}
-                  onChange={(event) => onUrlChange(event.target.value)}
-                  placeholder="https://example.com/article"
-                  required
-                  autoFocus
-                />
-              </label>
-              <label className="create-folder-dialog-section">
-                <span className="create-folder-dialog-label">标题（可选）</span>
-                <input
-                  className="create-folder-dialog-input"
-                  type="text"
-                  value={title}
-                  onChange={(event) => onTitleChange(event.target.value)}
-                  placeholder="留空则自动从页面提取"
-                />
-              </label>
-              {folders.length > 0 ? (
-                <label className="create-folder-dialog-section">
-                  <span className="create-folder-dialog-label">文件夹</span>
-                  <select
-                    className="create-folder-dialog-input"
-                    value={folderId}
-                    onChange={(event) => onFolderChange(event.target.value)}
-                  >
-                    <option value="">不指定</option>
-                    {folders.map((folder) => (
-                      <option key={folder.id} value={folder.id}>{folder.path}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {tags.length > 0 ? (
-                <div className="create-folder-dialog-section">
-                  <span className="create-folder-dialog-label">标签</span>
-                  <div className="archive-dialog-tag-list">
-                    {tags.map((tag) => {
-                      const selected = selectedTagIds.includes(tag.id);
-
-                      return (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          className={selected ? "archive-dialog-tag-button is-active" : "archive-dialog-tag-button"}
-                          onClick={() => onTagToggle(tag.id)}
-                        >
-                          {tag.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-              <div className="create-folder-dialog-actions">
-                <button className="create-folder-action-button is-secondary" type="button" onClick={onClose} disabled={busy}>
-                  取消
-                </button>
-                <button className="create-folder-action-button is-primary" type="submit" disabled={busy || !url.trim()}>
-                  {busy ? "提交中..." : isUpdateMode ? "更新存档" : "开始存档"}
-                </button>
-              </div>
-            </form>
-          ) : state.step === "progress" ? (
-            <div className="archive-dialog-panel">
-              {state.status === "failed" ? (
-                <>
-                  <p className="manager-dialog-error create-folder-dialog-error">
-                    {state.errorMessage ?? "存档失败，请稍后重试。"}
-                  </p>
-                  <div className="create-folder-dialog-actions">
-                    <button className="create-folder-action-button is-secondary" type="button" onClick={onClose}>
-                      关闭
-                    </button>
-                    <button className="create-folder-action-button is-primary" type="button" onClick={onRetry}>
-                      重试
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="archive-dialog-status" aria-live="polite">
-                  <div className="archive-dialog-spinner" aria-hidden="true" />
-                  <p className="archive-dialog-status-text">{cloudArchiveStatusLabel(state.status)}</p>
-                </div>
-              )}
-            </div>
-          ) : state.step === "done" ? (
-            <div className="archive-dialog-panel">
-              <div className="archive-dialog-status">
-                <p className="archive-dialog-status-text">
-                  {isUpdateMode ? "当前书签已成功更新存档。" : "网页已成功存档！"}
-                </p>
-              </div>
-              <div className="create-folder-dialog-actions">
-                <button className="create-folder-action-button is-secondary" type="button" onClick={onClose}>
-                  关闭
-                </button>
-                <button
-                  className="create-folder-action-button is-primary"
-                  type="button"
-                  onClick={() => onOpenBookmark(state.bookmarkId)}
-                >
-                  查看书签
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function ContextMenu({
   state,
@@ -2142,18 +1933,9 @@ export function App({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionBusy, setSelectionBusy] = useState(false);
   const [batchDropdown, setBatchDropdown] = useState<"closed" | "folder" | "tag">("closed");
-  const [cloudArchiveDialog, setCloudArchiveDialog] = useState<CloudArchiveDialogState>({ step: "closed" });
-  const [cloudArchiveUrl, setCloudArchiveUrl] = useState("");
-  const [cloudArchiveTitle, setCloudArchiveTitle] = useState("");
-  const [cloudArchiveFolderId, setCloudArchiveFolderId] = useState("");
-  const [cloudArchiveTagIds, setCloudArchiveTagIds] = useState<string[]>([]);
-  const [cloudArchiveTargetBookmarkId, setCloudArchiveTargetBookmarkId] = useState<string | null>(null);
-  const [cloudArchiveBusy, setCloudArchiveBusy] = useState(false);
-  const [cloudArchiveError, setCloudArchiveError] = useState<string | null>(null);
   const [localArchiveDialog, setLocalArchiveDialog] = useState<LocalArchiveDialogState>({ step: "closed" });
   const [localArchiveBusy, setLocalArchiveBusy] = useState(false);
   const [localArchiveError, setLocalArchiveError] = useState<string | null>(null);
-  const cloudArchiveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const debouncedSearch = useDebouncedValue(searchInput, 300);
@@ -2298,42 +2080,6 @@ export function App({
     setSelectedIds(new Set());
   }
 
-  function openCloudArchive() {
-    setCloudArchiveUrl("");
-    setCloudArchiveTitle("");
-    setCloudArchiveFolderId("");
-    setCloudArchiveTagIds([]);
-    setCloudArchiveTargetBookmarkId(null);
-    setCloudArchiveBusy(false);
-    setCloudArchiveError(null);
-    setCloudArchiveDialog({ step: "form" });
-  }
-
-  function openCloudArchiveForBookmark(bookmark: Bookmark) {
-    if (cloudArchiveTimerRef.current) {
-      clearInterval(cloudArchiveTimerRef.current);
-      cloudArchiveTimerRef.current = null;
-    }
-    setCloudArchiveUrl(bookmark.sourceUrl);
-    setCloudArchiveTitle(bookmark.title);
-    setCloudArchiveFolderId(bookmark.folder?.id ?? "");
-    setCloudArchiveTagIds(bookmark.tags.map((tag) => tag.id));
-    setCloudArchiveTargetBookmarkId(bookmark.id);
-    setCloudArchiveBusy(false);
-    setCloudArchiveError(null);
-    setCloudArchiveDialog({ step: "form" });
-    closeContextMenu();
-  }
-
-  function closeCloudArchive() {
-    if (cloudArchiveTimerRef.current) {
-      clearInterval(cloudArchiveTimerRef.current);
-      cloudArchiveTimerRef.current = null;
-    }
-    setCloudArchiveTargetBookmarkId(null);
-    setCloudArchiveDialog({ step: "closed" });
-  }
-
   function openLocalArchiveDialog(bookmarks: Bookmark[]) {
     setLocalArchiveError(null);
     setLocalArchiveBusy(false);
@@ -2349,119 +2095,6 @@ export function App({
     }
     setLocalArchiveDialog({ step: "closed" });
     setLocalArchiveError(null);
-  }
-
-  function startCloudArchivePolling(taskId: string) {
-    if (cloudArchiveTimerRef.current) {
-      clearInterval(cloudArchiveTimerRef.current);
-    }
-    cloudArchiveTimerRef.current = setInterval(async () => {
-      if (!authToken) {
-        return;
-      }
-      try {
-        const task = await appDataSource.fetchCloudArchiveTask(taskId, authToken);
-        if (!task) {
-          return;
-        }
-        if (task.status === "completed") {
-          if (cloudArchiveTimerRef.current) {
-            clearInterval(cloudArchiveTimerRef.current);
-            cloudArchiveTimerRef.current = null;
-          }
-          setCloudArchiveDialog({
-            step: "done",
-            bookmarkId: task.bookmarkId ?? "",
-          });
-          if (authToken) {
-            void refreshBookmarksList(authToken);
-            void refreshSidebarFolderCounts(authToken);
-            if (route.page === "detail" && task.bookmarkId === route.bookmarkId) {
-              void refreshBookmarkDetail(authToken, route.bookmarkId);
-            }
-          }
-        } else if (task.status === "failed") {
-          if (cloudArchiveTimerRef.current) {
-            clearInterval(cloudArchiveTimerRef.current);
-            cloudArchiveTimerRef.current = null;
-          }
-          setCloudArchiveDialog({
-            step: "progress",
-            taskId,
-            status: "failed",
-            errorMessage: task.errorMessage,
-          });
-        } else {
-          setCloudArchiveDialog({
-            step: "progress",
-            taskId,
-            status: task.status,
-          });
-        }
-      } catch {
-        // Polling errors are silently ignored; next tick will retry.
-      }
-    }, 2000);
-  }
-
-  async function startCloudArchiveTask(
-    input: CloudArchiveRequest,
-    options?: { targetBookmarkId?: string | null },
-  ) {
-    if (!authToken || !input.url.trim()) {
-      return;
-    }
-    setCloudArchiveUrl(input.url);
-    setCloudArchiveTitle(input.title ?? "");
-    setCloudArchiveFolderId(input.folderId ?? "");
-    setCloudArchiveTagIds(input.tagIds ?? []);
-    setCloudArchiveTargetBookmarkId(options?.targetBookmarkId ?? null);
-    setCloudArchiveBusy(true);
-    setCloudArchiveError(null);
-    try {
-      const result = await appDataSource.submitCloudArchive(input, authToken);
-      setCloudArchiveDialog({
-        step: "progress",
-        taskId: result.taskId,
-        status: result.status,
-      });
-      startCloudArchivePolling(result.taskId);
-    } catch (error) {
-      if (handleProtectedApiError(error)) {
-        return;
-      }
-      setCloudArchiveDialog({ step: "form" });
-      setCloudArchiveError(toErrorMessage(error));
-    } finally {
-      setCloudArchiveBusy(false);
-    }
-  }
-
-  async function handleCloudArchiveSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await startCloudArchiveTask({
-      url: cloudArchiveUrl.trim(),
-      title: cloudArchiveTitle.trim() || undefined,
-      folderId: cloudArchiveFolderId || undefined,
-      tagIds: cloudArchiveTagIds.length > 0 ? cloudArchiveTagIds : undefined,
-    }, {
-      targetBookmarkId: cloudArchiveTargetBookmarkId,
-    });
-  }
-
-  async function handleCloudArchiveRefreshCurrentBookmark() {
-    if (!detail) {
-      return;
-    }
-    await startCloudArchiveTask({
-      url: detail.bookmark.sourceUrl,
-    }, {
-      targetBookmarkId: detail.bookmark.id,
-    });
-  }
-
-  function handleCloudArchiveRetry() {
-    setCloudArchiveDialog({ step: "form" });
   }
 
   function openManagerDialog(nextState: ManagerDialogState) {
@@ -3762,8 +3395,6 @@ export function App({
 
     if (contextMenu.kind === "bookmark") {
       const bookmark = contextMenu.bookmark;
-      const cloudArchiveInFlight = cloudArchiveTargetBookmarkId === bookmark.id
-        && (cloudArchiveBusy || cloudArchiveDialog.step === "progress");
       const detailHash = buildDetailHash(bookmark.id);
       const detailUrl = buildAppUrl(detailHash);
       return [
@@ -3822,13 +3453,6 @@ export function App({
               label: "前往详情编辑",
               icon: "ED",
               onSelect: () => openBookmark(bookmark.id),
-            },
-            {
-              id: "cloud-archive-bookmark",
-              label: bookmark.versionCount > 0 ? "云端更新存档" : "云端存档",
-              icon: "CA",
-              disabled: cloudArchiveInFlight,
-              onSelect: () => openCloudArchiveForBookmark(bookmark),
             },
             {
               id: "delete-bookmark",
@@ -3938,20 +3562,11 @@ export function App({
       },
     ];
   }, [
-    cloudArchiveBusy,
-    cloudArchiveDialog.step,
-    cloudArchiveTargetBookmarkId,
     contextMenu,
     managerBusy,
     selectedFolderId,
     selectedTagId,
   ]);
-
-  const detailCloudArchiveUpdating = Boolean(
-    detail
-      && cloudArchiveTargetBookmarkId === detail.bookmark.id
-      && (cloudArchiveBusy || cloudArchiveDialog.step === "progress"),
-  );
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -4038,7 +3653,6 @@ export function App({
         onOpenApiTokens={goToApiTokens}
         onOpenImportNew={goToImportNew}
         onOpenImportHistory={goToImportList}
-        onOpenCloudArchive={openCloudArchive}
         onLogout={() => logout()}
         contextMenuFolderId={activeFolderContextId}
         onFolderContextMenu={openFolderContextMenu}
@@ -4244,35 +3858,6 @@ export function App({
         onNameChange={setManagerDialogName}
         onPathChange={setManagerDialogPath}
         onColorChange={setManagerDialogColor}
-      />
-      <CloudArchiveDialog
-        state={cloudArchiveDialog}
-        isUpdateMode={Boolean(cloudArchiveTargetBookmarkId)}
-        url={cloudArchiveUrl}
-        title={cloudArchiveTitle}
-        folderId={cloudArchiveFolderId}
-        folders={folders}
-        tags={tags}
-        selectedTagIds={cloudArchiveTagIds}
-        busy={cloudArchiveBusy}
-        error={cloudArchiveError}
-        onUrlChange={setCloudArchiveUrl}
-        onTitleChange={setCloudArchiveTitle}
-        onFolderChange={setCloudArchiveFolderId}
-        onTagToggle={(tagId) => {
-          setCloudArchiveTagIds((current) => (
-            current.includes(tagId)
-              ? current.filter((item) => item !== tagId)
-              : [...current, tagId]
-          ));
-        }}
-        onSubmit={(event) => void handleCloudArchiveSubmit(event)}
-        onRetry={handleCloudArchiveRetry}
-        onClose={closeCloudArchive}
-        onOpenBookmark={(bookmarkId) => {
-          closeCloudArchive();
-          openBookmark(bookmarkId);
-        }}
       />
       <LocalArchiveDialog
         state={localArchiveDialog}
