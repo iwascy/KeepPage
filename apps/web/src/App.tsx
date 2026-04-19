@@ -1245,9 +1245,9 @@ function ManagerDialog({
     submitLabel = `删除 ${state.count} 个`;
   } else if (state.kind === "delete-folder") {
     eyebrow = "Delete Folder";
-    title = "确认删除这个收藏夹";
-    description = "它自己会被删除，子收藏夹会上移一层，当前文件夹下的网页会解除归档。";
-    submitLabel = "删除收藏夹";
+    title = "删除这个收藏夹？";
+    description = "它会从收藏夹列表中移除，子收藏夹会上移一层，当前文件夹下的网页会解除归档。";
+    submitLabel = "删除";
   } else if (state.kind === "edit-tag") {
     eyebrow = "Edit Tag";
     title = "调整标签名称和颜色";
@@ -1397,8 +1397,8 @@ function ManagerDialog({
                 <div className="bookmark-delete-card-icon" aria-hidden="true">
                   <span className="material-symbols-outlined">folder_open</span>
                 </div>
-                <div className="bookmark-delete-card-body is-folder-delete">
-                  <strong>{folderDeleteTarget.path}</strong>
+                <div className="bookmark-delete-card-body">
+                  <strong title={folderDeleteTarget.path}>{folderDeleteTarget.path}</strong>
                   <span className="bookmark-delete-card-domain">子收藏夹会自动上移一层</span>
                 </div>
               </section>
@@ -3779,7 +3779,6 @@ export function App({
               activePreviewMode={previewSelection?.mode ?? null}
               folders={folders}
               tags={tags}
-              cloudArchiveUpdating={detailCloudArchiveUpdating}
               metadataNote={metadataNote}
               metadataFolderId={metadataFolderId}
               metadataTagIds={metadataTagIds}
@@ -3788,7 +3787,6 @@ export function App({
               isPending={isPending}
               onGoBack={goToList}
               onSelectVersion={openBookmark}
-              onCloudArchiveRefresh={() => void handleCloudArchiveRefreshCurrentBookmark()}
               onMetadataNoteChange={setMetadataNote}
               onMetadataFolderChange={setMetadataFolderId}
               onMetadataTagToggle={(tagId) => {
