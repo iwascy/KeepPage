@@ -1,0 +1,2308 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+    />
+    <title>KeepPage Demo</title>
+    <style>
+      :root {
+        --bg: #f7f8f9;
+        --panel: rgba(255, 255, 255, 0.82);
+        --panel-solid: #ffffff;
+        --soft: #eef1f4;
+        --soft-2: #e5e9ee;
+        --line: rgba(72, 82, 91, 0.13);
+        --text: #252b30;
+        --muted: #65707a;
+        --faint: #9aa4ae;
+        --accent: #2f6f73;
+        --accent-2: #8d5c2c;
+        --accent-3: #5c6470;
+        --danger: #9b332f;
+        --good: #197252;
+        --warn: #916008;
+        --shadow: 0 18px 42px rgba(35, 45, 54, 0.09);
+        --radius: 8px;
+        --font-display: "Manrope", "Inter", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Inter", "PingFang SC", "Hiragino Sans GB", ui-sans-serif, sans-serif;
+        color: var(--text);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(244, 247, 249, 0.94)),
+          #f7f8f9;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      .material-symbols-outlined {
+        display: inline-block;
+        font-size: 20px;
+        line-height: 1;
+        font-variation-settings: "FILL" 0, "wght" 430, "GRAD" 0, "opsz" 24;
+      }
+
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 292px minmax(0, 1fr);
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--line);
+        background: rgba(248, 249, 250, 0.84);
+        backdrop-filter: blur(18px);
+        padding: 18px;
+        gap: 18px;
+        z-index: 10;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .brand-button,
+      .icon-button,
+      .nav-button,
+      .chip-button,
+      .card-menu,
+      .bookmark-hit,
+      .folder-row,
+      .tag-row,
+      .plain-button,
+      .primary-button,
+      .secondary-button,
+      .danger-button {
+        border: 0;
+        cursor: pointer;
+      }
+
+      .brand-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        padding: 0;
+        background: transparent;
+      }
+
+      .brand-mark {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius);
+        color: #fff;
+        background: linear-gradient(135deg, #2f6f73, #8d5c2c);
+        font-family: var(--font-display);
+        font-weight: 800;
+      }
+
+      .brand-title {
+        font-family: var(--font-display);
+        font-size: 1.22rem;
+        font-weight: 800;
+      }
+
+      .icon-button {
+        width: 34px;
+        height: 34px;
+        border-radius: var(--radius);
+        display: grid;
+        place-items: center;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .icon-button:hover,
+      .icon-button.is-active {
+        background: var(--soft);
+        color: var(--text);
+      }
+
+      .search {
+        position: relative;
+      }
+
+      .search span {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--faint);
+      }
+
+      .search input {
+        width: 100%;
+        height: 42px;
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        background: #eef1f4;
+        color: var(--text);
+        outline: none;
+        padding: 0 12px 0 40px;
+      }
+
+      .search input:focus,
+      textarea:focus,
+      select:focus,
+      input:focus {
+        border-color: rgba(47, 111, 115, 0.36);
+        box-shadow: 0 0 0 3px rgba(47, 111, 115, 0.1);
+      }
+
+      .quick-nav,
+      .settings-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .nav-button,
+      .settings-item {
+        min-height: 39px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--muted);
+        padding: 0 11px;
+        text-align: left;
+      }
+
+      .nav-button:hover,
+      .nav-button.is-active,
+      .settings-item:hover,
+      .settings-item.is-active {
+        background: var(--soft);
+        color: var(--text);
+      }
+
+      .nav-button.is-active span:first-child {
+        color: var(--accent);
+        font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24;
+      }
+
+      .sidebar-scroll {
+        min-height: 0;
+        overflow: auto;
+        display: grid;
+        gap: 20px;
+        padding-right: 2px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        color: var(--faint);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .add-mini {
+        width: 24px;
+        height: 24px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .add-mini:hover {
+        background: var(--soft);
+        color: var(--text);
+      }
+
+      .folder-list,
+      .tag-list {
+        display: grid;
+        gap: 5px;
+      }
+
+      .folder-shell {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 26px;
+        gap: 4px;
+      }
+
+      .folder-row,
+      .tag-row {
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--muted);
+        padding: 0 8px;
+        text-align: left;
+      }
+
+      .folder-row:hover,
+      .folder-row.is-active,
+      .tag-row:hover,
+      .tag-row.is-active,
+      .folder-row.is-context-open,
+      .tag-row.is-context-open {
+        background: var(--soft);
+        color: var(--text);
+      }
+
+      .folder-left,
+      .tag-left {
+        min-width: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .folder-name,
+      .tag-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .count {
+        flex: none;
+        min-width: 24px;
+        border-radius: 999px;
+        background: rgba(101, 112, 122, 0.1);
+        padding: 2px 7px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.74rem;
+        font-weight: 700;
+      }
+
+      .collapse-button {
+        width: 26px;
+        height: 34px;
+        border: 0;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--faint);
+        cursor: pointer;
+      }
+
+      .collapse-button:hover {
+        background: var(--soft);
+        color: var(--muted);
+      }
+
+      .collapse-button span {
+        transition: transform 140ms ease;
+      }
+
+      .collapse-button.is-expanded span {
+        transform: rotate(90deg);
+      }
+
+      .tag-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      .sidebar-footer {
+        display: grid;
+        gap: 12px;
+        margin-top: auto;
+      }
+
+      .add-new {
+        height: 42px;
+        border-radius: var(--radius);
+        background: #273138;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-weight: 700;
+      }
+
+      .profile {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) 34px;
+        align-items: center;
+        gap: 10px;
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+
+      .avatar {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius);
+        background: #e4ece7;
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .profile strong,
+      .profile small {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .profile small {
+        color: var(--faint);
+      }
+
+      .workspace {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .mobile-topbar,
+      .mobile-bottom-nav,
+      .mobile-backdrop {
+        display: none;
+      }
+
+      .topbar {
+        height: 16px;
+      }
+
+      .content {
+        min-width: 0;
+        padding: 18px 28px 34px;
+      }
+
+      .view-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 20px;
+        margin: 8px 0 22px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--faint);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 8px;
+        font-family: var(--font-display);
+        font-size: 2rem;
+        line-height: 1.13;
+      }
+
+      h2 {
+        font-family: var(--font-display);
+      }
+
+      .view-head p {
+        margin-bottom: 0;
+        color: var(--muted);
+      }
+
+      .head-actions,
+      .toolbar-actions,
+      .detail-actions,
+      .dialog-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .primary-button,
+      .secondary-button,
+      .danger-button,
+      .plain-button {
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border-radius: var(--radius);
+        padding: 0 12px;
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      .primary-button {
+        background: #273138;
+        color: #fff;
+      }
+
+      .secondary-button {
+        background: var(--soft);
+        color: var(--text);
+      }
+
+      .danger-button {
+        background: rgba(155, 51, 47, 0.1);
+        color: var(--danger);
+      }
+
+      .plain-button {
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .plain-button:hover,
+      .secondary-button:hover {
+        background: var(--soft-2);
+      }
+
+      .home-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 16px;
+      }
+
+      .bookmark-card {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+        overflow: hidden;
+        transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+      }
+
+      .bookmark-card:hover,
+      .bookmark-card.is-context-open {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+        border-color: rgba(47, 111, 115, 0.24);
+      }
+
+      .bookmark-card.is-selected {
+        outline: 3px solid rgba(47, 111, 115, 0.14);
+        border-color: rgba(47, 111, 115, 0.45);
+      }
+
+      .bookmark-hit {
+        width: 100%;
+        display: grid;
+        grid-template-rows: 154px minmax(142px, auto);
+        padding: 0;
+        background: transparent;
+        text-align: left;
+      }
+
+      .cover {
+        position: relative;
+        overflow: hidden;
+        border-bottom: 1px solid var(--line);
+        background: #e9edf1;
+      }
+
+      .cover.is-peach {
+        background: linear-gradient(135deg, #f3d4bd, #eef2f5 66%);
+      }
+
+      .cover.is-mist {
+        background: linear-gradient(135deg, #d6e7ea, #f6f3ec 68%);
+      }
+
+      .cover.is-sage {
+        background: linear-gradient(135deg, #dce9df, #f0ece1 68%);
+      }
+
+      .cover.is-steel {
+        background: linear-gradient(135deg, #d6dce5, #f1eee7 68%);
+      }
+
+      .cover-inner {
+        position: absolute;
+        inset: 18px;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        border: 1px solid rgba(255, 255, 255, 0.68);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.52);
+        padding: 15px;
+        box-shadow: 0 18px 30px rgba(52, 61, 70, 0.1);
+      }
+
+      .cover-domain {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        color: rgba(37, 43, 48, 0.62);
+        font-size: 0.72rem;
+        font-weight: 800;
+      }
+
+      .favicon {
+        width: 32px;
+        height: 32px;
+        border-radius: 7px;
+        object-fit: contain;
+        background: #fff;
+        padding: 5px;
+      }
+
+      .cover-title {
+        align-self: center;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        font-family: var(--font-display);
+        font-size: 1.04rem;
+        font-weight: 800;
+        line-height: 1.25;
+      }
+
+      .cover-lines span {
+        display: block;
+        height: 7px;
+        border-radius: 999px;
+        background: rgba(37, 43, 48, 0.12);
+        margin-top: 7px;
+      }
+
+      .cover-lines span:nth-child(2) {
+        width: 78%;
+      }
+
+      .cover-lines span:nth-child(3) {
+        width: 52%;
+      }
+
+      .card-menu {
+        position: absolute;
+        right: 8px;
+        top: 8px;
+        z-index: 2;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--muted);
+        backdrop-filter: blur(10px);
+      }
+
+      .select-mark {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        z-index: 3;
+        width: 25px;
+        height: 25px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(47, 111, 115, 0.34);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--accent);
+        font-weight: 900;
+      }
+
+      .card-body {
+        min-width: 0;
+        padding: 14px;
+      }
+
+      .title-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .card-body h2 {
+        margin: 0;
+        min-width: 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        font-size: 1rem;
+        line-height: 1.28;
+      }
+
+      .star {
+        color: #9c6a15;
+        font-variation-settings: "FILL" 1, "wght" 460, "GRAD" 0, "opsz" 24;
+      }
+
+      .card-body p {
+        min-height: 42px;
+        margin: 10px 0 12px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.55;
+      }
+
+      .card-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--faint);
+        font-size: 0.78rem;
+      }
+
+      .quality {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 0.74rem;
+        font-weight: 800;
+      }
+
+      .quality.high {
+        background: rgba(25, 114, 82, 0.1);
+        color: var(--good);
+      }
+
+      .quality.medium {
+        background: rgba(145, 96, 8, 0.11);
+        color: var(--warn);
+      }
+
+      .quality.low {
+        background: rgba(155, 51, 47, 0.1);
+        color: var(--danger);
+      }
+
+      .empty-state,
+      .status-panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        padding: 30px;
+        color: var(--muted);
+      }
+
+      .selection-toolbar {
+        position: sticky;
+        top: 12px;
+        z-index: 8;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: var(--shadow);
+        padding: 10px;
+      }
+
+      .selection-left,
+      .selection-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .select-all {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 0;
+        border-radius: var(--radius);
+        background: var(--soft);
+        min-height: 34px;
+        padding: 0 10px;
+        cursor: pointer;
+      }
+
+      .detail-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 380px;
+        gap: 18px;
+        min-height: calc(100vh - 68px);
+      }
+
+      .preview-panel,
+      .detail-panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .preview-panel {
+        min-height: 680px;
+      }
+
+      .archive-frame {
+        width: 100%;
+        height: 100%;
+        min-height: 680px;
+        border: 0;
+        background: #fff;
+      }
+
+      .detail-panel {
+        align-self: start;
+        position: sticky;
+        top: 18px;
+        max-height: calc(100vh - 36px);
+        overflow: auto;
+        padding: 16px;
+      }
+
+      .detail-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .segmented {
+        display: inline-grid;
+        grid-auto-flow: column;
+        gap: 3px;
+        border-radius: var(--radius);
+        background: var(--soft);
+        padding: 3px;
+      }
+
+      .segmented button {
+        min-height: 31px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        padding: 0 10px;
+        cursor: pointer;
+      }
+
+      .segmented button.is-active {
+        background: #fff;
+        color: var(--text);
+        box-shadow: 0 1px 4px rgba(35, 45, 54, 0.08);
+      }
+
+      .detail-title {
+        margin-bottom: 8px;
+        font-size: 1.25rem;
+      }
+
+      .url-row {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) 20px;
+        gap: 7px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+
+      .url-row a {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: inherit;
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin: 15px 0;
+      }
+
+      .meta-cell {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.58);
+        padding: 10px;
+      }
+
+      .meta-cell span,
+      .field-label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--faint);
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .meta-cell strong,
+      .meta-cell select {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        color: var(--text);
+        font-size: 0.84rem;
+        font-weight: 700;
+      }
+
+      select,
+      input,
+      textarea {
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        background: var(--soft);
+        outline: none;
+        padding: 9px 10px;
+        color: var(--text);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 94px;
+        resize: vertical;
+        line-height: 1.55;
+      }
+
+      .tag-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin: 8px 0 16px;
+      }
+
+      .tag-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        background: var(--soft);
+        padding: 7px 10px;
+        color: var(--muted);
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+
+      .tag-pill input {
+        width: 13px;
+        height: 13px;
+        margin: 0;
+        accent-color: var(--accent);
+      }
+
+      .tag-pill.is-active {
+        background: rgba(47, 111, 115, 0.12);
+        color: var(--accent);
+      }
+
+      details {
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+        margin-top: 12px;
+      }
+
+      summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        color: var(--text);
+        font-weight: 800;
+      }
+
+      .version-list {
+        display: grid;
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      .version-item {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        border: 1px solid transparent;
+        border-radius: var(--radius);
+        background: var(--soft);
+        color: var(--muted);
+        padding: 9px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .version-item.is-active {
+        border-color: rgba(47, 111, 115, 0.28);
+        background: rgba(47, 111, 115, 0.1);
+        color: var(--text);
+      }
+
+      .version-item strong,
+      .version-item span {
+        display: block;
+      }
+
+      .version-item span {
+        color: var(--faint);
+        font-size: 0.78rem;
+      }
+
+      .note-box {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.55);
+        padding: 12px;
+        color: var(--muted);
+        line-height: 1.6;
+        cursor: pointer;
+      }
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 22px;
+        z-index: 80;
+        transform: translateX(-50%);
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        border-radius: var(--radius);
+        background: rgba(35, 43, 49, 0.92);
+        color: #fff;
+        box-shadow: var(--shadow);
+        padding: 11px 14px;
+        font-weight: 700;
+      }
+
+      .context-menu {
+        position: fixed;
+        z-index: 70;
+        min-width: 220px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: var(--shadow);
+        padding: 6px;
+      }
+
+      .context-menu button {
+        width: 100%;
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text);
+        text-align: left;
+        padding: 0 9px;
+        cursor: pointer;
+      }
+
+      .context-menu button:hover {
+        background: var(--soft);
+      }
+
+      .context-menu button.danger {
+        color: var(--danger);
+      }
+
+      .context-sep {
+        height: 1px;
+        background: var(--line);
+        margin: 5px;
+      }
+
+      .dialog-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+        background: rgba(22, 27, 31, 0.34);
+        backdrop-filter: blur(12px);
+      }
+
+      .dialog {
+        width: min(470px, 100%);
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.93);
+        box-shadow: var(--shadow);
+        padding: 18px;
+      }
+
+      .dialog-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 16px;
+      }
+
+      .dialog h2 {
+        margin-bottom: 6px;
+        font-size: 1.28rem;
+      }
+
+      .dialog p {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .form-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .form-grid input,
+      .form-grid select {
+        width: 100%;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .panel-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+      }
+
+      .stat-card,
+      .import-card,
+      .token-card,
+      .private-item {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel);
+        padding: 15px;
+      }
+
+      .stat-card span {
+        display: block;
+        color: var(--faint);
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .stat-card strong {
+        display: block;
+        margin-top: 8px;
+        font-family: var(--font-display);
+        font-size: 1.7rem;
+      }
+
+      .stat-card small {
+        display: block;
+        margin-top: 5px;
+        color: var(--muted);
+      }
+
+      .import-card,
+      .token-card,
+      .private-item {
+        display: grid;
+        gap: 10px;
+      }
+
+      .import-card button,
+      .private-item button {
+        justify-self: start;
+      }
+
+      .import-editor {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 330px;
+        gap: 16px;
+      }
+
+      .import-editor textarea {
+        min-height: 360px;
+        background: #fff;
+      }
+
+      .preview-list {
+        display: grid;
+        gap: 9px;
+      }
+
+      .preview-item {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #fff;
+        padding: 10px;
+      }
+
+      .preview-item strong,
+      .preview-item span {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .preview-item span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .code-box {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #273138;
+        color: #f4f7f8;
+        padding: 14px;
+        line-height: 1.55;
+        font-size: 0.82rem;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 4px 8px;
+        background: rgba(25, 114, 82, 0.1);
+        color: var(--good);
+        font-size: 0.74rem;
+        font-weight: 800;
+      }
+
+      .status-badge.warn {
+        background: rgba(145, 96, 8, 0.11);
+        color: var(--warn);
+      }
+
+      .status-badge.danger {
+        background: rgba(155, 51, 47, 0.1);
+        color: var(--danger);
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      @media (max-width: 900px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: fixed;
+          inset: 0 auto 0 0;
+          width: min(310px, calc(100vw - 42px));
+          transform: translateX(-105%);
+          transition: transform 180ms ease;
+          box-shadow: var(--shadow);
+        }
+
+        .sidebar.is-open {
+          transform: translateX(0);
+        }
+
+        .mobile-backdrop {
+          position: fixed;
+          inset: 0;
+          z-index: 9;
+          border: 0;
+          background: rgba(20, 24, 27, 0.24);
+        }
+
+        .mobile-backdrop.is-visible,
+        .mobile-topbar,
+        .mobile-bottom-nav {
+          display: flex;
+        }
+
+        .mobile-topbar {
+          position: sticky;
+          top: 0;
+          z-index: 7;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          border-bottom: 1px solid var(--line);
+          background: rgba(248, 249, 250, 0.92);
+          backdrop-filter: blur(14px);
+          padding: 10px 14px;
+        }
+
+        .mobile-title {
+          min-width: 0;
+          border: 0;
+          background: transparent;
+          text-align: left;
+        }
+
+        .mobile-title small,
+        .mobile-title strong {
+          display: block;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .mobile-title small {
+          color: var(--faint);
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .content {
+          padding: 14px 14px 86px;
+        }
+
+        .view-head {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .home-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .detail-shell,
+        .import-editor,
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+
+        .detail-panel {
+          position: static;
+          max-height: none;
+        }
+
+        .preview-panel,
+        .archive-frame {
+          min-height: 420px;
+        }
+
+        .mobile-bottom-nav {
+          position: fixed;
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          z-index: 8;
+          justify-content: space-around;
+          border: 1px solid var(--line);
+          border-radius: var(--radius);
+          background: rgba(255, 255, 255, 0.94);
+          box-shadow: var(--shadow);
+          padding: 6px;
+        }
+
+        .mobile-bottom-nav button {
+          min-width: 0;
+          display: grid;
+          place-items: center;
+          gap: 2px;
+          border: 0;
+          border-radius: 6px;
+          background: transparent;
+          color: var(--muted);
+          padding: 6px 8px;
+          font-size: 0.72rem;
+        }
+
+        .mobile-bottom-nav button.is-active {
+          background: var(--soft);
+          color: var(--text);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="overlay"></div>
+    <div id="toast" class="toast" hidden></div>
+
+    <script>
+      const now = new Date("2026-05-05T10:00:00+08:00");
+      const folders = [
+        { id: "f-eng", name: "Engineering", path: "/engineering", parentId: null },
+        { id: "f-ext", name: "Extensions", path: "/engineering/extensions", parentId: "f-eng" },
+        { id: "f-design", name: "Design Notes", path: "/design-notes", parentId: null },
+        { id: "f-product", name: "Product", path: "/product", parentId: null },
+        { id: "f-read", name: "Reading Queue", path: "/reading/browser-notes", parentId: null }
+      ];
+      const tags = [
+        { id: "t-browser", name: "browser", color: "#2f6f73" },
+        { id: "t-extension", name: "extension", color: "#6574a8" },
+        { id: "t-research", name: "research", color: "#8d5c2c" },
+        { id: "t-product", name: "product", color: "#5d7165" },
+        { id: "t-api", name: "api", color: "#875c72" }
+      ];
+      let bookmarks = [
+        makeBookmark("bm-chrome", "Chrome Extensions MV3 Overview", "https://developer.chrome.com/docs/extensions/mv3/intro", "Capture profile switched to complete for code examples and iframe docs.", true, "f-ext", ["t-browser", "t-extension"], 91, "high", 3, -3),
+        makeBookmark("bm-webkit", "AutoFill Updates in Safari", "https://webkit.org/blog/13895/auto-fill-updates/", "Possible iframe drop on embedded media section.", false, "f-read", ["t-browser", "t-research"], 76, "medium", 1, -9),
+        makeBookmark("bm-alpha", "Alpha Release Notes (Internal Mirror)", "https://example.com/release-notes/alpha", "Archive text is much shorter than source page, flagged for recapture.", false, "f-product", ["t-product"], 62, "low", 7, -20),
+        makeBookmark("bm-rsc", "React Server Components Deep Dive", "https://react.dev/reference/rsc/server-components", "The reader version is cleaner than the original capture.", true, "f-eng", ["t-research"], 88, "high", 2, -31),
+        makeBookmark("bm-css", "CSS View Transitions Cookbook", "https://developer.chrome.com/docs/web-platform/view-transitions", "", false, "f-design", ["t-browser"], 84, "high", 2, -42),
+        makeBookmark("bm-sqlite", "SQLite JSON Query Patterns", "https://sqlite.org/json1.html", "Useful reference for local archive metadata experiments.", false, null, ["t-api", "t-research"], 79, "medium", 1, -64),
+        makeBookmark("bm-fastify", "Fastify Plugin Authoring Guide", "https://fastify.dev/docs/latest/Guides/Plugins-Guide/", "", true, "f-eng", ["t-api"], 93, "high", 4, -83),
+        makeBookmark("bm-wxt", "WXT Browser Extension Examples", "https://wxt.dev/examples/content-script-ui.html", "Content script UI examples for extension overlay work.", false, "f-ext", ["t-extension"], 70, "medium", 2, -120)
+      ];
+      let privateBookmarks = [
+        makeBookmark("pbm-ops", "Server Access Recovery Notes", "https://internal.example.com/ops/recovery", "Only visible after entering private mode.", false, null, ["t-product"], 81, "high", 2, -11),
+        makeBookmark("pbm-roadmap", "Unannounced Launch Roadmap", "https://internal.example.com/product/roadmap", "Private roadmap capture.", true, null, ["t-product"], 86, "high", 1, -26)
+      ];
+      let versionsByBookmark = Object.fromEntries([...bookmarks, ...privateBookmarks].map((bookmark) => [bookmark.id, makeVersions(bookmark)]));
+      let importTasks = [
+        { id: "imp-001", name: "Chrome bookmark export", status: "done", total: 18, imported: 17, failed: 1, createdAt: hoursAgo(14), items: ["developer.chrome.com", "wxt.dev", "react.dev"] },
+        { id: "imp-002", name: "Reading queue paste", status: "running", total: 6, imported: 4, failed: 0, createdAt: hoursAgo(3), items: ["webkit.org", "sqlite.org"] }
+      ];
+      let apiTokens = [
+        { id: "tok-1", name: "Raycast ingest", prefix: "kp_live_rcst", createdAt: hoursAgo(220), expiresAt: "2026-08-31T00:00:00.000Z", revokedAt: null },
+        { id: "tok-2", name: "Local script", prefix: "kp_live_locl", createdAt: hoursAgo(96), expiresAt: null, revokedAt: null }
+      ];
+      let state = {
+        page: "list",
+        bookmarkView: "all",
+        selectedFolderId: "",
+        selectedTagId: "",
+        query: "",
+        selectedIds: new Set(),
+        selectionMode: false,
+        context: null,
+        dialog: null,
+        mobileOpen: false,
+        settingsOpen: false,
+        preferredPreviewMode: "reader",
+        activeVersionId: "",
+        privateEnabled: true,
+        privateUnlocked: false,
+        privatePassword: "",
+        importDraft: "https://developer.chrome.com/docs/extensions/mv3/intro\nhttps://wxt.dev/guide/essentials/config.html\nReact Server Components, https://react.dev/reference/rsc/server-components",
+        importPreview: [],
+        createdTokenSecret: null
+      };
+
+      function makeBookmark(id, title, sourceUrl, note, favorite, folderId, tagIds, score, grade, versionCount, offsetHours) {
+        const url = new URL(sourceUrl);
+        const folder = folders.find((item) => item.id === folderId) || null;
+        const itemTags = tagIds.map((tagId) => tags.find((tag) => tag.id === tagId)).filter(Boolean);
+        return {
+          id,
+          title,
+          sourceUrl,
+          domain: url.hostname,
+          note,
+          isFavorite: favorite,
+          folderId,
+          folder,
+          tagIds,
+          tags: itemTags,
+          score,
+          grade,
+          versionCount,
+          createdAt: hoursAgo(Math.abs(offsetHours) + 72),
+          updatedAt: hoursAgo(Math.abs(offsetHours))
+        };
+      }
+
+      function makeVersions(bookmark) {
+        return Array.from({ length: bookmark.versionCount }, (_, index) => ({
+          id: `${bookmark.id}-v${bookmark.versionCount - index}`,
+          versionNo: bookmark.versionCount - index,
+          createdAt: hoursAgo(index * 20 + 1),
+          readerAvailable: index !== bookmark.versionCount - 1,
+          originalAvailable: true,
+          archiveSize: 420000 + index * 95000,
+          quality: Math.max(50, bookmark.score - index * 4)
+        }));
+      }
+
+      function hoursAgo(hours) {
+        return new Date(now.getTime() - hours * 3600000).toISOString();
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function relativeTime(value) {
+        const diffHours = Math.max(1, Math.round((now - new Date(value)) / 3600000));
+        if (diffHours < 24) return `${diffHours} 小时前`;
+        const days = Math.round(diffHours / 24);
+        if (days < 30) return `${days} 天前`;
+        return new Date(value).toLocaleDateString("zh-CN");
+      }
+
+      function formatDate(value) {
+        return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+      }
+
+      function formatSize(bytes) {
+        if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+        return `${(bytes / 1024).toFixed(1)} KB`;
+      }
+
+      function favicon(domain) {
+        const initial = (domain[0] || "K").toUpperCase();
+        const colors = ["#2f6f73", "#8d5c2c", "#5c6470", "#6b6f47"];
+        const fill = colors[[...domain].reduce((sum, char) => sum + char.charCodeAt(0), 0) % colors.length];
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${fill}"/><text x="32" y="40" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="800" fill="white">${initial}</text></svg>`;
+        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      }
+
+      function tone(domain) {
+        const tones = ["peach", "mist", "sage", "steel"];
+        return tones[[...domain].reduce((sum, char) => sum + char.charCodeAt(0), 0) % tones.length];
+      }
+
+      function syncBookmarkLinks(bookmark) {
+        bookmark.folder = folders.find((folder) => folder.id === bookmark.folderId) || null;
+        bookmark.tags = bookmark.tagIds.map((tagId) => tags.find((tag) => tag.id === tagId)).filter(Boolean);
+      }
+
+      function getCurrentItems() {
+        const query = state.query.trim().toLowerCase();
+        let items = [...bookmarks];
+        if (state.bookmarkView === "favorites") items = items.filter((item) => item.isFavorite);
+        if (state.bookmarkView === "recent") items = items.filter((item) => (now - new Date(item.updatedAt)) / 3600000 <= 168);
+        if (state.selectedFolderId) {
+          const ids = descendants(state.selectedFolderId);
+          items = items.filter((item) => item.folderId && ids.includes(item.folderId));
+        }
+        if (state.selectedTagId) items = items.filter((item) => item.tagIds.includes(state.selectedTagId));
+        if (query) {
+          items = items.filter((item) => [
+            item.title,
+            item.domain,
+            item.note,
+            item.folder?.path || "",
+            ...item.tags.map((tag) => tag.name)
+          ].join(" ").toLowerCase().includes(query));
+        }
+        return items.sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt));
+      }
+
+      function descendants(folderId) {
+        const result = [folderId];
+        for (const folder of folders) {
+          if (folder.parentId === folderId) result.push(...descendants(folder.id));
+        }
+        return result;
+      }
+
+      function folderCount(folderId) {
+        const ids = descendants(folderId);
+        return bookmarks.filter((item) => item.folderId && ids.includes(item.folderId)).length;
+      }
+
+      function routeTo(page, extra = {}) {
+        Object.assign(state, { page, context: null, dialog: null, mobileOpen: false, settingsOpen: false }, extra);
+        if (page !== "list") state.selectionMode = false;
+        render();
+      }
+
+      function showToast(message) {
+        const node = document.querySelector("#toast");
+        node.textContent = message;
+        node.hidden = false;
+        clearTimeout(showToast.timer);
+        showToast.timer = setTimeout(() => {
+          node.hidden = true;
+        }, 2200);
+      }
+
+      function appTitle() {
+        if (state.selectedFolderId) return folders.find((item) => item.id === state.selectedFolderId)?.name || "收藏夹";
+        if (state.selectedTagId) return `#${tags.find((item) => item.id === state.selectedTagId)?.name || "标签"}`;
+        if (state.bookmarkView === "favorites") return "星标收藏";
+        if (state.bookmarkView === "recent") return "最近更新";
+        return "全部书签";
+      }
+
+      function render() {
+        document.querySelector("#app").innerHTML = `
+          <main class="app">
+            <button class="mobile-backdrop ${state.mobileOpen ? "is-visible" : ""}" data-action="close-mobile" aria-label="关闭侧边栏"></button>
+            ${renderSidebar()}
+            <section class="workspace">
+              <div class="mobile-topbar">
+                <button class="icon-button" data-action="toggle-mobile" aria-label="打开导航"><span class="material-symbols-outlined">menu</span></button>
+                <button class="mobile-title" data-action="home"><small>KeepPage Archive</small><strong>${escapeHtml(appTitle())}</strong></button>
+                <button class="icon-button" data-route="imports-new" aria-label="新建导入"><span class="material-symbols-outlined">add</span></button>
+              </div>
+              <div class="topbar"></div>
+              <section class="content">${renderPage()}</section>
+              ${renderMobileBottomNav()}
+            </section>
+          </main>
+        `;
+        renderOverlay();
+      }
+
+      function renderSidebar() {
+        return `
+          <aside class="sidebar ${state.mobileOpen ? "is-open" : ""}">
+            <div class="brand">
+              <button class="brand-button" data-action="home" aria-label="返回首页">
+                <span class="brand-mark">K</span>
+                <span class="brand-title">KeepPage</span>
+              </button>
+              <button class="icon-button ${state.settingsOpen ? "is-active" : ""}" data-action="toggle-settings" aria-label="设置">
+                <span class="material-symbols-outlined">more_horiz</span>
+              </button>
+            </div>
+            ${state.settingsOpen ? renderSettingsSidebar() : renderMainSidebar()}
+          </aside>
+        `;
+      }
+
+      function renderMainSidebar() {
+        const rootFolders = folders.filter((folder) => !folder.parentId);
+        return `
+          <label class="search">
+            <span class="material-symbols-outlined">search</span>
+            <input data-input="search" type="search" value="${escapeHtml(state.query)}" placeholder="搜索标题、域名、标签..." />
+          </label>
+          <nav class="quick-nav" aria-label="快捷导航">
+            ${navButton("all", "bookmarks", "全部书签")}
+            ${navButton("recent", "schedule", "最近更新")}
+            ${navButton("favorites", "star", "星标收藏")}
+          </nav>
+          <div class="sidebar-scroll">
+            <section>
+              <header class="section-head"><span>Collections</span><button class="add-mini" data-dialog="create-folder" title="新建收藏夹">+</button></header>
+              <div class="folder-list">${rootFolders.map((folder) => renderFolder(folder, 0)).join("")}</div>
+            </section>
+            <section>
+              <header class="section-head"><span>Tags</span><button class="add-mini" data-dialog="create-tag" title="新建标签">+</button></header>
+              <div class="tag-list">${tags.map(renderTag).join("")}</div>
+            </section>
+          </div>
+          <div class="sidebar-footer">
+            <button class="add-new" data-route="imports-new"><span class="material-symbols-outlined">add</span><span>Add New</span></button>
+            <div class="profile">
+              <div class="avatar">CY</div>
+              <div><strong>cyan@example.com</strong><small>专业版</small></div>
+              <button class="icon-button" data-action="toggle-settings" aria-label="设置"><span class="material-symbols-outlined">settings</span></button>
+            </div>
+          </div>
+        `;
+      }
+
+      function renderSettingsSidebar() {
+        return `
+          <button class="settings-item" data-action="toggle-settings"><span class="material-symbols-outlined">arrow_back</span><span>返回</span></button>
+          <div class="settings-list">
+            <button class="settings-item ${state.page === "private" ? "is-active" : ""}" data-route="private"><span class="material-symbols-outlined">lock</span><span>私密模式</span></button>
+            <button class="settings-item ${state.page === "api-tokens" ? "is-active" : ""}" data-route="api-tokens"><span class="material-symbols-outlined">vpn_key</span><span>API 密钥</span></button>
+            <button class="settings-item" data-route="imports-new"><span class="material-symbols-outlined">add</span><span>新建导入</span></button>
+            <button class="settings-item" data-route="imports-list"><span class="material-symbols-outlined">history</span><span>导入历史</span></button>
+            <button class="settings-item" data-action="logout"><span class="material-symbols-outlined">logout</span><span>退出登录</span></button>
+          </div>
+        `;
+      }
+
+      function navButton(view, icon, label) {
+        const active = !state.selectedFolderId && !state.selectedTagId && state.bookmarkView === view;
+        return `<button class="nav-button ${active ? "is-active" : ""}" data-view="${view}"><span class="material-symbols-outlined">${icon}</span><span>${label}</span></button>`;
+      }
+
+      function renderFolder(folder, depth) {
+        const children = folders.filter((item) => item.parentId === folder.id);
+        const active = state.selectedFolderId === folder.id;
+        return `
+          <div class="folder-shell" data-folder-id="${folder.id}" style="padding-left:${depth * 12}px">
+            <button class="folder-row ${active ? "is-active" : ""} ${state.context?.id === folder.id ? "is-context-open" : ""}" data-folder="${folder.id}">
+              <span class="folder-left"><span class="material-symbols-outlined">folder_open</span><span class="folder-name">${escapeHtml(folder.name)}</span></span>
+              <span class="count">${folderCount(folder.id)}</span>
+            </button>
+            ${children.length ? `<button class="collapse-button is-expanded" data-action="noop" aria-label="收起"><span class="material-symbols-outlined">keyboard_arrow_right</span></button>` : "<span></span>"}
+          </div>
+          ${children.map((child) => renderFolder(child, depth + 1)).join("")}
+        `;
+      }
+
+      function renderTag(tag) {
+        const active = state.selectedTagId === tag.id;
+        const count = bookmarks.filter((item) => item.tagIds.includes(tag.id)).length;
+        return `
+          <button class="tag-row ${active ? "is-active" : ""} ${state.context?.id === tag.id ? "is-context-open" : ""}" data-tag="${tag.id}">
+            <span class="tag-left"><span class="tag-dot" style="background:${escapeHtml(tag.color)}"></span><span class="tag-name">${escapeHtml(tag.name)}</span></span>
+            <span class="count">${count}</span>
+          </button>
+        `;
+      }
+
+      function renderMobileBottomNav() {
+        if (state.page !== "list") return "";
+        return `
+          <nav class="mobile-bottom-nav" aria-label="移动端导航">
+            <button class="${state.bookmarkView === "all" && !state.selectedFolderId && !state.selectedTagId ? "is-active" : ""}" data-view="all"><span class="material-symbols-outlined">bookmarks</span><span>全部</span></button>
+            <button class="${state.bookmarkView === "recent" ? "is-active" : ""}" data-view="recent"><span class="material-symbols-outlined">schedule</span><span>最近</span></button>
+            <button class="${state.bookmarkView === "favorites" ? "is-active" : ""}" data-view="favorites"><span class="material-symbols-outlined">star</span><span>星标</span></button>
+            <button class="${state.mobileOpen ? "is-active" : ""}" data-action="toggle-mobile"><span class="material-symbols-outlined">folder_open</span><span>收藏夹</span></button>
+          </nav>
+        `;
+      }
+
+      function renderPage() {
+        if (state.page === "detail") return renderDetail(false);
+        if (state.page === "private-detail") return renderDetail(true);
+        if (state.page === "imports-new") return renderImportNew();
+        if (state.page === "imports-list") return renderImportList();
+        if (state.page === "imports-detail") return renderImportDetail();
+        if (state.page === "private") return renderPrivate();
+        if (state.page === "api-tokens") return renderApiTokens();
+        return renderHome();
+      }
+
+      function renderHome() {
+        const items = getCurrentItems();
+        const title = appTitle();
+        return `
+          <header class="view-head">
+            <div>
+              <p class="eyebrow">${state.query.trim() ? "Filtered Archive" : "KeepPage Archive"}</p>
+              <h1>${escapeHtml(title)}</h1>
+              <p>${items.length} 条归档，${bookmarks.filter((item) => item.isFavorite).length} 条星标，${folders.length} 个收藏夹。</p>
+            </div>
+            <div class="head-actions">
+              <button class="secondary-button" data-action="toggle-selection"><span class="material-symbols-outlined">checklist</span><span>${state.selectionMode ? "退出选择" : "批量选择"}</span></button>
+              <button class="primary-button" data-route="imports-new"><span class="material-symbols-outlined">add</span><span>新建导入</span></button>
+            </div>
+          </header>
+          ${state.selectionMode ? renderSelectionToolbar(items) : ""}
+          ${items.length ? `<section class="home-grid">${items.map(renderBookmarkCard).join("")}</section>` : `<section class="empty-state"><h2>当前筛选下没有匹配的归档</h2><p>换个关键词，或者切换收藏夹和标签试试。</p></section>`}
+        `;
+      }
+
+      function renderSelectionToolbar(items) {
+        return `
+          <div class="selection-toolbar">
+            <div class="selection-left">
+              <button class="select-all" data-action="select-all"><span>${state.selectedIds.size === items.length && items.length ? "✓" : ""}</span><strong>${state.selectedIds.size === items.length && items.length ? "取消全选" : "全选"}</strong></button>
+              <span>已选 ${state.selectedIds.size} / ${items.length}</span>
+            </div>
+            <div class="selection-actions">
+              <button class="secondary-button" data-batch="favorite"><span class="material-symbols-outlined">star</span><span>收藏</span></button>
+              <button class="secondary-button" data-batch="archive"><span class="material-symbols-outlined">archive</span><span>本地存档</span></button>
+              <button class="secondary-button" data-dialog="batch-move"><span class="material-symbols-outlined">drive_file_move</span><span>移动到</span></button>
+              <button class="danger-button" data-dialog="batch-delete"><span class="material-symbols-outlined">delete</span><span>删除</span></button>
+            </div>
+          </div>
+        `;
+      }
+
+      function summarize(item) {
+        if (item.note.trim()) return item.note;
+        if (item.folder?.path) return `已归档到 ${item.folder.path}，当前共保留 ${item.versionCount} 个版本。`;
+        return `已保存来自 ${item.domain} 的网页归档，可随时打开阅读或导出。`;
+      }
+
+      function renderBookmarkCard(item) {
+        const selected = state.selectedIds.has(item.id);
+        return `
+          <article class="bookmark-card ${selected ? "is-selected" : ""} ${state.context?.id === item.id ? "is-context-open" : ""}" data-bookmark-id="${item.id}">
+            ${state.selectionMode ? `<span class="select-mark">${selected ? "✓" : ""}</span>` : `<button class="card-menu" data-menu-bookmark="${item.id}" aria-label="更多"><span class="material-symbols-outlined">more_vert</span></button>`}
+            <button class="bookmark-hit" data-open-bookmark="${item.id}">
+              <div class="cover is-${tone(item.domain)}">
+                <div class="cover-inner">
+                  <div class="cover-domain"><span>${escapeHtml(item.domain)}</span><img class="favicon" src="${favicon(item.domain)}" alt="" /></div>
+                  <div class="cover-title">${escapeHtml(item.title)}</div>
+                  <div class="cover-lines"><span></span><span></span><span></span></div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="title-row"><h2>${escapeHtml(item.title)}</h2>${item.isFavorite ? `<span class="material-symbols-outlined star">star</span>` : ""}</div>
+                <p>${escapeHtml(summarize(item))}</p>
+                <footer class="card-meta">
+                  <span>${escapeHtml(item.domain)}</span>
+                  <span class="quality ${item.grade}">${item.score}</span>
+                  <span>${relativeTime(item.updatedAt)}</span>
+                </footer>
+              </div>
+            </button>
+          </article>
+        `;
+      }
+
+      function currentBookmark(isPrivate) {
+        const pool = isPrivate ? privateBookmarks : bookmarks;
+        return pool.find((item) => item.id === state.bookmarkId) || pool[0];
+      }
+
+      function renderDetail(isPrivate) {
+        const item = currentBookmark(isPrivate);
+        const versions = versionsByBookmark[item.id] || makeVersions(item);
+        const selected = versions.find((version) => version.id === state.activeVersionId) || versions[0];
+        const activeMode = state.preferredPreviewMode === "reader" && !selected.readerAvailable ? "original" : state.preferredPreviewMode;
+        return `
+          <section class="detail-shell">
+            <section class="preview-panel">
+              <iframe class="archive-frame" title="${escapeHtml(item.title)}" srcdoc="${escapeHtml(archiveHtml(item, selected, activeMode))}"></iframe>
+            </section>
+            <aside class="detail-panel">
+              <div class="detail-top">
+                <button class="icon-button" data-route="${isPrivate ? "private" : "list"}" aria-label="返回"><span class="material-symbols-outlined">arrow_back</span></button>
+                <div class="segmented">
+                  <button class="${activeMode === "reader" ? "is-active" : ""}" data-preview="reader" ${selected.readerAvailable ? "" : "disabled"}>阅读视图</button>
+                  <button class="${activeMode === "original" ? "is-active" : ""}" data-preview="original">原始归档</button>
+                </div>
+              </div>
+              <p class="eyebrow">Detail View #${escapeHtml(item.id.toUpperCase())}</p>
+              <h2 class="detail-title">${escapeHtml(item.title)} ${item.isFavorite ? `<span class="material-symbols-outlined star">star</span>` : ""}</h2>
+              <div class="url-row"><span class="material-symbols-outlined">link</span><a href="${escapeHtml(item.sourceUrl)}" target="_blank">${escapeHtml(item.sourceUrl)}</a><span class="material-symbols-outlined">open_in_new</span></div>
+              <div class="meta-grid">
+                <label class="meta-cell"><span>Collection</span><select data-detail-folder><option value="">未归档</option>${folders.map((folder) => `<option value="${folder.id}" ${item.folderId === folder.id ? "selected" : ""}>${escapeHtml(folder.path)}</option>`).join("")}</select></label>
+                <div class="meta-cell"><span>Added</span><strong>${formatDate(item.createdAt)}</strong></div>
+                <div class="meta-cell"><span>File Size</span><strong>${formatSize(selected.archiveSize)}</strong></div>
+                <div class="meta-cell"><span>Last Sync</span><strong>${formatDate(item.updatedAt)}</strong></div>
+              </div>
+              <span class="field-label">Tags</span>
+              <div class="tag-wrap">
+                ${tags.map((tag) => `<label class="tag-pill ${item.tagIds.includes(tag.id) ? "is-active" : ""}"><input type="checkbox" data-detail-tag="${tag.id}" ${item.tagIds.includes(tag.id) ? "checked" : ""} />#${escapeHtml(tag.name)}</label>`).join("")}
+                <button class="tag-pill" data-dialog="create-tag"><span class="material-symbols-outlined">add</span>Tag</button>
+              </div>
+              <details open>
+                <summary><span>版本历史</span><span class="count">${versions.length}</span></summary>
+                <div class="version-list">
+                  ${versions.map((version, index) => `<button class="version-item ${version.id === selected.id ? "is-active" : ""}" data-version="${version.id}"><span class="material-symbols-outlined">refresh</span><div><strong>v${version.versionNo}${index === 0 ? " (Latest)" : ""}</strong><span>${formatDate(version.createdAt)} · 质量 ${version.quality}</span></div></button>`).join("")}
+                  <div class="version-item"><span class="material-symbols-outlined">description</span><div><strong>Original Source</strong><span>${escapeHtml(item.domain)} · ${formatDate(item.createdAt)}</span></div></div>
+                </div>
+              </details>
+              <section style="margin-top:16px">
+                <span class="field-label">Personal Notes</span>
+                <div class="note-box" data-action="edit-note">${escapeHtml(item.note || "点击添加备注...")}</div>
+              </section>
+              <div class="detail-actions" style="margin-top:16px">
+                <button class="secondary-button" data-action="export"><span class="material-symbols-outlined">download</span><span>Export</span></button>
+                <button class="danger-button" data-dialog="delete-bookmark" data-id="${item.id}"><span class="material-symbols-outlined">delete</span><span>Delete</span></button>
+              </div>
+            </aside>
+          </section>
+        `;
+      }
+
+      function archiveHtml(item, version, mode) {
+        const modeLabel = mode === "reader" ? "Reader Archive" : "Original Archive";
+        return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><style>
+          body{margin:0;background:#f6f1e8;color:#222;font-family:Inter,ui-sans-serif,sans-serif;padding:42px 20px}
+          main{max-width:860px;margin:auto;border:1px solid rgba(60,48,38,.16);border-radius:12px;background:rgba(255,255,255,.78);box-shadow:0 22px 50px rgba(42,33,24,.12);overflow:hidden}
+          header{padding:34px 38px;background:linear-gradient(135deg,rgba(47,111,115,.14),rgba(141,92,44,.12));border-bottom:1px solid rgba(60,48,38,.12)}
+          .badge{display:inline-flex;border-radius:999px;background:#fff;padding:6px 10px;color:#2f6f73;font-size:12px;font-weight:800}h1{font-size:38px;line-height:1.1;margin:18px 0 12px}p{color:#5f5a51;line-height:1.8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;padding:26px 38px}.card{border:1px solid rgba(60,48,38,.12);border-radius:8px;background:#fff;padding:16px}strong{display:block;margin-bottom:7px}</style></head><body>
+          <main><header><span class="badge">KeepPage ${modeLabel} · v${version.versionNo}</span><h1>${escapeHtml(item.title)}</h1><p>${escapeHtml(summarize(item))}</p></header>
+          <section class="grid"><article class="card"><strong>Captured Source</strong><p>${escapeHtml(item.sourceUrl)}</p></article><article class="card"><strong>Archive Quality</strong><p>当前模拟质量分 ${version.quality}，可以切换版本和视图观察详情栏状态。</p></article><article class="card"><strong>Mock Preview</strong><p>这是单文件 HTML 内置的 iframe 预览，用来还原书签详情页的归档阅读区域。</p></article></section></main>
+        </body></html>`;
+      }
+
+      function renderImportNew() {
+        const preview = state.importPreview.length ? state.importPreview : parseImportDraft(state.importDraft);
+        return `
+          <header class="view-head">
+            <div><p class="eyebrow">Import</p><h1>新建导入</h1><p>粘贴 URL、标题或浏览器书签导出的片段，系统会生成模拟导入任务。</p></div>
+            <div class="head-actions"><button class="secondary-button" data-route="imports-list"><span class="material-symbols-outlined">history</span><span>导入历史</span></button></div>
+          </header>
+          <section class="import-editor">
+            <div><textarea data-input="import-draft">${escapeHtml(state.importDraft)}</textarea><div class="toolbar-actions" style="margin-top:10px"><button class="secondary-button" data-action="preview-import"><span class="material-symbols-outlined">visibility</span><span>预览</span></button><button class="primary-button" data-action="start-import"><span class="material-symbols-outlined">play_arrow</span><span>开始导入</span></button></div></div>
+            <aside class="status-panel"><h2>预览 ${preview.length} 条</h2><div class="preview-list">${preview.map((item) => `<div class="preview-item"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.url)}</span></div>`).join("")}</div></aside>
+          </section>
+        `;
+      }
+
+      function parseImportDraft(text) {
+        return text.split(/\n+/).map((line, index) => line.trim()).filter(Boolean).map((line, index) => {
+          const url = line.match(/https?:\/\/\S+/)?.[0] || `https://example.com/imported-${index + 1}`;
+          const title = line.replace(url, "").replace(/[,，-]+$/, "").trim() || new URL(url).hostname;
+          return { title, url };
+        });
+      }
+
+      function renderImportList() {
+        return `
+          <header class="view-head"><div><p class="eyebrow">Import History</p><h1>导入历史</h1><p>查看每次批量导入的进度、成功数量和失败项。</p></div><button class="primary-button" data-route="imports-new"><span class="material-symbols-outlined">add</span><span>新建导入</span></button></header>
+          <section class="panel-grid">${importTasks.map((task) => `<article class="import-card"><div><span class="status-badge ${task.status === "running" ? "warn" : ""}">${task.status === "done" ? "已完成" : "运行中"}</span><h2>${escapeHtml(task.name)}</h2><p>${task.imported}/${task.total} 已导入 · ${task.failed} 失败 · ${relativeTime(task.createdAt)}</p></div><button class="secondary-button" data-import-task="${task.id}"><span class="material-symbols-outlined">open_in_new</span><span>查看详情</span></button></article>`).join("")}</section>
+        `;
+      }
+
+      function renderImportDetail() {
+        const task = importTasks.find((item) => item.id === state.taskId) || importTasks[0];
+        return `
+          <header class="view-head"><div><p class="eyebrow">Import Detail</p><h1>${escapeHtml(task.name)}</h1><p>${task.imported}/${task.total} 已导入，${task.failed} 个失败项。</p></div><button class="secondary-button" data-route="imports-list"><span class="material-symbols-outlined">arrow_back</span><span>返回历史</span></button></header>
+          <section class="panel-grid">
+            <article class="stat-card"><span>Status</span><strong>${task.status === "done" ? "Done" : "Running"}</strong><small>${formatDate(task.createdAt)}</small></article>
+            <article class="stat-card"><span>Imported</span><strong>${task.imported}</strong><small>模拟数据已写入归档列表</small></article>
+            <article class="stat-card"><span>Failed</span><strong>${task.failed}</strong><small>可点击重试按钮恢复</small></article>
+          </section>
+          <section class="status-panel" style="margin-top:16px"><h2>任务项</h2><div class="preview-list">${task.items.map((name, index) => `<div class="preview-item"><strong>${escapeHtml(name)}</strong><span>${index < task.imported ? "已导入" : "等待中"}</span></div>`).join("")}</div><button class="secondary-button" style="margin-top:12px" data-action="retry-import"><span class="material-symbols-outlined">refresh</span><span>重试失败项</span></button></section>
+        `;
+      }
+
+      function renderPrivate() {
+        const unlocked = state.privateEnabled && state.privateUnlocked;
+        return `
+          <header class="view-head"><div><p class="eyebrow">Settings</p><h1>私密模式</h1><p>私密模式用于默认隐藏和密码进入，不等同于加密保险箱。</p></div>${unlocked ? `<button class="secondary-button" data-action="lock-private"><span class="material-symbols-outlined">lock</span><span>退出私密模式</span></button>` : ""}</header>
+          <section class="panel-grid">
+            <article class="stat-card"><span>当前状态</span><strong>${!state.privateEnabled ? "未启用" : unlocked ? "已进入" : "已锁定"}</strong><small>刷新后默认退出私密模式</small></article>
+            <article class="stat-card"><span>私密条目</span><strong>${privateBookmarks.length}</strong><small>不会出现在普通首页</small></article>
+            <article class="stat-card"><span>最近更新</span><strong>${relativeTime(privateBookmarks[0].updatedAt)}</strong><small>${formatDate(privateBookmarks[0].updatedAt)}</small></article>
+          </section>
+          <section class="status-panel" style="margin-top:16px">
+            ${unlocked ? `<h2>私密内容</h2><div class="panel-grid">${privateBookmarks.map((item) => `<article class="private-item"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.domain)} · ${relativeTime(item.updatedAt)}</p><button class="secondary-button" data-open-private="${item.id}"><span class="material-symbols-outlined">visibility</span><span>打开</span></button></article>`).join("")}</div>` : `<h2>输入密码进入私密空间</h2><p>演示密码可随意输入，点击进入后会展示私密书签。</p><div class="form-grid" style="max-width:360px"><input type="password" data-input="private-password" value="${escapeHtml(state.privatePassword)}" placeholder="输入私密密码" /><button class="primary-button" data-action="unlock-private"><span class="material-symbols-outlined">lock_open</span><span>进入私密空间</span></button></div>`}
+          </section>
+        `;
+      }
+
+      function renderApiTokens() {
+        return `
+          <header class="view-head"><div><p class="eyebrow">Settings</p><h1>API 密钥</h1><p>创建、复制或撤销用于导入书签的 API Token。</p></div><button class="primary-button" data-dialog="create-token"><span class="material-symbols-outlined">add</span><span>创建密钥</span></button></header>
+          ${state.createdTokenSecret ? `<section class="status-panel" style="margin-bottom:16px"><h2>新密钥只显示一次</h2><pre class="code-box">${escapeHtml(state.createdTokenSecret)}</pre><button class="secondary-button" data-copy="${escapeHtml(state.createdTokenSecret)}"><span class="material-symbols-outlined">content_copy</span><span>复制</span></button></section>` : ""}
+          <section class="panel-grid">${apiTokens.map((token) => `<article class="token-card"><div><span class="status-badge ${token.revokedAt ? "danger" : ""}">${token.revokedAt ? "已撤销" : "可用"}</span><h2>${escapeHtml(token.name)}</h2><p>${escapeHtml(token.prefix)}... · 创建于 ${relativeTime(token.createdAt)}</p></div><div class="toolbar-actions"><button class="secondary-button" data-copy="curl -H 'Authorization: Bearer ${escapeHtml(token.prefix)}_xxxx' https://api.example.com/ingest/bookmarks"><span class="material-symbols-outlined">content_copy</span><span>复制 curl</span></button><button class="danger-button" data-revoke="${token.id}"><span class="material-symbols-outlined">block</span><span>撤销</span></button></div></article>`).join("")}</section>
+        `;
+      }
+
+      function renderOverlay() {
+        const overlay = document.querySelector("#overlay");
+        if (state.context) {
+          overlay.innerHTML = renderContextMenu();
+          return;
+        }
+        if (state.dialog) {
+          overlay.innerHTML = renderDialog();
+          return;
+        }
+        overlay.innerHTML = "";
+      }
+
+      function renderContextMenu() {
+        const x = Math.min(state.context.x, window.innerWidth - 240);
+        const y = Math.min(state.context.y, window.innerHeight - 230);
+        if (state.context.type === "bookmark") {
+          const item = bookmarks.find((bookmark) => bookmark.id === state.context.id);
+          return `<div class="context-menu" style="left:${x}px;top:${y}px">
+            <button data-open-bookmark="${item.id}"><span class="material-symbols-outlined">open_in_new</span>打开详情</button>
+            <button data-cx="favorite"><span class="material-symbols-outlined">star</span>${item.isFavorite ? "取消收藏" : "加入收藏"}</button>
+            <button data-cx="archive"><span class="material-symbols-outlined">archive</span>发送到本地存档</button>
+            <button data-dialog="move-bookmark"><span class="material-symbols-outlined">drive_file_move</span>移动到收藏夹</button>
+            <div class="context-sep"></div>
+            <button class="danger" data-dialog="delete-bookmark" data-id="${item.id}"><span class="material-symbols-outlined">delete</span>删除</button>
+          </div>`;
+        }
+        if (state.context.type === "folder") {
+          return `<div class="context-menu" style="left:${x}px;top:${y}px"><button data-dialog="create-folder-child"><span class="material-symbols-outlined">create_new_folder</span>新建子收藏夹</button><button data-dialog="edit-folder"><span class="material-symbols-outlined">edit</span>编辑路径</button><button class="danger" data-dialog="delete-folder"><span class="material-symbols-outlined">delete</span>删除收藏夹</button></div>`;
+        }
+        return `<div class="context-menu" style="left:${x}px;top:${y}px"><button data-dialog="edit-tag"><span class="material-symbols-outlined">edit</span>编辑标签</button><button class="danger" data-dialog="delete-tag"><span class="material-symbols-outlined">delete</span>删除标签</button></div>`;
+      }
+
+      function renderDialog() {
+        const dialog = state.dialog;
+        if (["create-folder", "create-folder-child", "edit-folder", "create-tag", "edit-tag", "create-token"].includes(dialog.type)) {
+          const isFolder = dialog.type.includes("folder");
+          const isEdit = dialog.type.startsWith("edit");
+          const target = dialog.id ? (isFolder ? folders.find((item) => item.id === dialog.id) : tags.find((item) => item.id === dialog.id)) : null;
+          const title = dialog.type === "create-token" ? "创建 API 密钥" : isFolder ? (isEdit ? "调整收藏夹路径" : "新建收藏夹") : (isEdit ? "调整标签名称" : "新建标签");
+          return `<div class="dialog-backdrop" data-action="close-dialog"><section class="dialog" data-dialog-panel><div class="dialog-head"><div><h2>${title}</h2><p>${isFolder ? "收藏夹会立即出现在左侧导航，书签移动也会同步刷新。" : dialog.type === "create-token" ? "Token 创建后只显示一次，请及时复制。" : "标签名保持简短，颜色可以使用 CSS 色值。"}</p></div><button class="icon-button" data-action="close-dialog"><span class="material-symbols-outlined">close</span></button></div><div class="form-grid">${dialog.type === "create-token" ? `<label><span class="field-label">Name</span><input data-dialog-input="name" value="Demo ingest token" /></label><label><span class="field-label">Expires</span><input data-dialog-input="expires" type="date" value="2026-12-31" /></label>` : `<label><span class="field-label">${isFolder ? "Path / Name" : "Tag Name"}</span><input data-dialog-input="name" value="${escapeHtml(target ? (isFolder ? target.path : target.name) : "")}" placeholder="${isFolder ? "/research/browser" : "read-later"}" /></label>${!isFolder ? `<label><span class="field-label">Color</span><input data-dialog-input="color" value="${escapeHtml(target?.color || "#2f6f73")}" /></label>` : ""}`}</div><div class="dialog-actions" style="margin-top:16px"><button class="secondary-button" data-action="close-dialog">取消</button><button class="primary-button" data-action="submit-dialog"><span class="material-symbols-outlined">check</span><span>保存</span></button></div></section></div>`;
+        }
+        if (["move-bookmark", "batch-move"].includes(dialog.type)) {
+          return `<div class="dialog-backdrop" data-action="close-dialog"><section class="dialog" data-dialog-panel><div class="dialog-head"><div><h2>移动到收藏夹</h2><p>选择一个收藏夹，模拟数据会立即更新。</p></div><button class="icon-button" data-action="close-dialog"><span class="material-symbols-outlined">close</span></button></div><label><span class="field-label">Collection</span><select data-dialog-input="folder"><option value="">未归档</option>${folders.map((folder) => `<option value="${folder.id}">${escapeHtml(folder.path)}</option>`).join("")}</select></label><div class="dialog-actions" style="margin-top:16px"><button class="secondary-button" data-action="close-dialog">取消</button><button class="primary-button" data-action="submit-dialog"><span class="material-symbols-outlined">drive_file_move</span><span>移动</span></button></div></section></div>`;
+        }
+        const message = dialog.type === "batch-delete" ? `确认删除 ${state.selectedIds.size} 条书签？` : dialog.type === "delete-folder" ? "确认删除这个收藏夹？" : dialog.type === "delete-tag" ? "确认删除这个标签？" : "确认删除这条书签？";
+        return `<div class="dialog-backdrop" data-action="close-dialog"><section class="dialog" data-dialog-panel><div class="dialog-head"><div><h2>${message}</h2><p>这是模拟原型，删除后只会影响当前页面内的数据状态。</p></div><button class="icon-button" data-action="close-dialog"><span class="material-symbols-outlined">close</span></button></div><div class="dialog-actions"><button class="secondary-button" data-action="close-dialog">取消</button><button class="danger-button" data-action="submit-dialog"><span class="material-symbols-outlined">delete</span><span>删除</span></button></div></section></div>`;
+      }
+
+      document.addEventListener("click", (event) => {
+        const target = event.target.closest("button, a, [data-action], [data-folder], [data-tag], [data-open-bookmark], [data-open-private], [data-menu-bookmark], [data-import-task], [data-version], [data-preview], [data-copy], [data-revoke], [data-dialog-panel]");
+        if (!target) {
+          state.context = null;
+          renderOverlay();
+          return;
+        }
+        if (target.matches("[data-dialog-panel]")) return;
+        const action = target.dataset.action;
+        if (action) handleAction(action, target, event);
+        if (target.dataset.route) routeTo(target.dataset.route);
+        if (target.dataset.view) {
+          state.bookmarkView = target.dataset.view;
+          state.selectedFolderId = "";
+          state.selectedTagId = "";
+          state.mobileOpen = false;
+          render();
+        }
+        if (target.dataset.folder) {
+          state.selectedFolderId = state.selectedFolderId === target.dataset.folder ? "" : target.dataset.folder;
+          state.selectedTagId = "";
+          state.bookmarkView = "all";
+          state.mobileOpen = false;
+          render();
+        }
+        if (target.dataset.tag) {
+          state.selectedTagId = state.selectedTagId === target.dataset.tag ? "" : target.dataset.tag;
+          state.selectedFolderId = "";
+          state.bookmarkView = "all";
+          state.mobileOpen = false;
+          render();
+        }
+        if (target.dataset.openBookmark) {
+          const id = target.dataset.openBookmark;
+          if (state.selectionMode) {
+            state.selectedIds.has(id) ? state.selectedIds.delete(id) : state.selectedIds.add(id);
+            render();
+          } else {
+            routeTo("detail", { bookmarkId: id, activeVersionId: "" });
+          }
+        }
+        if (target.dataset.openPrivate) routeTo("private-detail", { bookmarkId: target.dataset.openPrivate, activeVersionId: "" });
+        if (target.dataset.menuBookmark) openContext("bookmark", target.dataset.menuBookmark, event);
+        if (target.dataset.dialog) openDialog(target.dataset.dialog, target.dataset.id);
+        if (target.dataset.importTask) routeTo("imports-detail", { taskId: target.dataset.importTask });
+        if (target.dataset.version) {
+          state.activeVersionId = target.dataset.version;
+          render();
+        }
+        if (target.dataset.preview) {
+          state.preferredPreviewMode = target.dataset.preview;
+          render();
+        }
+        if (target.dataset.copy) {
+          navigator.clipboard?.writeText(target.dataset.copy);
+          showToast("已复制到剪贴板");
+        }
+        if (target.dataset.revoke) {
+          const token = apiTokens.find((item) => item.id === target.dataset.revoke);
+          if (token) token.revokedAt = now.toISOString();
+          showToast("密钥已撤销");
+          render();
+        }
+        if (target.dataset.cx) handleContextAction(target.dataset.cx);
+        if (target.dataset.batch) handleBatch(target.dataset.batch);
+      });
+
+      document.addEventListener("contextmenu", (event) => {
+        const bookmark = event.target.closest("[data-bookmark-id]");
+        const folder = event.target.closest("[data-folder-id]");
+        const tag = event.target.closest("[data-tag]");
+        if (bookmark) {
+          event.preventDefault();
+          openContext("bookmark", bookmark.dataset.bookmarkId, event);
+        } else if (folder) {
+          event.preventDefault();
+          openContext("folder", folder.dataset.folderId, event);
+        } else if (tag) {
+          event.preventDefault();
+          openContext("tag", tag.dataset.tag, event);
+        }
+      });
+
+      document.addEventListener("input", (event) => {
+        const target = event.target;
+        if (target.dataset.input === "search") {
+          state.query = target.value;
+          render();
+        }
+        if (target.dataset.input === "import-draft") state.importDraft = target.value;
+        if (target.dataset.input === "private-password") state.privatePassword = target.value;
+      });
+
+      document.addEventListener("change", (event) => {
+        const target = event.target;
+        if (target.dataset.detailFolder !== undefined) {
+          const item = currentBookmark(state.page === "private-detail");
+          item.folderId = target.value || null;
+          syncBookmarkLinks(item);
+          showToast("收藏夹已更新");
+          render();
+        }
+        if (target.dataset.detailTag) {
+          const item = currentBookmark(state.page === "private-detail");
+          const tagId = target.dataset.detailTag;
+          item.tagIds = target.checked ? [...new Set([...item.tagIds, tagId])] : item.tagIds.filter((id) => id !== tagId);
+          syncBookmarkLinks(item);
+          showToast("标签已更新");
+          render();
+        }
+      });
+
+      function handleAction(action, target, event) {
+        if (action === "home") routeTo("list", { bookmarkView: "all", selectedFolderId: "", selectedTagId: "" });
+        if (action === "toggle-settings") {
+          state.settingsOpen = !state.settingsOpen;
+          state.mobileOpen = true;
+          render();
+        }
+        if (action === "toggle-mobile") {
+          state.mobileOpen = !state.mobileOpen;
+          render();
+        }
+        if (action === "close-mobile") {
+          state.mobileOpen = false;
+          render();
+        }
+        if (action === "toggle-selection") {
+          state.selectionMode = !state.selectionMode;
+          state.selectedIds.clear();
+          render();
+        }
+        if (action === "select-all") {
+          const items = getCurrentItems();
+          if (state.selectedIds.size === items.length) state.selectedIds.clear();
+          else items.forEach((item) => state.selectedIds.add(item.id));
+          render();
+        }
+        if (action === "close-dialog") {
+          state.dialog = null;
+          state.context = null;
+          renderOverlay();
+        }
+        if (action === "submit-dialog") submitDialog();
+        if (action === "preview-import") {
+          state.importPreview = parseImportDraft(state.importDraft);
+          showToast(`已生成 ${state.importPreview.length} 条预览`);
+          render();
+        }
+        if (action === "start-import") startImport();
+        if (action === "retry-import") showToast("已重新排队失败项");
+        if (action === "unlock-private") {
+          state.privateUnlocked = true;
+          showToast("已进入私密空间");
+          render();
+        }
+        if (action === "lock-private") {
+          state.privateUnlocked = false;
+          showToast("已退出私密模式");
+          render();
+        }
+        if (action === "export") showToast("已生成 keeppage-demo.html");
+        if (action === "edit-note") openNoteDialog();
+        if (action === "logout") showToast("Demo 模式不需要登录");
+        if (action === "noop") showToast("演示中子收藏夹默认展开");
+      }
+
+      function openContext(type, id, event) {
+        state.context = { type, id, x: event.clientX + 4, y: event.clientY + 4 };
+        state.dialog = null;
+        render();
+      }
+
+      function openDialog(type, id) {
+        if (type === "create-folder-child" && state.context?.type === "folder") id = state.context.id;
+        if (type === "edit-folder" && state.context?.type === "folder") id = state.context.id;
+        if (type === "delete-folder" && state.context?.type === "folder") id = state.context.id;
+        if (type === "edit-tag" && state.context?.type === "tag") id = state.context.id;
+        if (type === "delete-tag" && state.context?.type === "tag") id = state.context.id;
+        if (type === "move-bookmark" && state.context?.type === "bookmark") id = state.context.id;
+        state.dialog = { type, id };
+        state.context = null;
+        renderOverlay();
+      }
+
+      function submitDialog() {
+        const dialog = state.dialog;
+        const name = document.querySelector("[data-dialog-input='name']")?.value.trim();
+        const color = document.querySelector("[data-dialog-input='color']")?.value.trim();
+        const folderValue = document.querySelector("[data-dialog-input='folder']")?.value || null;
+        if (dialog.type === "create-folder" || dialog.type === "create-folder-child") {
+          const parent = dialog.type === "create-folder-child" ? folders.find((item) => item.id === dialog.id) : null;
+          const path = name.startsWith("/") ? name : `${parent ? parent.path : ""}/${name}`.replace(/\/+/g, "/");
+          folders.push({ id: `f-${Date.now()}`, name: path.split("/").filter(Boolean).pop() || "New", path, parentId: parent?.id || null });
+          showToast("收藏夹已创建");
+        } else if (dialog.type === "edit-folder") {
+          const folder = folders.find((item) => item.id === dialog.id);
+          if (folder && name) {
+            folder.path = name.startsWith("/") ? name : `/${name}`;
+            folder.name = folder.path.split("/").filter(Boolean).pop() || folder.name;
+            showToast("收藏夹已更新");
+          }
+        } else if (dialog.type === "delete-folder") {
+          folders.splice(folders.findIndex((item) => item.id === dialog.id), 1);
+          bookmarks.forEach((item) => {
+            if (item.folderId === dialog.id) {
+              item.folderId = null;
+              syncBookmarkLinks(item);
+            }
+          });
+          showToast("收藏夹已删除");
+        } else if (dialog.type === "create-tag") {
+          tags.push({ id: `t-${Date.now()}`, name: name || "new-tag", color: color || "#2f6f73" });
+          showToast("标签已创建");
+        } else if (dialog.type === "edit-tag") {
+          const tag = tags.find((item) => item.id === dialog.id);
+          if (tag) {
+            tag.name = name || tag.name;
+            tag.color = color || tag.color;
+            [...bookmarks, ...privateBookmarks].forEach(syncBookmarkLinks);
+            showToast("标签已更新");
+          }
+        } else if (dialog.type === "delete-tag") {
+          tags.splice(tags.findIndex((item) => item.id === dialog.id), 1);
+          [...bookmarks, ...privateBookmarks].forEach((item) => {
+            item.tagIds = item.tagIds.filter((id) => id !== dialog.id);
+            syncBookmarkLinks(item);
+          });
+          showToast("标签已删除");
+        } else if (dialog.type === "move-bookmark") {
+          const item = bookmarks.find((bookmark) => bookmark.id === dialog.id);
+          if (item) {
+            item.folderId = folderValue;
+            syncBookmarkLinks(item);
+          }
+          showToast("书签已移动");
+        } else if (dialog.type === "batch-move") {
+          bookmarks.filter((item) => state.selectedIds.has(item.id)).forEach((item) => {
+            item.folderId = folderValue;
+            syncBookmarkLinks(item);
+          });
+          showToast("所选书签已移动");
+        } else if (dialog.type === "delete-bookmark") {
+          const id = dialog.id || state.bookmarkId;
+          bookmarks = bookmarks.filter((item) => item.id !== id);
+          state.selectedIds.delete(id);
+          showToast("书签已删除");
+          if (state.page === "detail") state.page = "list";
+        } else if (dialog.type === "batch-delete") {
+          bookmarks = bookmarks.filter((item) => !state.selectedIds.has(item.id));
+          state.selectedIds.clear();
+          state.selectionMode = false;
+          showToast("所选书签已删除");
+        } else if (dialog.type === "create-token") {
+          const id = `tok-${Date.now()}`;
+          const secret = `kp_live_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+          apiTokens.unshift({ id, name: name || "Demo token", prefix: secret.slice(0, 12), createdAt: now.toISOString(), expiresAt: null, revokedAt: null });
+          state.createdTokenSecret = secret;
+          showToast("API 密钥已创建");
+        }
+        state.dialog = null;
+        render();
+      }
+
+      function handleContextAction(action) {
+        if (!state.context || state.context.type !== "bookmark") return;
+        const item = bookmarks.find((bookmark) => bookmark.id === state.context.id);
+        if (!item) return;
+        if (action === "favorite") {
+          item.isFavorite = !item.isFavorite;
+          showToast(item.isFavorite ? "已加入收藏" : "已取消收藏");
+        }
+        if (action === "archive") showToast("已发送到本地存档队列");
+        state.context = null;
+        render();
+      }
+
+      function handleBatch(action) {
+        if (!state.selectedIds.size) {
+          showToast("请先选择书签");
+          return;
+        }
+        if (action === "favorite") {
+          bookmarks.filter((item) => state.selectedIds.has(item.id)).forEach((item) => item.isFavorite = true);
+          showToast("所选书签已收藏");
+          render();
+        }
+        if (action === "archive") showToast("所选书签已发送到本地存档队列");
+      }
+
+      function openNoteDialog() {
+        const item = currentBookmark(state.page === "private-detail");
+        state.dialog = { type: "note" };
+        document.querySelector("#overlay").innerHTML = `<div class="dialog-backdrop" data-action="close-dialog"><section class="dialog" data-dialog-panel><div class="dialog-head"><div><h2>编辑备注</h2><p>备注会显示在首页卡片摘要和详情页。</p></div><button class="icon-button" data-action="close-dialog"><span class="material-symbols-outlined">close</span></button></div><textarea data-note-editor>${escapeHtml(item.note)}</textarea><div class="dialog-actions" style="margin-top:16px"><button class="secondary-button" data-action="close-dialog">取消</button><button class="primary-button" data-action="save-note"><span class="material-symbols-outlined">save</span><span>保存</span></button></div></section></div>`;
+      }
+
+      document.addEventListener("click", (event) => {
+        const save = event.target.closest("[data-action='save-note']");
+        if (!save) return;
+        const item = currentBookmark(state.page === "private-detail");
+        item.note = document.querySelector("[data-note-editor]").value;
+        state.dialog = null;
+        showToast("备注已保存");
+        render();
+      });
+
+      function startImport() {
+        const items = parseImportDraft(state.importDraft);
+        const task = { id: `imp-${Date.now()}`, name: "Manual paste import", status: "done", total: items.length, imported: items.length, failed: 0, createdAt: now.toISOString(), items: items.map((item) => item.title) };
+        importTasks.unshift(task);
+        for (const item of items) {
+          const id = `bm-import-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          const bookmark = makeBookmark(id, item.title, item.url, "来自 HTML Demo 导入面板。", false, "f-read", ["t-research"], 82, "high", 1, -1);
+          bookmarks.unshift(bookmark);
+          versionsByBookmark[id] = makeVersions(bookmark);
+        }
+        showToast(`已导入 ${items.length} 条书签`);
+        routeTo("imports-detail", { taskId: task.id });
+      }
+
+      render();
+    </script>
+  </body>
+</html>
