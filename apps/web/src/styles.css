@@ -2765,6 +2765,24 @@ button {
   align-items: stretch;
 }
 
+.home-grid-virtual {
+  position: relative;
+  display: block;
+  min-height: var(--home-grid-total-size);
+}
+
+.home-grid-virtual-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--home-grid-columns), minmax(0, 1fr));
+  gap: 1.45rem;
+  transform: translateY(var(--home-grid-row-start));
+  will-change: transform;
+}
+
 .home-grid-spacer {
   grid-column: 1 / -1;
   pointer-events: none;
@@ -2773,6 +2791,7 @@ button {
 .home-bookmark-card {
   position: relative;
   height: 100%;
+  min-height: 26.875rem;
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 34px;
   background:
@@ -2783,7 +2802,7 @@ button {
     inset 0 1px 0 rgba(255, 255, 255, 0.76);
   contain: layout paint style;
   content-visibility: auto;
-  contain-intrinsic-size: 430px;
+  contain-intrinsic-size: 26.875rem;
   transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
   overflow: hidden;
 }
@@ -3441,7 +3460,7 @@ button {
   animation: homeShimmer 1.4s linear infinite;
 }
 
-.home-skeleton-cover { height: 12.8rem; }
+.home-skeleton-cover { aspect-ratio: 16 / 10; min-height: 12.8rem; }
 
 .home-skeleton-line {
   height: 0.85rem;
@@ -5414,8 +5433,21 @@ button {
     gap: 0.9rem;
   }
 
+  .home-grid-virtual {
+    display: block;
+    gap: 0;
+  }
+
+  .home-grid-virtual-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
   .home-bookmark-card {
+    min-height: auto;
     border-radius: 28px;
+    contain-intrinsic-size: 8.5rem;
   }
 
   .home-bookmark-menu-button {
@@ -5424,6 +5456,7 @@ button {
 
   .home-bookmark-card.is-mobile-featured {
     border-radius: 28px;
+    contain-intrinsic-size: 25rem;
   }
 
   .home-bookmark-card.is-mobile-featured .home-bookmark-cover {

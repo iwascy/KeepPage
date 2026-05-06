@@ -101,6 +101,7 @@ export const bookmarkVersionMediaFileSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(["image", "video", "video_cover"]),
   objectKey: z.string().min(1),
+  publicUrl: z.url().optional(),
   originalUrl: z.url(),
   mimeType: z.string().min(1).optional(),
   fileSize: z.number().int().nonnegative().optional(),

@@ -5,6 +5,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useDeferredValue,
   lazy,
   useMemo,
   useRef,
@@ -29,6 +30,10 @@ import type { ImportPanelAdapter } from "./features/imports";
 import { BookmarksListRoute } from "./features/bookmarks/list";
 import { buildBookmarkSiteIconCandidates } from "./features/bookmarks/shared/site-icon";
 import { useDebouncedValue } from "./hooks/use-debounced-value";
+import {
+  readCachedBookmarkList,
+  writeCachedBookmarkList,
+} from "./lib/bookmark-list-cache";
 import { type AppDataSource, useAppDataSource } from "./data-sources/use-app-data-source";
 import { Icon } from "./components/Icon";
 
@@ -1875,7 +1880,8 @@ export function App({
   const [localArchiveError, setLocalArchiveError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const debouncedSearch = useDebouncedValue(searchInput, 300);
+  const debouncedSearch = useDebouncedValue(searchInput, 200);
+  const deferredSearch = useDeferredValue(debouncedSearch);
   const authToken = session.status === "authenticated" ? session.token : null;
   const logoutLabel = appDataSource.logoutLabel;
   const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
@@ -2266,26 +2272,35 @@ export function App({
     }
 
     let cancelled = false;
-    setLoadState("loading");
     setListError(null);
     setLoadMoreError(null);
     setLoadingMore(false);
 
-    appDataSource.searchBookmarks(
-      {
-        search: debouncedSearch,
-        quality: qualityFilter,
-        view: bookmarkView,
-        folderId: selectedFolderId || undefined,
-        tagId: selectedTagId || undefined,
-        limit: BOOKMARKS_PAGE_SIZE,
-        offset: 0,
-      },
-      authToken,
-    )
+    const query = {
+      search: deferredSearch,
+      quality: qualityFilter,
+      view: bookmarkView,
+      folderId: selectedFolderId || undefined,
+      tagId: selectedTagId || undefined,
+      limit: BOOKMARKS_PAGE_SIZE,
+      offset: 0,
+    };
+    const cached = appDataSource.kind === "live" ? readCachedBookmarkList(query) : null;
+    if (cached) {
+      setItems(cached.items);
+      setListTotal(cached.total);
+      setLoadState("ready");
+    } else {
+      setLoadState("loading");
+    }
+
+    appDataSource.searchBookmarks(query, authToken)
       .then((result) => {
         if (cancelled) {
           return;
+        }
+        if (appDataSource.kind === "live") {
+          writeCachedBookmarkList(query, result);
         }
         startTransition(() => {
           setItems(result.items);
@@ -2308,7 +2323,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, bookmarkView, debouncedSearch, qualityFilter, selectedFolderId, selectedTagId]);
+  }, [appDataSource, authToken, bookmarkView, deferredSearch, qualityFilter, selectedFolderId, selectedTagId]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
@@ -2366,7 +2381,7 @@ export function App({
 
     appDataSource.searchPrivateBookmarks(
       {
-        search: debouncedSearch,
+        search: deferredSearch,
         quality: qualityFilter,
         view: bookmarkView,
         limit: BOOKMARKS_PAGE_SIZE,
@@ -2398,7 +2413,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, bookmarkView, debouncedSearch, privateToken, qualityFilter, route.page]);
+  }, [appDataSource, authToken, bookmarkView, deferredSearch, privateToken, qualityFilter, route.page]);
 
   useEffect(() => {
     if (!authToken || route.page !== "private-detail" || !privateToken) {
@@ -2719,7 +2734,7 @@ export function App({
     const limit = Math.max(items.length, BOOKMARKS_PAGE_SIZE);
     const result = await appDataSource.searchBookmarks(
       {
-        search: debouncedSearch,
+        search: deferredSearch,
         quality: qualityFilter,
         view: bookmarkView,
         folderId: selectedFolderId || undefined,
@@ -2753,7 +2768,7 @@ export function App({
     try {
       const result = await appDataSource.searchBookmarks(
         {
-          search: debouncedSearch,
+          search: deferredSearch,
           quality: qualityFilter,
           view: bookmarkView,
           folderId: selectedFolderId || undefined,
@@ -2798,7 +2813,7 @@ export function App({
     const limit = Math.max(privateItems.length, BOOKMARKS_PAGE_SIZE);
     const result = await appDataSource.searchPrivateBookmarks(
       {
-        search: debouncedSearch,
+        search: deferredSearch,
         quality: qualityFilter,
         view: bookmarkView,
         limit,

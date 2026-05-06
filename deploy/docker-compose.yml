@@ -32,6 +32,14 @@ services:
       STORAGE_DRIVER: postgres
       DATABASE_URL: postgresql://keeppage:${POSTGRES_PASSWORD}@postgres:5432/keeppage
       OBJECT_STORAGE_ROOT: /app-data/object-storage
+      OBJECT_STORAGE_DRIVER: ${OBJECT_STORAGE_DRIVER:-localfs}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_PUBLIC_BUCKET: ${R2_PUBLIC_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      R2_REGION: ${R2_REGION:-auto}
       LOG_LEVEL: info
       TZ: Asia/Shanghai
     env_file: [/data/apps/keeppage/shared/configs/keeppage.env]
@@ -57,6 +65,7 @@ services:
       dockerfile: deploy/web.Dockerfile
       args:
         VITE_API_BASE_URL: /api
+        VITE_COVER_IMAGE_ORIGIN: ${R2_PUBLIC_BASE_URL:-}
     container_name: keeppage-web
     restart: unless-stopped
     depends_on:

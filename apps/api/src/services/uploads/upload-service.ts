@@ -69,6 +69,7 @@ export class UploadService {
     return {
       body: await this.objectStorage.readObject(objectKey),
       contentType: guessContentType(objectKey),
+      publicUrl: this.objectStorage.createPublicUrl?.(objectKey) ?? null,
     };
   }
 

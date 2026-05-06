@@ -2945,10 +2945,31 @@ export class PostgresRepositoryCore {
     existingSourceMeta?: unknown,
   ) {
     const existingMediaFiles = this.readMediaFiles(existingSourceMeta);
+    const mergedMediaFiles = mergeBookmarkMediaFiles(existingMediaFiles, mediaFiles).map((mediaFile) => ({
+      ...mediaFile,
+      publicUrl: mediaFile.publicUrl ?? this.objectStorage.createPublicUrl?.(mediaFile.objectKey) ?? undefined,
+    }));
     return {
-      source,
-      mediaFiles: mergeBookmarkMediaFiles(existingMediaFiles, mediaFiles),
+      source: {
+        ...source,
+        coverImageUrl: this.resolveStoredCoverImageUrl(source, mergedMediaFiles),
+      },
+      mediaFiles: mergedMediaFiles,
     };
+  }
+
+  private resolveStoredCoverImageUrl(
+    source: CaptureCompleteRequest["source"],
+    mediaFiles: NonNullable<BookmarkVersion["mediaFiles"]>,
+  ) {
+    const coverMedia = mediaFiles.find((mediaFile) =>
+      mediaFile.publicUrl
+      && (
+        mediaFile.kind === "video_cover"
+        || mediaFile.originalUrl === source.coverImageUrl
+      ),
+    );
+    return coverMedia?.publicUrl ?? source.coverImageUrl;
   }
 
   private readApiTokenScopes(value: unknown) {

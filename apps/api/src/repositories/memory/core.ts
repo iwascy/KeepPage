@@ -339,7 +339,7 @@ export class InMemoryRepositoryCore {
       bookmark.title = input.source.title;
       bookmark.domain = input.source.domain;
       bookmark.faviconUrl = input.source.faviconUrl;
-      bookmark.coverImageUrl = input.source.coverImageUrl;
+      bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, existingByObjectKey.mediaFiles ?? []);
       bookmark.latestVersionId = existingByObjectKey.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -382,7 +382,7 @@ export class InMemoryRepositoryCore {
       bookmark.title = input.source.title;
       bookmark.domain = input.source.domain;
       bookmark.faviconUrl = input.source.faviconUrl;
-      bookmark.coverImageUrl = input.source.coverImageUrl;
+      bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, matchedVersion.mediaFiles ?? []);
       bookmark.latestVersionId = matchedVersion.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -405,7 +405,7 @@ export class InMemoryRepositoryCore {
       htmlSha256: input.htmlSha256,
       textSha256: input.textSha256,
       textSimhash: input.textSimhash,
-      mediaFiles: input.mediaFiles ?? [],
+      mediaFiles: this.attachPublicUrlsToMediaFiles(input.mediaFiles),
       captureProfile: pendingCapture.request.profile ?? "standard",
       quality: input.quality,
       createdAt: now,
@@ -430,7 +430,7 @@ export class InMemoryRepositoryCore {
     bookmark.title = input.source.title;
     bookmark.domain = input.source.domain;
     bookmark.faviconUrl = input.source.faviconUrl;
-    bookmark.coverImageUrl = input.source.coverImageUrl;
+    bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, version.mediaFiles ?? []);
     bookmark.versionCount = versions.length;
     bookmark.updatedAt = now;
     state.bookmarks.set(bookmark.id, bookmark);
@@ -467,7 +467,7 @@ export class InMemoryRepositoryCore {
       bookmark.title = input.source.title;
       bookmark.domain = input.source.domain;
       bookmark.faviconUrl = input.source.faviconUrl;
-      bookmark.coverImageUrl = input.source.coverImageUrl;
+      bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, existingByObjectKey.mediaFiles ?? []);
       bookmark.latestVersionId = existingByObjectKey.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -507,7 +507,7 @@ export class InMemoryRepositoryCore {
       bookmark.title = input.source.title;
       bookmark.domain = input.source.domain;
       bookmark.faviconUrl = input.source.faviconUrl;
-      bookmark.coverImageUrl = input.source.coverImageUrl;
+      bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, matchedVersion.mediaFiles ?? []);
       bookmark.latestVersionId = matchedVersion.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -530,7 +530,7 @@ export class InMemoryRepositoryCore {
       htmlSha256: input.htmlSha256,
       textSha256: input.textSha256,
       textSimhash: input.textSimhash,
-      mediaFiles: input.mediaFiles ?? [],
+      mediaFiles: this.attachPublicUrlsToMediaFiles(input.mediaFiles),
       captureProfile: pendingCapture.request.profile ?? "standard",
       quality: input.quality,
       createdAt: now,
@@ -555,7 +555,7 @@ export class InMemoryRepositoryCore {
     bookmark.title = input.source.title;
     bookmark.domain = input.source.domain;
     bookmark.faviconUrl = input.source.faviconUrl;
-    bookmark.coverImageUrl = input.source.coverImageUrl;
+    bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, version.mediaFiles ?? []);
     bookmark.versionCount = versions.length;
     bookmark.updatedAt = now;
     state.privateBookmarks.set(bookmark.id, bookmark);
@@ -1428,7 +1428,7 @@ export class InMemoryRepositoryCore {
       title: input.source.title,
       domain: input.source.domain,
       faviconUrl: input.source.faviconUrl,
-      coverImageUrl: input.source.coverImageUrl,
+      coverImageUrl: this.resolveStoredCoverImageUrl(input.source, this.attachPublicUrlsToMediaFiles(input.mediaFiles)),
       note: "",
       isFavorite: false,
       tags: [],
@@ -1463,7 +1463,7 @@ export class InMemoryRepositoryCore {
       title: input.source.title,
       domain: input.source.domain,
       faviconUrl: input.source.faviconUrl,
-      coverImageUrl: input.source.coverImageUrl,
+      coverImageUrl: this.resolveStoredCoverImageUrl(input.source, this.attachPublicUrlsToMediaFiles(input.mediaFiles)),
       note: "",
       isFavorite: false,
       tags: [],
@@ -1483,6 +1483,27 @@ export class InMemoryRepositoryCore {
       }
     }
     return undefined;
+  }
+
+  private attachPublicUrlsToMediaFiles(mediaFiles?: BookmarkVersion["mediaFiles"]) {
+    return mediaFiles?.map((mediaFile) => ({
+      ...mediaFile,
+      publicUrl: mediaFile.publicUrl ?? this.objectStorage.createPublicUrl?.(mediaFile.objectKey) ?? undefined,
+    })) ?? [];
+  }
+
+  private resolveStoredCoverImageUrl(
+    source: CaptureCompleteRequest["source"],
+    mediaFiles: NonNullable<BookmarkVersion["mediaFiles"]>,
+  ) {
+    const coverMedia = mediaFiles.find((mediaFile) =>
+      mediaFile.publicUrl
+      && (
+        mediaFile.kind === "video_cover"
+        || mediaFile.originalUrl === source.coverImageUrl
+      ),
+    );
+    return coverMedia?.publicUrl ?? source.coverImageUrl;
   }
 
   private findBookmarkByVersionId(state: UserBookmarkState, versionId: string) {

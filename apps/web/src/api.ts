@@ -221,6 +221,9 @@ type RequestOptions = {
   headers?: Record<string, string>;
 };
 
+const responseCache = new Map<string, unknown>();
+const RESPONSE_CACHE_PREFIX = "keeppage:api-response:v1:";
+
 function resolveApiBase() {
   return (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 }
@@ -246,12 +249,57 @@ async function request(path: string, options: RequestOptions = {}) {
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
+  if (response.status === 304) {
+    return response;
+  }
+
   if (!response.ok) {
     const errorPayload = await readErrorPayload(response);
     throw new ApiError(response.status, errorPayload.message, errorPayload.details);
   }
 
   return response;
+}
+
+async function requestJsonCached<T>(
+  path: string,
+  schema: ZodType<T>,
+  options: RequestOptions = {},
+) {
+  const cacheKey = buildResponseCacheKey(path, options);
+  const etagKey = `${cacheKey}:etag`;
+  const etag = typeof window === "undefined" ? null : window.sessionStorage.getItem(etagKey);
+  const response = await request(path, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...(etag ? { "if-none-match": etag } : {}),
+    },
+  });
+
+  if (response.status === 304) {
+    const cached = responseCache.get(cacheKey);
+    if (cached !== undefined) {
+      return schema.parse(cached);
+    }
+    const cachedRawValue = readStoredResponseCache(cacheKey);
+    if (cachedRawValue !== null) {
+      const parsed = schema.parse(cachedRawValue);
+      responseCache.set(cacheKey, parsed);
+      return parsed;
+    }
+    throw new ApiError(304, "No cached response available for a revalidated request.");
+  }
+
+  const payload = await response.json();
+  const parsed = schema.parse(payload);
+  responseCache.set(cacheKey, parsed);
+  writeStoredResponseCache(cacheKey, parsed);
+  const nextEtag = response.headers.get("etag");
+  if (nextEtag && typeof window !== "undefined") {
+    window.sessionStorage.setItem(etagKey, nextEtag);
+  }
+  return parsed;
 }
 
 async function requestJson<T>(
@@ -262,6 +310,37 @@ async function requestJson<T>(
   const response = await request(path, options);
   const payload = await response.json();
   return schema.parse(payload);
+}
+
+function buildResponseCacheKey(path: string, options: RequestOptions) {
+  return JSON.stringify({
+    path,
+    token: options.token ?? "",
+    privateToken: options.privateToken ?? "",
+  });
+}
+
+function readStoredResponseCache(cacheKey: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const rawValue = window.sessionStorage.getItem(`${RESPONSE_CACHE_PREFIX}${cacheKey}`);
+    return rawValue ? JSON.parse(rawValue) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredResponseCache(cacheKey: string, payload: unknown) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(`${RESPONSE_CACHE_PREFIX}${cacheKey}`, JSON.stringify(payload));
+  } catch {
+    return;
+  }
 }
 
 async function requestVoid(path: string, options: RequestOptions = {}) {
@@ -481,7 +560,7 @@ export async function fetchBookmarks(query: BookmarkQuery, token: string): Promi
     params.set("offset", String(query.offset));
   }
   const path = `/bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
-  const payload = await requestJson(path, bookmarkSearchResponseSchema, {
+  const payload = await requestJsonCached(path, bookmarkSearchResponseSchema, {
     token,
   });
   return {
@@ -543,7 +622,7 @@ export async function fetchPrivateBookmarks(
     params.set("offset", String(query.offset));
   }
   const path = `/private/bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
-  const payload = await requestJson(path, privateBookmarkSearchResponseSchema, {
+  const payload = await requestJsonCached(path, privateBookmarkSearchResponseSchema, {
     token,
     privateToken,
   });

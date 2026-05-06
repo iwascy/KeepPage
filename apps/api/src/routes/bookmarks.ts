@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AuthService } from "../services/auth/auth-service";
 import type { BookmarkService } from "../services/bookmarks/bookmark-service";
+import { sendCacheableJson } from "./http-cache";
 
 const searchQuerySchema = z.object({
   q: z.string().optional(),
@@ -31,7 +32,8 @@ export async function registerBookmarkRoutes(
   app.get("/bookmarks", async (request, reply) => {
     const user = await authService.requireUser(request);
     const query = searchQuerySchema.parse(request.query);
-    return reply.send(await bookmarkService.searchBookmarks(user.id, query));
+    const payload = await bookmarkService.searchBookmarks(user.id, query);
+    return sendCacheableJson(request.headers["if-none-match"], reply, payload);
   });
 
   app.get("/bookmarks/sidebar-stats", async (request, reply) => {

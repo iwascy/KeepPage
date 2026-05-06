@@ -126,8 +126,15 @@ export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 | `API_PORT` | 建议 | API 端口 |
 | `API_PUBLIC_BASE_URL` | **必填** | 扩展上传和远程访问必须依赖它生成正确的上传地址 |
 | `STORAGE_DRIVER` | **必填** | 推荐 `postgres` |
-| `OBJECT_STORAGE_DRIVER` | 必填 | 当前只能是 `localfs` |
+| `OBJECT_STORAGE_DRIVER` | 必填 | 可选 `localfs` 或 `r2` |
 | `OBJECT_STORAGE_ROOT` | 建议 | 显式指定对象存储目录，避免工作目录变化造成路径偏移 |
+| `R2_ENDPOINT` | R2 必填 | Cloudflare R2 S3 endpoint，例如 `https://<account-id>.r2.cloudflarestorage.com` |
+| `R2_BUCKET` | R2 必填 | R2 私有 bucket 名称，用于 HTML 归档 |
+| `R2_PUBLIC_BUCKET` | R2 建议 | R2 公开 bucket 名称，用于封面、图片、视频资产 |
+| `R2_ACCESS_KEY_ID` | R2 必填 | R2 API Token 的 Access Key ID |
+| `R2_SECRET_ACCESS_KEY` | R2 必填 | R2 API Token 的 Secret Access Key |
+| `R2_PUBLIC_BASE_URL` | R2 建议 | 公开 bucket/custom domain，用于封面和媒体 CDN URL |
+| `R2_REGION` | 可选 | 默认 `auto` |
 | `UPLOAD_BODY_LIMIT_MB` | 视情况 | 根据归档大小调整 |
 | `DEBUG_MODE` | 可选 | 临时排障时可设为 `true`，会输出更详细请求日志 |
 | `LOG_LEVEL` | 建议 | 推荐 `info` 或 `warn` |

@@ -1,7 +1,9 @@
 import {
   memo,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -15,6 +17,11 @@ import {
   formatRelativeWhen,
   formatWhen,
 } from "../../../lib/date-format";
+import {
+  buildCoverImageSrcSet,
+  buildCoverImageVariants,
+  getLargestCoverImageUrl,
+} from "../../../lib/cover-image";
 import { Icon } from "../../../components/Icon";
 import { useBookmarkSiteIcon } from "../shared/site-icon";
 
@@ -24,6 +31,27 @@ type InlineFeedback = {
   kind: "success" | "error";
   message: string;
 };
+
+type VirtualGridMetrics = {
+  columns: number;
+  totalSize: number;
+  virtualRows: Array<{
+    index: number;
+    start: number;
+    items: Array<{
+      bookmark: Bookmark;
+      itemIndex: number;
+    }>;
+  }>;
+};
+
+const DESKTOP_GRID_MIN_COLUMN_WIDTH = 280;
+const DESKTOP_GRID_GAP = 23.2;
+const DESKTOP_GRID_ROW_HEIGHT = 430;
+const MOBILE_GRID_GAP = 14.4;
+const MOBILE_FEATURED_ROW_HEIGHT = 398;
+const MOBILE_COMPACT_ROW_HEIGHT = 136;
+const VIRTUAL_GRID_OVERSCAN_ROWS = 4;
 
 function summarizeBookmark(bookmark: Bookmark) {
   const note = bookmark.note.trim();
@@ -57,6 +85,158 @@ function homeCoverTone(domain: string) {
   return tones[hash % tones.length];
 }
 
+function useVirtualBookmarkGrid(
+  items: Bookmark[],
+  selectionMode: boolean,
+) {
+  const gridRef = useRef<HTMLElement | null>(null);
+  const [viewport, setViewport] = useState(() => ({
+    height: typeof window === "undefined" ? 800 : window.innerHeight,
+    scrollY: typeof window === "undefined" ? 0 : window.scrollY,
+  }));
+  const [gridRect, setGridRect] = useState(() => ({
+    top: 0,
+    width: 0,
+  }));
+
+  useEffect(() => {
+    let frame = 0;
+
+    function measure() {
+      frame = 0;
+      setViewport({
+        height: window.innerHeight,
+        scrollY: window.scrollY,
+      });
+      const element = gridRef.current;
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        setGridRect({
+          top: rect.top + window.scrollY,
+          width: rect.width,
+        });
+      }
+    }
+
+    function scheduleMeasure() {
+      if (frame) {
+        return;
+      }
+      frame = window.requestAnimationFrame(measure);
+    }
+
+    measure();
+    window.addEventListener("scroll", scheduleMeasure, { passive: true });
+    window.addEventListener("resize", scheduleMeasure);
+
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(scheduleMeasure);
+    if (gridRef.current && resizeObserver) {
+      resizeObserver.observe(gridRef.current);
+    }
+
+    return () => {
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+      window.removeEventListener("scroll", scheduleMeasure);
+      window.removeEventListener("resize", scheduleMeasure);
+      resizeObserver?.disconnect();
+    };
+  }, []);
+
+  const metrics = useMemo<VirtualGridMetrics>(() => {
+    const columns = calculateGridColumns(gridRect.width);
+    const rowCount = Math.ceil(items.length / columns);
+    const totalSize = calculateVirtualGridTotalSize(rowCount, columns, selectionMode);
+    const viewportStart = Math.max(0, viewport.scrollY - gridRect.top);
+    const viewportEnd = viewportStart + viewport.height;
+    const startIndex = Math.max(0, findVirtualRowIndex(viewportStart, rowCount, columns, selectionMode) - VIRTUAL_GRID_OVERSCAN_ROWS);
+    const endIndex = Math.min(
+      rowCount - 1,
+      findVirtualRowIndex(viewportEnd, rowCount, columns, selectionMode) + VIRTUAL_GRID_OVERSCAN_ROWS,
+    );
+    const virtualRows = [];
+
+    for (let rowIndex = startIndex; rowIndex <= endIndex; rowIndex += 1) {
+      const rowItems = items
+        .slice(rowIndex * columns, rowIndex * columns + columns)
+        .map((bookmark, offset) => ({
+          bookmark,
+          itemIndex: rowIndex * columns + offset,
+        }));
+      virtualRows.push({
+        index: rowIndex,
+        start: calculateVirtualRowStart(rowIndex, columns, selectionMode),
+        items: rowItems,
+      });
+    }
+
+    return {
+      columns,
+      totalSize,
+      virtualRows,
+    };
+  }, [gridRect.top, gridRect.width, items, selectionMode, viewport.height, viewport.scrollY]);
+
+  return {
+    gridRef,
+    metrics,
+  };
+}
+
+function calculateGridColumns(width: number) {
+  if (width < 720) {
+    return 1;
+  }
+  return Math.max(1, Math.floor((width + DESKTOP_GRID_GAP) / (DESKTOP_GRID_MIN_COLUMN_WIDTH + DESKTOP_GRID_GAP)));
+}
+
+function calculateVirtualGridTotalSize(rowCount: number, columns: number, selectionMode: boolean) {
+  if (rowCount === 0) {
+    return 0;
+  }
+  if (columns > 1) {
+    return rowCount * DESKTOP_GRID_ROW_HEIGHT + (rowCount - 1) * DESKTOP_GRID_GAP;
+  }
+  if (selectionMode) {
+    return rowCount * MOBILE_COMPACT_ROW_HEIGHT + (rowCount - 1) * MOBILE_GRID_GAP;
+  }
+  return MOBILE_FEATURED_ROW_HEIGHT
+    + Math.max(0, rowCount - 1) * MOBILE_COMPACT_ROW_HEIGHT
+    + (rowCount - 1) * MOBILE_GRID_GAP;
+}
+
+function calculateVirtualRowStart(rowIndex: number, columns: number, selectionMode: boolean) {
+  if (columns > 1) {
+    return rowIndex * (DESKTOP_GRID_ROW_HEIGHT + DESKTOP_GRID_GAP);
+  }
+  if (selectionMode || rowIndex === 0) {
+    return rowIndex === 0 ? 0 : rowIndex * (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP);
+  }
+  return MOBILE_FEATURED_ROW_HEIGHT + MOBILE_GRID_GAP + (rowIndex - 1) * (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP);
+}
+
+function findVirtualRowIndex(offset: number, rowCount: number, columns: number, selectionMode: boolean) {
+  if (rowCount === 0) {
+    return 0;
+  }
+  if (columns > 1) {
+    return Math.min(rowCount - 1, Math.floor(offset / (DESKTOP_GRID_ROW_HEIGHT + DESKTOP_GRID_GAP)));
+  }
+  if (selectionMode) {
+    return Math.min(rowCount - 1, Math.floor(offset / (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP)));
+  }
+  if (offset <= MOBILE_FEATURED_ROW_HEIGHT + MOBILE_GRID_GAP) {
+    return 0;
+  }
+  return Math.min(
+    rowCount - 1,
+    1 + Math.floor((offset - MOBILE_FEATURED_ROW_HEIGHT - MOBILE_GRID_GAP) / (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP)),
+  );
+}
+
 const HomeBookmarkCard = memo(function HomeBookmarkCard({
   bookmark,
   onOpen,
@@ -67,6 +247,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   isSelected,
   onToggleSelect,
   mobileVariant,
+  priority,
 }: {
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
@@ -77,6 +258,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   isSelected: boolean;
   onToggleSelect: (bookmarkId: string) => void;
   mobileVariant: "featured" | "compact";
+  priority: boolean;
 }) {
   const [coverImageFailed, setCoverImageFailed] = useState(false);
   const { siteIconSrc, handleSiteIconError } = useBookmarkSiteIcon(bookmark, 192);
@@ -91,6 +273,10 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   const folderLabel = bookmark.folder?.name ?? "未归类";
   const coverTone = homeCoverTone(bookmark.domain);
   const coverInitial = (bookmark.title.trim()[0] ?? bookmark.domain.trim()[0] ?? "K").toUpperCase();
+  const coverImageVariants = buildCoverImageVariants(bookmark.coverImageUrl);
+  const coverImageSrc = bookmark.coverImageUrl
+    ? getLargestCoverImageUrl(coverImageVariants, bookmark.coverImageUrl)
+    : undefined;
 
   const cardClasses = [
     "home-bookmark-card",
@@ -144,10 +330,13 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
             <>
               <img
                 className="home-bookmark-cover-media"
-                src={bookmark.coverImageUrl}
+                src={coverImageSrc}
+                srcSet={buildCoverImageSrcSet(coverImageVariants)}
+                sizes="(max-width: 720px) 96px, (max-width: 1180px) 50vw, 400px"
                 alt=""
-                loading="lazy"
+                loading={priority ? "eager" : "lazy"}
                 decoding="async"
+                fetchPriority={priority ? "high" : "low"}
                 onError={() => setCoverImageFailed(true)}
               />
               <div className="home-bookmark-cover-shade" aria-hidden="true" />
@@ -278,7 +467,9 @@ function HomePage({
   const showError = loadState === "error";
   const showEmpty = !showLoading && !showError && items.length === 0;
   const visibleItems = items;
+  const { gridRef, metrics } = useVirtualBookmarkGrid(visibleItems, selectionMode);
   const mobileFeaturedBookmarkId = !selectionMode ? items[0]?.id ?? null : null;
+  const highPriorityImageCount = 4;
   const emptyTitle = hasActiveFilters
     ? "当前筛选下没有匹配的归档"
     : bookmarkView === "favorites"
@@ -383,20 +574,38 @@ function HomePage({
         </section>
       ) : (
         <>
-          <section className="home-grid">
-            {visibleItems.map((bookmark) => (
-              <HomeBookmarkCard
-                key={bookmark.id}
-                bookmark={bookmark}
-                onOpen={onOpenBookmark}
-                onContextMenu={onBookmarkContextMenu}
-                onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
-                isContextOpen={contextMenuBookmarkId === bookmark.id}
-                selectionMode={selectionMode}
-                isSelected={selectedIds.has(bookmark.id)}
-                onToggleSelect={onToggleSelect}
-                mobileVariant={bookmark.id === mobileFeaturedBookmarkId ? "featured" : "compact"}
-              />
+          <section
+            ref={gridRef}
+            className="home-grid home-grid-virtual"
+            style={{
+              "--home-grid-total-size": `${metrics.totalSize}px`,
+            } as CSSProperties}
+          >
+            {metrics.virtualRows.map((row) => (
+              <div
+                key={row.index}
+                className="home-grid-virtual-row"
+                style={{
+                  "--home-grid-row-start": `${row.start}px`,
+                  "--home-grid-columns": metrics.columns,
+                } as CSSProperties}
+              >
+                {row.items.map(({ bookmark, itemIndex }) => (
+                  <HomeBookmarkCard
+                    key={bookmark.id}
+                    bookmark={bookmark}
+                    onOpen={onOpenBookmark}
+                    onContextMenu={onBookmarkContextMenu}
+                    onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
+                    isContextOpen={contextMenuBookmarkId === bookmark.id}
+                    selectionMode={selectionMode}
+                    isSelected={selectedIds.has(bookmark.id)}
+                    onToggleSelect={onToggleSelect}
+                    mobileVariant={bookmark.id === mobileFeaturedBookmarkId ? "featured" : "compact"}
+                    priority={itemIndex < highPriorityImageCount}
+                  />
+                ))}
+              </div>
             ))}
           </section>
           {hasMoreItems ? (

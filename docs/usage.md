@@ -190,8 +190,14 @@ npm run start -w @keeppage/api
 | `API_PORT` | `8787` | API 监听端口 |
 | `API_PUBLIC_BASE_URL` | 空 | 对外可访问的 API 基础地址，用于生成上传地址 |
 | `STORAGE_DRIVER` | `memory` | 仓储驱动，可选 `memory`、`postgres` |
-| `OBJECT_STORAGE_DRIVER` | `localfs` | 对象存储驱动，当前仅支持 `localfs` |
+| `OBJECT_STORAGE_DRIVER` | `localfs` | 对象存储驱动，可选 `localfs`、`r2` |
 | `OBJECT_STORAGE_ROOT` | `./data/object-storage` | 本地对象存储目录 |
+| `R2_ENDPOINT` | 空 | Cloudflare R2 S3 endpoint，使用 `OBJECT_STORAGE_DRIVER=r2` 时必填 |
+| `R2_BUCKET` | 空 | R2 私有 bucket 名称，用于 HTML 归档 |
+| `R2_PUBLIC_BUCKET` | 空 | R2 公开 bucket 名称，用于封面、图片、视频资产 |
+| `R2_ACCESS_KEY_ID` | 空 | R2 Access Key ID |
+| `R2_SECRET_ACCESS_KEY` | 空 | R2 Secret Access Key |
+| `R2_PUBLIC_BASE_URL` | 空 | 公开 R2/CDN 域名，用于封面和媒体 URL |
 | `UPLOAD_BODY_LIMIT_MB` | `32` | 上传体积限制，单位 MB |
 | `DEBUG_MODE` | `false` | 开启后自动启用更详细的 API 调试日志 |
 | `LOG_LEVEL` | `info` | Fastify 日志级别 |

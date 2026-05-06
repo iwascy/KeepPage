@@ -135,8 +135,22 @@ npm run start -w @keeppage/api
 - `captures/complete` 会校验对象已存在后才允许入库
 - Web 归档查看页可通过 `GET /objects/:encodedObjectKey` 读取归档 HTML
 
+生产环境也可以切到 Cloudflare R2：
+
+```bash
+export OBJECT_STORAGE_DRIVER=r2
+export R2_ENDPOINT='https://<account-id>.r2.cloudflarestorage.com'
+export R2_BUCKET='keeppage-private'
+export R2_PUBLIC_BUCKET='keeppage-public'
+export R2_ACCESS_KEY_ID='<r2-access-key-id>'
+export R2_SECRET_ACCESS_KEY='<r2-secret-access-key>'
+export R2_PUBLIC_BASE_URL='https://<public-r2-or-cdn-domain>'
+```
+
+API 仍然接收扩展上传并写入 R2，不会把 R2 密钥下发到浏览器。公开媒体资产会写入 `R2_PUBLIC_BUCKET` 并生成 `R2_PUBLIC_BASE_URL` 下的封面 URL；私密归档和 HTML 归档继续写入 `R2_BUCKET` 并走鉴权 API。
+
 ## 目前还没接上的部分
 
-- S3 / R2 / OSS / MinIO 兼容的真实预签名上传尚未接入
+- S3 / R2 兼容对象存储已支持 API 代传；直传预签名上传尚未接入
 - 多端增量同步游标（sync cursor / sync ops）尚未实现
 - 搜索当前以 API 内过滤 / Postgres 查询为主，后续再接专门搜索索引

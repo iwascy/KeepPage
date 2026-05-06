@@ -1,15 +1,25 @@
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path, { dirname, posix } from "node:path";
+import { Readable } from "node:stream";
 import { type ApiConfig } from "../config";
 
 export interface ObjectStorage {
-  readonly kind: "localfs";
+  readonly kind: "localfs" | "r2";
   createUploadUrl(objectKey: string): string;
+  createPublicUrl?(objectKey: string): string | null;
   putObject(
     objectKey: string,
     body: Buffer,
     options?: {
       contentType?: string;
+      cacheControl?: string;
     },
   ): Promise<{ size: number }>;
   readObject(objectKey: string): Promise<Buffer>;
@@ -43,6 +53,7 @@ export class LocalObjectStorage implements ObjectStorage {
     body: Buffer,
     _options?: {
       contentType?: string;
+      cacheControl?: string;
     },
   ) {
     const objectPath = this.resolveObjectPath(objectKey);
@@ -109,14 +120,146 @@ export class LocalObjectStorage implements ObjectStorage {
   }
 }
 
+type R2ObjectStorageOptions = {
+  endpoint: string;
+  bucket: string;
+  publicBucket?: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  publicBaseUrl?: string;
+  region: string;
+};
+
+export class R2ObjectStorage implements ObjectStorage {
+  readonly kind = "r2" as const;
+
+  private readonly bucket: string;
+  private readonly publicBucket?: string;
+  private readonly publicBaseUrl?: string;
+  private readonly client: S3Client;
+
+  constructor(options: R2ObjectStorageOptions) {
+    this.bucket = options.bucket;
+    this.publicBucket = options.publicBucket;
+    this.publicBaseUrl = options.publicBaseUrl?.replace(/\/$/, "");
+    this.client = new S3Client({
+      region: options.region,
+      endpoint: options.endpoint,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: options.accessKeyId,
+        secretAccessKey: options.secretAccessKey,
+      },
+    });
+  }
+
+  createUploadUrl(objectKey: string) {
+    return `/uploads/${encodeURIComponent(objectKey)}`;
+  }
+
+  createPublicUrl(objectKey: string) {
+    if (!this.publicBaseUrl || !isPublicAssetObjectKey(objectKey)) {
+      return null;
+    }
+    return `${this.publicBaseUrl}/${encodeObjectKeyPath(objectKey)}`;
+  }
+
+  async putObject(
+    objectKey: string,
+    body: Buffer,
+    options?: {
+      contentType?: string;
+      cacheControl?: string;
+    },
+  ) {
+    const key = normalizeObjectKey(objectKey);
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.resolveBucket(key),
+      Key: key,
+      Body: body,
+      ContentType: options?.contentType,
+      CacheControl: options?.cacheControl ?? cacheControlForObjectKey(key),
+    }));
+    return {
+      size: body.byteLength,
+    };
+  }
+
+  async hasObject(objectKey: string) {
+    return (await this.statObject(objectKey)) !== null;
+  }
+
+  async readObject(objectKey: string) {
+    const key = normalizeObjectKey(objectKey);
+    const result = await this.client.send(new GetObjectCommand({
+      Bucket: this.resolveBucket(key),
+      Key: key,
+    }));
+    return streamToBuffer(result.Body);
+  }
+
+  async statObject(objectKey: string) {
+    const key = normalizeObjectKey(objectKey);
+    try {
+      const result = await this.client.send(new HeadObjectCommand({
+        Bucket: this.resolveBucket(key),
+        Key: key,
+      }));
+      return {
+        size: result.ContentLength ?? 0,
+      };
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async deleteObject(objectKey: string) {
+    const key = normalizeObjectKey(objectKey);
+    await this.client.send(new DeleteObjectCommand({
+      Bucket: this.resolveBucket(key),
+      Key: key,
+    }));
+  }
+
+  private resolveBucket(objectKey: string) {
+    return isPublicAssetObjectKey(objectKey) && this.publicBucket
+      ? this.publicBucket
+      : this.bucket;
+  }
+}
+
 export function createObjectStorage(config: ApiConfig): ObjectStorage {
-  if (config.OBJECT_STORAGE_DRIVER !== "localfs") {
-    throw new Error(`Unsupported object storage driver: ${config.OBJECT_STORAGE_DRIVER}`);
+  if (config.OBJECT_STORAGE_DRIVER === "r2") {
+    return createR2ObjectStorage(config);
   }
 
   return new LocalObjectStorage({
     rootDir: config.OBJECT_STORAGE_ROOT,
     publicBaseUrl: resolvePublicBaseUrl(config),
+  });
+}
+
+function createR2ObjectStorage(config: ApiConfig) {
+  const endpoint = config.R2_ENDPOINT?.trim();
+  const bucket = config.R2_BUCKET?.trim();
+  const publicBucket = config.R2_PUBLIC_BUCKET?.trim();
+  const accessKeyId = config.R2_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = config.R2_SECRET_ACCESS_KEY?.trim();
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
+    throw new Error("R2_ENDPOINT, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY are required when OBJECT_STORAGE_DRIVER=r2.");
+  }
+
+  return new R2ObjectStorage({
+    endpoint,
+    bucket,
+    publicBucket: publicBucket || undefined,
+    accessKeyId,
+    secretAccessKey,
+    publicBaseUrl: config.R2_PUBLIC_BASE_URL?.trim() || undefined,
+    region: config.R2_REGION,
   });
 }
 
@@ -126,4 +269,74 @@ function resolvePublicBaseUrl(config: ApiConfig) {
   }
   const host = config.API_HOST === "0.0.0.0" ? "127.0.0.1" : config.API_HOST;
   return `http://${host}:${config.API_PORT}`;
+}
+
+function normalizeObjectKey(objectKey: string) {
+  if (!objectKey || objectKey.includes("\0")) {
+    throw new Error("Invalid object key.");
+  }
+  const normalized = posix.normalize(objectKey.replaceAll("\\", "/"));
+  if (
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../")
+    || normalized.startsWith("/")
+  ) {
+    throw new Error("Invalid object key path.");
+  }
+  return normalized;
+}
+
+function encodeObjectKeyPath(objectKey: string) {
+  return normalizeObjectKey(objectKey)
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function isPrivateObjectKey(objectKey: string) {
+  return objectKey.startsWith("private-captures/");
+}
+
+function isPublicAssetObjectKey(objectKey: string) {
+  return !isPrivateObjectKey(objectKey) && /\.(avif|gif|jpe?g|png|webp|mp4|webm|mov)$/i.test(objectKey);
+}
+
+function cacheControlForObjectKey(objectKey: string) {
+  return isPublicAssetObjectKey(objectKey)
+    ? "public, max-age=31536000, immutable"
+    : "private, max-age=0, no-store";
+}
+
+async function streamToBuffer(body: unknown) {
+  if (!body) {
+    return Buffer.alloc(0);
+  }
+  if (body instanceof Uint8Array) {
+    return Buffer.from(body);
+  }
+  if (body instanceof Readable) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+  if (typeof body === "object" && "transformToByteArray" in body && typeof body.transformToByteArray === "function") {
+    return Buffer.from(await body.transformToByteArray());
+  }
+  throw new Error("Unsupported object body stream.");
+}
+
+function isNotFoundError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const maybeError = error as {
+    name?: string;
+    $metadata?: {
+      httpStatusCode?: number;
+    };
+  };
+  return maybeError.name === "NotFound" || maybeError.$metadata?.httpStatusCode === 404;
 }
