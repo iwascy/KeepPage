@@ -882,8 +882,6 @@ function AppShell({
       </aside>
 
       <div className={routePage === "list" ? "home-shell has-mobile-list-chrome" : "home-shell"}>
-        <header className="home-topbar" />
-
         {routePage === "list" ? (
           <section className="home-mobile-bar home-mobile-bar--list" aria-label="移动端顶栏">
             <div className="home-mobile-topbar">

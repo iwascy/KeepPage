@@ -4,14 +4,17 @@ export type IconName =
   | "add"
   | "arrow_back"
   | "arrow_outward"
+  | "book_open"
   | "bookmark"
   | "bookmarks"
   | "close"
   | "delete"
   | "description"
   | "download"
+  | "file_archive"
   | "folder_open"
   | "history"
+  | "info"
   | "keyboard_arrow_right"
   | "link"
   | "lock"
@@ -63,6 +66,13 @@ function renderIcon(name: IconName) {
       return <path {...strokeProps} d="M19 12H5m7-7-7 7 7 7" />;
     case "arrow_outward":
       return <path {...strokeProps} d="M7 17 17 7M9 7h8v8" />;
+    case "book_open":
+      return (
+        <>
+          <path {...strokeProps} d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21V5.5Z" />
+          <path {...strokeProps} d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5A2.5 2.5 0 0 1 20 21V5.5Z" />
+        </>
+      );
     case "bookmark":
       return (
         <path
@@ -95,6 +105,13 @@ function renderIcon(name: IconName) {
       );
     case "download":
       return <path {...strokeProps} d="M12 4v10m0 0 4-4m-4 4-4-4M5 20h14" />;
+    case "file_archive":
+      return (
+        <>
+          <path {...strokeProps} d="M7 3h7l4 4v14H7V3Z" />
+          <path {...strokeProps} d="M14 3v5h5M10 12h4M10 16h4M10 8h1" />
+        </>
+      );
     case "folder_open":
       return (
         <path
@@ -104,6 +121,13 @@ function renderIcon(name: IconName) {
       );
     case "history":
       return <path {...strokeProps} d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 7v5l3 2" />;
+    case "info":
+      return (
+        <>
+          <circle {...strokeProps} cx="12" cy="12" r="9" />
+          <path {...strokeProps} d="M12 11v5M12 8h.01" />
+        </>
+      );
     case "keyboard_arrow_right":
       return <path {...strokeProps} d="m9 5 7 7-7 7" />;
     case "link":

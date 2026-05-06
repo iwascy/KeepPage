@@ -138,12 +138,61 @@ function DetailPanel({
     : null;
   const [notesEditing, setNotesEditing] = useState(false);
   const [tagsEditing, setTagsEditing] = useState(false);
+  const [detailInfoOpen, setDetailInfoOpen] = useState(false);
   const selectedTags = tags.filter((tag) => metadataTagIds.includes(tag.id));
   const selectedFolder = folders.find((folder) => folder.id === metadataFolderId);
 
   return (
-    <section className="detail-shell">
+    <section className={`detail-shell bookmark-detail-shell${detailInfoOpen ? " is-info-open" : ""}`}>
       <section className="detail-preview-panel">
+        <div className="detail-preview-toolbar" aria-label="归档工具栏">
+          <button
+            className="detail-icon-button"
+            type="button"
+            onClick={onGoBack}
+            title="返回列表"
+            aria-label="返回列表"
+          >
+            <Icon name="arrow_back" />
+          </button>
+          <div className="detail-preview-toolbar-actions">
+            <button
+              className={activePreviewMode === "reader" ? "detail-icon-button is-active" : "detail-icon-button"}
+              type="button"
+              onClick={() => onPreviewModeChange("reader")}
+              disabled={!readerPreviewAvailable}
+              title="阅读视图"
+              aria-label="阅读视图"
+              aria-pressed={activePreviewMode === "reader"}
+            >
+              <Icon name="book_open" />
+            </button>
+            <button
+              className={activePreviewMode === "original" ? "detail-icon-button is-active" : "detail-icon-button"}
+              type="button"
+              onClick={() => onPreviewModeChange("original")}
+              disabled={!originalPreviewAvailable}
+              title="原始归档"
+              aria-label="原始归档"
+              aria-pressed={activePreviewMode === "original"}
+            >
+              <Icon name="file_archive" />
+            </button>
+            <button
+              className={detailInfoOpen ? "detail-icon-button is-active" : "detail-icon-button"}
+              type="button"
+              onClick={() => setDetailInfoOpen((current) => !current)}
+              title={detailInfoOpen ? "收起信息栏" : "展开信息栏"}
+              aria-label={detailInfoOpen ? "收起信息栏" : "展开信息栏"}
+              aria-pressed={detailInfoOpen}
+            >
+              <Icon name="info" />
+            </button>
+          </div>
+        </div>
+        {previewFallbackMessage ? (
+          <p className="preview-mode-note detail-preview-note">{previewFallbackMessage}</p>
+        ) : null}
         {!activePreviewMode ? (
           <section className="empty-state preview-empty">
             <h2>归档对象不可用</h2>
@@ -165,35 +214,22 @@ function DetailPanel({
         ) : null}
       </section>
 
+      {detailInfoOpen ? (
       <aside className="detail-panel">
         <div className="detail-top-bar">
           <button className="detail-back-button" type="button" onClick={onGoBack}>
             <Icon name="arrow_back" />
           </button>
-          <div className="preview-mode-switch preview-mode-switch--compact" role="tablist" aria-label="归档预览模式">
-            <button
-              className={activePreviewMode === "reader" ? "preview-mode-button is-active" : "preview-mode-button"}
-              type="button"
-              onClick={() => onPreviewModeChange("reader")}
-              disabled={!readerPreviewAvailable}
-              aria-pressed={activePreviewMode === "reader"}
-            >
-              阅读视图
-            </button>
-            <button
-              className={activePreviewMode === "original" ? "preview-mode-button is-active" : "preview-mode-button"}
-              type="button"
-              onClick={() => onPreviewModeChange("original")}
-              disabled={!originalPreviewAvailable}
-              aria-pressed={activePreviewMode === "original"}
-            >
-              原始归档
-            </button>
-          </div>
+          <button
+            className="detail-back-button detail-close-button"
+            type="button"
+            onClick={() => setDetailInfoOpen(false)}
+            title="收起信息栏"
+            aria-label="收起信息栏"
+          >
+            <Icon name="close" />
+          </button>
         </div>
-        {previewFallbackMessage ? (
-          <p className="preview-mode-note">{previewFallbackMessage}</p>
-        ) : null}
 
         <div className="detail-block">
           <div className="detail-header-label">
@@ -435,6 +471,7 @@ function DetailPanel({
           </button>
         </div>
       </aside>
+      ) : null}
     </section>
   );
 }
