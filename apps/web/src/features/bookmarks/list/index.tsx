@@ -59,7 +59,7 @@ function summarizeBookmark(bookmark: Bookmark) {
     return note;
   }
 
-  const firstReason = bookmark.latestQuality?.reasons[0]?.message?.trim();
+  const firstReason = bookmark.latestQuality?.reasons.find((reason) => reason.code !== "screenshot-missing")?.message?.trim();
   if (firstReason) {
     return firstReason;
   }
@@ -269,7 +269,6 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
 
   const summary = summarizeBookmark(bookmark);
   const hasCoverImage = Boolean(bookmark.coverImageUrl) && !coverImageFailed;
-  const hasSiteIcon = !hasCoverImage && Boolean(siteIconSrc);
   const folderLabel = bookmark.folder?.name ?? "未归类";
   const coverTone = homeCoverTone(bookmark.domain);
   const coverInitial = (bookmark.title.trim()[0] ?? bookmark.domain.trim()[0] ?? "K").toUpperCase();
@@ -323,7 +322,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
         aria-label={selectionMode ? `选择书签：${bookmark.title}` : `打开归档：${bookmark.title}`}
       >
         <div
-          className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : hasSiteIcon ? " has-favicon" : " is-placeholder"}`}
+          className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : " has-summary-preview"}`}
           aria-hidden="true"
         >
           {hasCoverImage ? (
@@ -341,33 +340,22 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
               />
               <div className="home-bookmark-cover-shade" aria-hidden="true" />
             </>
-          ) : hasSiteIcon ? (
-            <div className="home-bookmark-favicon-cover" aria-hidden="true">
-              <div className="home-bookmark-favicon-aura" />
-              <div className="home-bookmark-favicon-card">
-                <span className="home-bookmark-favicon-domain">{bookmark.domain}</span>
-                <div className="home-bookmark-favicon-frame">
+          ) : (
+            <div className="home-bookmark-paper" aria-hidden="true">
+              <div className="home-bookmark-paper-eyebrow">
+                <span>{bookmark.domain}</span>
+                <strong>
+                  {siteIconSrc ? (
                   <img
-                    className="home-bookmark-favicon-image"
+                    className="home-bookmark-paper-icon"
                     src={siteIconSrc ?? undefined}
                     alt=""
                     loading="lazy"
                     decoding="async"
                     onError={handleSiteIconError}
                   />
-                </div>
-                <div className="home-bookmark-favicon-lines" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="home-bookmark-paper" aria-hidden="true">
-              <div className="home-bookmark-paper-eyebrow">
-                <span>{bookmark.domain}</span>
-                <strong>{coverInitial}</strong>
+                  ) : coverInitial}
+                </strong>
               </div>
               <div className="home-bookmark-paper-title">
                 <span>{bookmark.title}</span>

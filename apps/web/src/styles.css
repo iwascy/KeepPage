@@ -2892,7 +2892,8 @@ button {
   background: #dce4ef;
 }
 
-.home-bookmark-cover.is-placeholder {
+.home-bookmark-cover.is-placeholder,
+.home-bookmark-cover.has-summary-preview {
   isolation: isolate;
 }
 
@@ -2922,6 +2923,30 @@ button {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 42%),
     linear-gradient(145deg, #dce7ff, #bacfff);
+}
+
+.home-bookmark-cover.has-summary-preview::before,
+.home-bookmark-cover.has-summary-preview::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.home-bookmark-cover.has-summary-preview::before {
+  width: 11rem;
+  height: 11rem;
+  top: -4.2rem;
+  left: -3.5rem;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.home-bookmark-cover.has-summary-preview::after {
+  width: 12rem;
+  height: 12rem;
+  right: -4rem;
+  bottom: -5.4rem;
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .home-bookmark-cover-media,
@@ -3039,11 +3064,11 @@ button {
 
 .home-bookmark-paper {
   position: absolute;
-  inset: 1.15rem 1.15rem 3.35rem;
+  inset: 1.15rem 1.15rem 2.45rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.85rem;
   padding: 1rem 1rem 0.95rem;
   border-radius: 28px;
   border: 1px solid rgba(255, 255, 255, 0.55);
@@ -3057,8 +3082,9 @@ button {
   transition: transform 320ms ease, box-shadow 320ms ease, background 320ms ease;
 }
 
-.home-bookmark-cover.is-placeholder .home-bookmark-paper {
-  inset: 1.15rem;
+.home-bookmark-cover.is-placeholder .home-bookmark-paper,
+.home-bookmark-cover.has-summary-preview .home-bookmark-paper {
+  inset: 1rem 1rem 1.15rem;
 }
 
 .home-bookmark-paper::after {
@@ -3106,6 +3132,14 @@ button {
   color: #4f5963;
   font-size: 0.82rem;
   letter-spacing: 0;
+  overflow: hidden;
+}
+
+.home-bookmark-paper-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  display: block;
+  object-fit: contain;
 }
 
 .home-bookmark-paper-title {
@@ -3116,10 +3150,10 @@ button {
 
 .home-bookmark-paper-title span {
   color: #303842;
-  font-size: 1rem;
+  font-size: 0.96rem;
   font-weight: 700;
   line-height: 1.3;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
