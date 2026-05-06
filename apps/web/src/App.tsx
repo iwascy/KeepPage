@@ -30,6 +30,7 @@ import { BookmarksListRoute } from "./features/bookmarks/list";
 import { buildBookmarkSiteIconCandidates } from "./features/bookmarks/shared/site-icon";
 import { useDebouncedValue } from "./hooks/use-debounced-value";
 import { type AppDataSource, useAppDataSource } from "./data-sources/use-app-data-source";
+import { Icon } from "./components/Icon";
 
 const BookmarkDetailRoute = lazy(async () => {
   const module = await import("./features/bookmarks/detail");
@@ -320,9 +321,7 @@ function isManagerDialogOpen(state: ManagerDialogState) {
 
 function DialogCloseIcon() {
   return (
-    <span className="material-symbols-outlined" aria-hidden="true">
-      close
-    </span>
+    <Icon name="close" />
   );
 }
 
@@ -633,9 +632,7 @@ function AppShell({
               onClick={() => setSidebarView("main")}
               aria-label="返回侧边栏"
             >
-              <span className="material-symbols-outlined" aria-hidden="true">
-                arrow_back
-              </span>
+              <Icon name="arrow_back" />
               <span>设置</span>
             </button>
 
@@ -650,9 +647,7 @@ function AppShell({
                   onOpenPrivateMode();
                 }}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  lock
-                </span>
+                <Icon name="lock" />
                 <span>私密模式</span>
               </button>
               <button
@@ -663,9 +658,7 @@ function AppShell({
                   onOpenApiTokens();
                 }}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  vpn_key
-                </span>
+                <Icon name="vpn_key" />
                 <span>API 密钥</span>
               </button>
               <button
@@ -677,9 +670,7 @@ function AppShell({
                   onOpenImportNew();
                 }}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  add
-                </span>
+                <Icon name="add" />
                 <span>新建导入</span>
               </button>
               <button
@@ -691,9 +682,7 @@ function AppShell({
                   onOpenImportHistory();
                 }}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  history
-                </span>
+                <Icon name="history" />
                 <span>导入历史</span>
               </button>
               <div className="home-settings-divider" aria-hidden="true" />
@@ -706,9 +695,7 @@ function AppShell({
                   onLogout();
                 }}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  logout
-                </span>
+                <Icon name="logout" />
                 <span>{logoutLabel}</span>
               </button>
             </div>
@@ -725,16 +712,12 @@ function AppShell({
                 onClick={() => setSidebarView("settings")}
                 aria-label="打开设置"
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  more_horiz
-                </span>
+                <Icon name="more_horiz" />
               </button>
             </div>
 
             <label className="home-search">
-              <span className="home-search-icon material-symbols-outlined" aria-hidden="true">
-                search
-              </span>
+              <Icon className="home-search-icon" name="search" />
               <input
                 className="home-search-input"
                 type="search"
@@ -750,17 +733,7 @@ function AppShell({
                 type="button"
                 onClick={() => handleSelectQuickNav("all")}
               >
-                <span
-                  className="material-symbols-outlined"
-                  aria-hidden="true"
-                  style={
-                    activeNav === "all"
-                      ? { fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 20" }
-                      : undefined
-                  }
-                >
-                  bookmark
-                </span>
+                <Icon name="bookmark" />
                 <span>全部书签</span>
               </button>
               <button
@@ -768,9 +741,7 @@ function AppShell({
                 type="button"
                 onClick={() => handleSelectQuickNav("recent")}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  schedule
-                </span>
+                <Icon name="schedule" />
                 <span>最近更新</span>
               </button>
               <button
@@ -778,9 +749,7 @@ function AppShell({
                 type="button"
                 onClick={() => handleSelectQuickNav("favorites")}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  star
-                </span>
+                <Icon name="star" />
                 <span>星标收藏</span>
               </button>
             </nav>
@@ -821,9 +790,7 @@ function AppShell({
                         onClick={() => handleSelectFolderFilter(selectedFolderId === folder.id ? "" : folder.id)}
                       >
                         <span className="home-folder-label">
-                          <span className="home-folder-icon material-symbols-outlined" aria-hidden="true">
-                            folder_open
-                          </span>
+                          <Icon className="home-folder-icon" name="folder_open" />
                           <span className="home-folder-name">{folder.name}</span>
                         </span>
                         <span className="home-folder-count">{folderCounts.get(folder.id) ?? 0}</span>
@@ -840,9 +807,7 @@ function AppShell({
                           onClick={() => handleToggleFolder(folder)}
                           aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "收起"} ${folder.name}`}
                         >
-                          <span className="material-symbols-outlined" aria-hidden="true">
-                            keyboard_arrow_right
-                          </span>
+                          <Icon name="keyboard_arrow_right" />
                         </button>
                       ) : (
                         <span className="home-folder-toggle-spacer" aria-hidden="true" />
@@ -892,9 +857,7 @@ function AppShell({
 
             <div className="home-sidebar-footer">
               <button className="home-add-new-btn" type="button" onClick={onOpenImportNew}>
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  add
-                </span>
+                <Icon name="add" />
                 <span>Add New</span>
               </button>
 
@@ -910,9 +873,7 @@ function AppShell({
                   onClick={() => setSidebarView("settings")}
                   aria-label="打开设置"
                 >
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    settings
-                  </span>
+                  <Icon name="settings" />
                 </button>
               </div>
             </div>
@@ -936,9 +897,7 @@ function AppShell({
                 }}
                 aria-label="打开筛选与收藏夹"
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  menu
-                </span>
+                <Icon name="menu" />
               </button>
 
               <button className="home-mobile-title-wrap" type="button" onClick={onGoHome} aria-label="返回归档首页">
@@ -957,9 +916,7 @@ function AppShell({
                 aria-label="打开搜索"
                 aria-expanded={mobileSearchOpen}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  search
-                </span>
+                <Icon name="search" />
               </button>
             </div>
 
@@ -967,9 +924,7 @@ function AppShell({
               className={mobileSearchOpen || searchInput.trim() ? "home-mobile-search-panel is-open" : "home-mobile-search-panel"}
             >
               <label className="home-search">
-                <span className="home-search-icon material-symbols-outlined" aria-hidden="true">
-                  search
-                </span>
+                <Icon className="home-search-icon" name="search" />
                 <input
                   ref={mobileSearchInputRef}
                   className="home-search-input"
@@ -998,14 +953,10 @@ function AppShell({
                   }}
                   aria-label="打开筛选与收藏夹"
                 >
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    tune
-                  </span>
+                  <Icon name="tune" />
                 </button>
                 <button className="home-mobile-cta" type="button" onClick={onOpenImportNew}>
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    add
-                  </span>
+                  <Icon name="add" />
                   <span>Add New</span>
                 </button>
                 <button
@@ -1018,9 +969,7 @@ function AppShell({
                   }}
                   aria-label="打开设置"
                 >
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    settings
-                  </span>
+                  <Icon name="settings" />
                 </button>
               </div>
             </div>
@@ -1034,9 +983,7 @@ function AppShell({
         {routePage === "list" ? (
           <>
             <button className="home-mobile-fab" type="button" onClick={onOpenImportNew} aria-label="新建归档导入">
-              <span className="material-symbols-outlined" aria-hidden="true">
-                add
-              </span>
+              <Icon name="add" />
             </button>
 
             <nav className="home-mobile-bottom-nav" aria-label="移动端主导航">
@@ -1045,9 +992,7 @@ function AppShell({
                 type="button"
                 onClick={() => handleSelectQuickNav("all")}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  bookmarks
-                </span>
+                <Icon name="bookmarks" />
                 <span>全部</span>
               </button>
               <button
@@ -1055,9 +1000,7 @@ function AppShell({
                 type="button"
                 onClick={() => handleSelectQuickNav("recent")}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  schedule
-                </span>
+                <Icon name="schedule" />
                 <span>最近</span>
               </button>
               <button
@@ -1065,9 +1008,7 @@ function AppShell({
                 type="button"
                 onClick={() => handleSelectQuickNav("favorites")}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  star
-                </span>
+                <Icon name="star" />
                 <span>星标</span>
               </button>
               <button
@@ -1079,9 +1020,7 @@ function AppShell({
                   setMobileSidebarOpen((current) => !current);
                 }}
               >
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  folder_open
-                </span>
+                <Icon name="folder_open" />
                 <span>收藏夹</span>
               </button>
             </nav>
@@ -1395,7 +1334,7 @@ function ManagerDialog({
 
               <section className="bookmark-delete-card">
                 <div className="bookmark-delete-card-icon" aria-hidden="true">
-                  <span className="material-symbols-outlined">folder_open</span>
+                  <Icon name="folder_open" />
                 </div>
                 <div className="bookmark-delete-card-body">
                   <strong title={folderDeleteTarget.path}>{folderDeleteTarget.path}</strong>

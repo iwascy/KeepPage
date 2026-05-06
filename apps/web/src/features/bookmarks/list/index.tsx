@@ -15,6 +15,7 @@ import {
   formatRelativeWhen,
   formatWhen,
 } from "../../../lib/date-format";
+import { Icon } from "../../../components/Icon";
 import { useBookmarkSiteIcon } from "../shared/site-icon";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -125,9 +126,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
             onOpenContextMenuAt(bookmark, rect.right - 8, rect.bottom + 8);
           }}
         >
-          <span className="material-symbols-outlined" aria-hidden="true">
-            more_vert
-          </span>
+          <Icon name="more_vert" />
         </button>
       ) : null}
       <button
@@ -204,9 +203,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
           <div className="home-bookmark-title-row">
             <h2>{bookmark.title}</h2>
             {bookmark.isFavorite ? (
-              <span className="home-bookmark-favorite material-symbols-outlined" aria-hidden="true">
-                star
-              </span>
+              <Icon className="home-bookmark-favorite" name="star" />
             ) : null}
           </div>
           <p>{summary}</p>

@@ -1,7 +1,7 @@
-/* Global Material Symbols configuration for refined look */
-.material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-  font-size: 20px;
+.app-icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
   display: inline-block;
   line-height: 1;
 }
@@ -178,7 +178,7 @@ select {
   height: 20px;
 }
 
-.create-folder-dialog-close .material-symbols-outlined {
+.create-folder-dialog-close .app-icon {
   font-size: 20px;
 }
 
@@ -522,7 +522,7 @@ select {
   color: #5d646b;
 }
 
-.bookmark-delete-card-icon .material-symbols-outlined {
+.bookmark-delete-card-icon .app-icon {
   font-size: 20px;
   line-height: 1;
 }
@@ -2341,7 +2341,7 @@ button {
   box-shadow: 0 18px 32px rgba(71, 101, 93, 0.22);
 }
 
-.home-mobile-icon-button .material-symbols-outlined {
+.home-mobile-icon-button .app-icon {
   font-size: 1.25rem;
 }
 
@@ -2419,7 +2419,7 @@ button {
   box-shadow: 0 16px 30px rgba(72, 72, 72, 0.18);
 }
 
-.home-mobile-action .material-symbols-outlined {
+.home-mobile-action .app-icon {
   font-size: 1.15rem;
 }
 
@@ -3369,7 +3369,7 @@ button {
   transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 
-.home-mobile-fab .material-symbols-outlined {
+.home-mobile-fab .app-icon {
   font-size: 1.8rem;
 }
 
@@ -3417,7 +3417,7 @@ button {
   transition: transform 160ms ease, color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
-.home-mobile-bottom-nav-item .material-symbols-outlined {
+.home-mobile-bottom-nav-item .app-icon {
   font-size: 1.2rem;
 }
 
@@ -3434,8 +3434,8 @@ button {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.64);
 }
 
-.home-mobile-bottom-nav-item.is-active .material-symbols-outlined {
-  font-variation-settings: "FILL" 1, "wght" 500, "GRAD" 0, "opsz" 24;
+.home-mobile-bottom-nav-item.is-active .app-icon {
+  stroke-width: 2.25;
 }
 
 .home-mobile-bottom-nav-item:active {
@@ -3895,7 +3895,7 @@ button {
   cursor: default;
 }
 
-.version-item-icon.material-symbols-outlined {
+.version-item-icon {
   font-size: 1rem;
   color: #a1a1aa;
   flex-shrink: 0;
@@ -4112,7 +4112,7 @@ button {
   color: #18181b;
 }
 
-.detail-back-button .material-symbols-outlined {
+.detail-back-button .app-icon {
   font-size: 1rem;
 }
 
@@ -4161,7 +4161,7 @@ button {
   background: rgba(255, 255, 255, 0.6);
 }
 
-.detail-url-row .material-symbols-outlined {
+.detail-url-row .app-icon {
   font-size: 0.85rem;
   color: var(--accent);
   flex-shrink: 0;
@@ -4319,7 +4319,7 @@ button {
   color: #3f3f46;
 }
 
-.detail-tag-add .material-symbols-outlined {
+.detail-tag-add .app-icon {
   font-size: 0.72rem;
 }
 
@@ -4460,7 +4460,7 @@ button {
   box-shadow: 0 6px 16px rgba(45, 51, 56, 0.06);
 }
 
-.detail-action-button .material-symbols-outlined {
+.detail-action-button .app-icon {
   font-size: 1rem;
 }
 
@@ -4993,7 +4993,7 @@ button {
   font-weight: 700;
 }
 
-.import-activity-link .material-symbols-outlined {
+.import-activity-link .app-icon {
   font-size: 0.9rem;
 }
 
@@ -5078,7 +5078,7 @@ button {
   color: #48515a;
 }
 
-.import-item-url .material-symbols-outlined {
+.import-item-url .app-icon {
   font-size: 1rem;
   flex-shrink: 0;
 }

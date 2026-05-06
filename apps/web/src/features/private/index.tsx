@@ -10,6 +10,7 @@ import {
   formatRelativeWhen,
   formatWhen,
 } from "../../lib/date-format";
+import { Icon } from "../../components/Icon";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type ArchiveViewMode = "reader" | "original";
@@ -273,7 +274,7 @@ export function PrivateDetailPage({
       <aside className="detail-panel">
         <div className="detail-top-bar">
           <button className="detail-back-button" type="button" onClick={onGoBack}>
-            <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+            <Icon name="arrow_back" />
           </button>
           <div className="preview-mode-switch preview-mode-switch--compact" role="tablist" aria-label="私密归档预览模式">
             <button
@@ -305,7 +306,7 @@ export function PrivateDetailPage({
             <h2 className="detail-title">{detail.bookmark.title}</h2>
           </div>
           <div className="detail-url-row">
-            <span className="material-symbols-outlined" aria-hidden="true">link</span>
+            <Icon name="link" />
             <a href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
               {detail.bookmark.sourceUrl}
             </a>
@@ -336,9 +337,7 @@ export function PrivateDetailPage({
         <details className="detail-collapsible" open>
           <summary>
             <span className="detail-summary-label">
-              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
-                history
-              </span>
+              <Icon className="detail-summary-icon" name="history" />
               <span>版本历史</span>
             </span>
             <span className="badge">{detail.versions.length}</span>
@@ -355,7 +354,7 @@ export function PrivateDetailPage({
                     type="button"
                     onClick={() => onSelectVersion(detail.bookmark.id, version.id)}
                   >
-                    <span className="version-item-icon material-symbols-outlined" aria-hidden="true">refresh</span>
+                    <Icon className="version-item-icon" name="refresh" />
                     <div>
                       <strong>v{version.versionNo}{isLatest ? " (Latest)" : ""}</strong>
                       <span>{formatWhen(version.createdAt)}</span>

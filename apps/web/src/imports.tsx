@@ -14,6 +14,7 @@ import {
   type ImportTaskStatus,
   type ImportTaskSummary,
 } from "./api";
+import { Icon } from "./components/Icon";
 import { formatWhen } from "./lib/date-format";
 
 export type ImportPanelAdapter = {
@@ -568,9 +569,7 @@ export function ImportHistoryPanel({
                     <span>最近更新 {formatWhen(task.updatedAt)}</span>
                     <span className="import-activity-link">
                       查看任务
-                      <span className="material-symbols-outlined" aria-hidden="true">
-                        arrow_outward
-                      </span>
+                      <Icon name="arrow_outward" />
                     </span>
                   </div>
                 </button>
@@ -718,9 +717,7 @@ export function ImportDetailPanel({
               </div>
 
               <div className="import-item-url">
-                <span className="material-symbols-outlined" aria-hidden="true">
-                  link
-                </span>
+                <Icon name="link" />
                 <span className="ellipsis-cell">{item.url}</span>
               </div>
 

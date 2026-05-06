@@ -6,6 +6,7 @@ import {
 } from "react";
 import type { ApiToken } from "@keeppage/domain";
 import { ApiError } from "../../api";
+import { Icon } from "../../components/Icon";
 import type { AppDataSource } from "../../data-sources/use-app-data-source";
 import {
   formatRelativeWhen,
@@ -158,9 +159,7 @@ function writeApiTokenSecrets(userId: string, secrets: Record<string, ApiTokenSe
 
 function DialogCloseIcon() {
   return (
-    <span className="material-symbols-outlined" aria-hidden="true">
-      close
-    </span>
+    <Icon name="close" />
   );
 }
 
@@ -446,9 +445,7 @@ export function ApiTokensPanel({
               返回书签
             </button>
             <button className="primary-button" type="button" onClick={openCreateDialog}>
-              <span className="material-symbols-outlined" aria-hidden="true">
-                add
-              </span>
+              <Icon name="add" />
               <span>创建 API 密钥</span>
             </button>
           </div>

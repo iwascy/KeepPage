@@ -8,6 +8,7 @@ import type {
   BookmarkDetailResult,
   BookmarkViewerVersion,
 } from "../../../api";
+import { Icon } from "../../../components/Icon";
 import { formatWhen } from "../../../lib/date-format";
 
 type DetailLoadState = "idle" | "loading" | "ready" | "not-found" | "error";
@@ -136,6 +137,9 @@ function DetailPanel({
       )
     : null;
   const [notesEditing, setNotesEditing] = useState(false);
+  const [tagsEditing, setTagsEditing] = useState(false);
+  const selectedTags = tags.filter((tag) => metadataTagIds.includes(tag.id));
+  const selectedFolder = folders.find((folder) => folder.id === metadataFolderId);
 
   return (
     <section className="detail-shell">
@@ -164,7 +168,7 @@ function DetailPanel({
       <aside className="detail-panel">
         <div className="detail-top-bar">
           <button className="detail-back-button" type="button" onClick={onGoBack}>
-            <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+            <Icon name="arrow_back" />
           </button>
           <div className="preview-mode-switch preview-mode-switch--compact" role="tablist" aria-label="归档预览模式">
             <button
@@ -199,25 +203,22 @@ function DetailPanel({
           <div className="detail-title-row">
             <h2 className="detail-title">{detail.bookmark.title}</h2>
             {detail.bookmark.isFavorite ? (
-              <span className="detail-favorite material-symbols-outlined" aria-hidden="true">
-                star
-              </span>
+              <Icon className="detail-favorite" name="star" />
             ) : null}
           </div>
           <div className="detail-url-row">
-            <span className="material-symbols-outlined" aria-hidden="true">link</span>
+            <Icon name="link" />
             <a href={detail.bookmark.sourceUrl} target="_blank" rel="noreferrer">
               {detail.bookmark.sourceUrl}
             </a>
-            <span className="material-symbols-outlined url-external-icon" aria-hidden="true">open_in_new</span>
+            <Icon className="url-external-icon" name="open_in_new" />
           </div>
         </div>
 
-        <div className="detail-meta-grid">
-          <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">Collection</span>
+        <div className="detail-primary-meta">
+          <label className="detail-folder-field">
+            <span className="detail-section-label">归档位置</span>
             <select
-              className="detail-meta-cell-value"
               value={metadataFolderId}
               onChange={(event) => onMetadataFolderChange(event.target.value)}
             >
@@ -228,53 +229,60 @@ function DetailPanel({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">Added</span>
-            <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.createdAt)}</span>
-          </div>
-          <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">File Size</span>
-            <span className="detail-meta-cell-value">{formatFileSize(displayedArchiveSize)}</span>
-          </div>
-          <div className="detail-meta-cell">
-            <span className="detail-meta-cell-label">Last Sync</span>
-            <span className="detail-meta-cell-value">{formatWhen(detail.bookmark.updatedAt)}</span>
-          </div>
+          </label>
         </div>
 
         <div className="detail-tags-section">
-          <span className="detail-tags-section-label">Tags</span>
-          <div className="detail-tags-wrap">
-            {tags.map((tag) => {
-              const checked = metadataTagIds.includes(tag.id);
-              return (
-                <label className={checked ? "detail-tag-pill is-active" : "detail-tag-pill"} key={tag.id}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => onMetadataTagToggle(tag.id)}
-                  />
-                  <span>#{tag.name}</span>
-                </label>
-              );
-            })}
-            <button className="detail-tag-add" type="button">
-              <span className="material-symbols-outlined" aria-hidden="true">add</span>
-              <span>Tag</span>
+          <div className="detail-section-heading">
+            <span className="detail-section-label">标签</span>
+            <button
+              className="detail-link-button"
+              type="button"
+              onClick={() => setTagsEditing((current) => !current)}
+            >
+              {tagsEditing ? "完成" : "管理标签"}
             </button>
           </div>
+          <div className="detail-tags-wrap detail-tags-wrap--selected">
+            {selectedTags.length ? (
+              selectedTags.map((tag) => (
+                <span className="detail-tag-pill is-active" key={tag.id}>#{tag.name}</span>
+              ))
+            ) : (
+              <button className="detail-tag-empty" type="button" onClick={() => setTagsEditing(true)}>
+                <Icon name="add" />
+                <span>添加标签</span>
+              </button>
+            )}
+          </div>
+          {tagsEditing ? (
+            <div className="detail-tag-editor">
+              <div className="detail-tags-wrap">
+                {tags.map((tag) => {
+                  const checked = metadataTagIds.includes(tag.id);
+                  return (
+                    <label className={checked ? "detail-tag-pill is-active" : "detail-tag-pill"} key={tag.id}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => onMetadataTagToggle(tag.id)}
+                      />
+                      <span>#{tag.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        <details className="detail-collapsible" open>
+        <details className="detail-collapsible">
           <summary>
             <span className="detail-summary-label">
-              <span className="detail-summary-icon material-symbols-outlined" aria-hidden="true">
-                history
-              </span>
-              <span>版本历史</span>
+              <Icon className="detail-summary-icon" name="history" />
+              <span>版本</span>
             </span>
-            <span className="badge">{detail.versions.length}</span>
+            <span className="detail-summary-value">v{selectedVersion.versionNo}</span>
           </summary>
           <div className="detail-collapsible-body">
             <div className="version-list">
@@ -288,7 +296,7 @@ function DetailPanel({
                     type="button"
                     onClick={() => onSelectVersion(detail.bookmark.id, version.id)}
                   >
-                    <span className="version-item-icon material-symbols-outlined" aria-hidden="true">refresh</span>
+                    <Icon className="version-item-icon" name="refresh" />
                     <div>
                       <strong>v{version.versionNo}{isLatest ? " (Latest)" : ""}</strong>
                       <span>{formatWhen(version.createdAt)}</span>
@@ -297,7 +305,7 @@ function DetailPanel({
                 );
               })}
               <div className="version-item version-item--source">
-                <span className="version-item-icon material-symbols-outlined" aria-hidden="true">description</span>
+                <Icon className="version-item-icon" name="description" />
                 <div>
                   <strong>Original Source</strong>
                   <span>{new URL(detail.bookmark.sourceUrl).hostname} {"\u2022"} {formatWhen(detail.bookmark.createdAt)}</span>
@@ -307,78 +315,122 @@ function DetailPanel({
           </div>
         </details>
 
-        <div className="detail-notes-section">
-          <span className="detail-notes-section-label">Personal Notes</span>
-          {notesEditing ? (
-            <div className="detail-notes-edit">
-              <textarea
-                value={metadataNote}
-                onChange={(event) => onMetadataNoteChange(event.target.value)}
-                rows={3}
-                placeholder="添加备注..."
-                autoFocus
-              />
-              <div className="detail-notes-edit-actions">
-                <button
-                  className="primary-button compact-button"
-                  type="button"
-                  onClick={() => {
-                    onMetadataSave();
-                    setNotesEditing(false);
-                  }}
-                  disabled={metadataSaving}
-                >
-                  {metadataSaving ? "保存中..." : "保存"}
-                </button>
-                <button className="ghost-button compact-button" type="button" onClick={() => setNotesEditing(false)}>
-                  取消
-                </button>
+        <details className="detail-collapsible">
+          <summary>
+            <span className="detail-summary-label">
+              <Icon className="detail-summary-icon" name="description" />
+              <span>更多信息</span>
+            </span>
+            <span className="detail-summary-value">{selectedFolder?.name ?? "未归档"}</span>
+          </summary>
+          <div className="detail-collapsible-body">
+            <div className="detail-meta-list">
+              <div className="detail-meta-row">
+                <span>添加时间</span>
+                <strong>{formatWhen(detail.bookmark.createdAt)}</strong>
               </div>
-              {metadataFeedback ? (
-                <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
-                  {metadataFeedback.message}
-                </p>
+              <div className="detail-meta-row">
+                <span>同步时间</span>
+                <strong>{formatWhen(detail.bookmark.updatedAt)}</strong>
+              </div>
+              <div className="detail-meta-row">
+                <span>文件大小</span>
+                <strong>{formatFileSize(displayedArchiveSize)}</strong>
+              </div>
+              <div className="detail-meta-row">
+                <span>书签 ID</span>
+                <strong>#{detail.bookmark.id.slice(0, 8).toUpperCase()}</strong>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        {(notesEditing || metadataNote) ? (
+          <div className="detail-notes-section">
+            <div className="detail-section-heading">
+              <span className="detail-section-label">备注</span>
+              {!notesEditing ? (
+                <button className="detail-link-button" type="button" onClick={() => setNotesEditing(true)}>
+                  编辑
+                </button>
               ) : null}
             </div>
-          ) : (
-            <div
-              className="detail-note-quote"
-              role="button"
-              tabIndex={0}
-              onClick={() => setNotesEditing(true)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  setNotesEditing(true);
-                }
-              }}
-            >
-              {metadataNote ? (
+            {notesEditing ? (
+              <div className="detail-notes-edit">
+                <textarea
+                  value={metadataNote}
+                  onChange={(event) => onMetadataNoteChange(event.target.value)}
+                  rows={3}
+                  placeholder="添加备注..."
+                  autoFocus
+                />
+                <div className="detail-notes-edit-actions">
+                  <button
+                    className="primary-button compact-button"
+                    type="button"
+                    onClick={() => {
+                      onMetadataSave();
+                      setNotesEditing(false);
+                    }}
+                    disabled={metadataSaving}
+                  >
+                    {metadataSaving ? "保存中..." : "保存"}
+                  </button>
+                  <button className="ghost-button compact-button" type="button" onClick={() => setNotesEditing(false)}>
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                className="detail-note-quote"
+                role="button"
+                tabIndex={0}
+                onClick={() => setNotesEditing(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    setNotesEditing(true);
+                  }
+                }}
+              >
                 <p>{metadataNote}</p>
-              ) : (
-                <p className="detail-note-quote-placeholder">点击添加备注...</p>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {metadataFeedback ? (
+          <p className={metadataFeedback.kind === "error" ? "status-banner is-error" : "status-banner"}>
+            {metadataFeedback.message}
+          </p>
+        ) : null}
 
         <div className="detail-actions-footer">
+          <button
+            className="detail-action-button"
+            type="button"
+            onClick={() => setNotesEditing(true)}
+          >
+            <Icon name="description" />
+            Note
+          </button>
           {previewState.status === "ready" && activePreviewMode ? (
             <a
               className="detail-action-button"
               href={previewState.url}
               download={`keeppage-${detail.bookmark.id}-v${selectedVersion.versionNo}-${activePreviewMode === "reader" ? "reader" : "original"}.html`}
             >
-              <span className="material-symbols-outlined" aria-hidden="true">download</span>
+              <Icon name="download" />
               Export
             </a>
           ) : (
             <span className="detail-action-button" style={{ opacity: 0.4, cursor: "not-allowed" }}>
-              <span className="material-symbols-outlined" aria-hidden="true">download</span>
+              <Icon name="download" />
               Export
             </span>
           )}
           <button className="detail-action-button is-danger" type="button">
-            <span className="material-symbols-outlined" aria-hidden="true">delete</span>
+            <Icon name="delete" />
             Delete
           </button>
         </div>
