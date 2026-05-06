@@ -38,6 +38,7 @@ type VirtualGridMetrics = {
   virtualRows: Array<{
     index: number;
     start: number;
+    height: number;
     items: Array<{
       bookmark: Bookmark;
       itemIndex: number;
@@ -96,7 +97,7 @@ function useVirtualBookmarkGrid(
   }));
   const [gridRect, setGridRect] = useState(() => ({
     top: 0,
-    width: 0,
+    width: getInitialGridWidth(),
   }));
 
   useEffect(() => {
@@ -169,6 +170,7 @@ function useVirtualBookmarkGrid(
       virtualRows.push({
         index: rowIndex,
         start: calculateVirtualRowStart(rowIndex, columns, selectionMode),
+        height: calculateVirtualRowHeight(rowIndex, columns, selectionMode),
         items: rowItems,
       });
     }
@@ -184,6 +186,18 @@ function useVirtualBookmarkGrid(
     gridRef,
     metrics,
   };
+}
+
+function getInitialGridWidth() {
+  if (typeof window === "undefined") {
+    return DESKTOP_GRID_MIN_COLUMN_WIDTH;
+  }
+
+  if (window.innerWidth < 720) {
+    return window.innerWidth;
+  }
+
+  return Math.max(DESKTOP_GRID_MIN_COLUMN_WIDTH, window.innerWidth - 320);
 }
 
 function calculateGridColumns(width: number) {
@@ -216,6 +230,16 @@ function calculateVirtualRowStart(rowIndex: number, columns: number, selectionMo
     return rowIndex === 0 ? 0 : rowIndex * (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP);
   }
   return MOBILE_FEATURED_ROW_HEIGHT + MOBILE_GRID_GAP + (rowIndex - 1) * (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP);
+}
+
+function calculateVirtualRowHeight(rowIndex: number, columns: number, selectionMode: boolean) {
+  if (columns > 1) {
+    return DESKTOP_GRID_ROW_HEIGHT;
+  }
+  if (selectionMode || rowIndex > 0) {
+    return MOBILE_COMPACT_ROW_HEIGHT;
+  }
+  return MOBILE_FEATURED_ROW_HEIGHT;
 }
 
 function findVirtualRowIndex(offset: number, rowCount: number, columns: number, selectionMode: boolean) {
@@ -575,6 +599,7 @@ function HomePage({
                 className="home-grid-virtual-row"
                 style={{
                   "--home-grid-row-start": `${row.start}px`,
+                  "--home-grid-row-height": `${row.height}px`,
                   "--home-grid-columns": metrics.columns,
                 } as CSSProperties}
               >
