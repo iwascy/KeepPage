@@ -231,6 +231,61 @@ export class R2ObjectStorage implements ObjectStorage {
   }
 }
 
+class FallbackObjectStorage implements ObjectStorage {
+  readonly kind = "r2" as const;
+
+  constructor(
+    private readonly primary: ObjectStorage,
+    private readonly fallback: ObjectStorage,
+  ) {}
+
+  createUploadUrl(objectKey: string) {
+    return this.primary.createUploadUrl(objectKey);
+  }
+
+  createPublicUrl(objectKey: string) {
+    return this.primary.createPublicUrl?.(objectKey) ?? this.fallback.createPublicUrl?.(objectKey) ?? null;
+  }
+
+  putObject(
+    objectKey: string,
+    body: Buffer,
+    options?: {
+      contentType?: string;
+      cacheControl?: string;
+    },
+  ) {
+    return this.primary.putObject(objectKey, body, options);
+  }
+
+  async readObject(objectKey: string) {
+    try {
+      return await this.primary.readObject(objectKey);
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        return this.fallback.readObject(objectKey);
+      }
+      throw error;
+    }
+  }
+
+  async hasObject(objectKey: string) {
+    return (await this.statObject(objectKey)) !== null;
+  }
+
+  async statObject(objectKey: string) {
+    const primaryStat = await this.primary.statObject(objectKey);
+    return primaryStat ?? this.fallback.statObject(objectKey);
+  }
+
+  async deleteObject(objectKey: string) {
+    await Promise.allSettled([
+      this.primary.deleteObject(objectKey),
+      this.fallback.deleteObject(objectKey),
+    ]);
+  }
+}
+
 export function createObjectStorage(config: ApiConfig): ObjectStorage {
   if (config.OBJECT_STORAGE_DRIVER === "r2") {
     return createR2ObjectStorage(config);
@@ -252,7 +307,7 @@ function createR2ObjectStorage(config: ApiConfig) {
     throw new Error("R2_ENDPOINT, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY are required when OBJECT_STORAGE_DRIVER=r2.");
   }
 
-  return new R2ObjectStorage({
+  const primary = new R2ObjectStorage({
     endpoint,
     bucket,
     publicBucket: publicBucket || undefined,
@@ -261,6 +316,11 @@ function createR2ObjectStorage(config: ApiConfig) {
     publicBaseUrl: config.R2_PUBLIC_BASE_URL?.trim() || undefined,
     region: config.R2_REGION,
   });
+  const fallback = new LocalObjectStorage({
+    rootDir: config.OBJECT_STORAGE_ROOT,
+    publicBaseUrl: resolvePublicBaseUrl(config),
+  });
+  return new FallbackObjectStorage(primary, fallback);
 }
 
 function resolvePublicBaseUrl(config: ApiConfig) {

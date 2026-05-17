@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="1152" viewBox="0 0 2048 1152" role="img" aria-labelledby="title desc">
+  <title id="title">KeepPage 项目架构图</title>
+  <desc id="desc">KeepPage monorepo architecture diagram showing extension, web, api, shared packages, repositories, and storage.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7fffc"/>
+      <stop offset="52%" stop-color="#f5fbff"/>
+      <stop offset="100%" stop-color="#fffdf3"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e6fbf3"/>
+      <stop offset="100%" stop-color="#ccf4ea"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eaf7ff"/>
+      <stop offset="100%" stop-color="#d7edff"/>
+    </linearGradient>
+    <linearGradient id="lemon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff8d8"/>
+      <stop offset="100%" stop-color="#f8edb6"/>
+    </linearGradient>
+    <linearGradient id="coral" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff1eb"/>
+      <stop offset="100%" stop-color="#ffe1d4"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-18%" y="-18%" width="136%" height="136%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#2f4858" flood-opacity="0.10"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#2f4858" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#5c7a85"/>
+    </marker>
+    <style>
+      .page-title { font: 700 54px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #14313a; letter-spacing: 0; }
+      .subtitle { font: 400 24px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #5f737a; }
+      .band-title { font: 700 24px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #42616b; }
+      .card-title { font: 700 30px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #14313a; }
+      .card-sub { font: 400 20px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #5b727a; }
+      .small { font: 400 18px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #6a7d83; }
+      .tag { font: 600 16px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #47646c; }
+      .arrow-label { font: 600 17px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; fill: #55707a; }
+      .band { fill: rgba(255,255,255,0.56); stroke: #d9ebec; stroke-width: 1.5; }
+      .card { stroke: rgba(96,126,137,0.18); stroke-width: 1.5; filter: url(#cardShadow); }
+      .chip { fill: rgba(255,255,255,0.72); stroke: rgba(89,119,128,0.14); stroke-width: 1; }
+      .line { fill: none; stroke: #6f8a93; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .soft-line { fill: none; stroke: #8da5ad; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); opacity: 0.82; }
+      .dependency { fill: none; stroke: #80b9b5; stroke-width: 3; stroke-dasharray: 9 9; stroke-linecap: round; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="2048" height="1152" fill="url(#bg)"/>
+  <circle cx="1840" cy="120" r="170" fill="#e2f7ff" opacity="0.42"/>
+  <circle cx="120" cy="1010" r="210" fill="#fff3c4" opacity="0.38"/>
+
+  <text x="1024" y="82" text-anchor="middle" class="page-title">KeepPage 项目架构</text>
+  <text x="1024" y="122" text-anchor="middle" class="subtitle">Chrome 扩展本地先保存，Web 管理端与 Fastify API 通过共享领域契约协同</text>
+
+  <rect x="92" y="172" width="1864" height="180" rx="28" class="band"/>
+  <rect x="92" y="392" width="1864" height="274" rx="28" class="band"/>
+  <rect x="92" y="706" width="1864" height="172" rx="28" class="band"/>
+  <rect x="92" y="918" width="1864" height="160" rx="28" class="band"/>
+
+  <text x="136" y="220" class="band-title">用户入口</text>
+  <text x="136" y="442" class="band-title">应用层</text>
+  <text x="136" y="756" class="band-title">共享包</text>
+  <text x="136" y="968" class="band-title">存储与外部服务</text>
+
+  <g id="entry-browser">
+    <rect x="302" y="214" width="310" height="96" rx="22" fill="url(#lemon)" class="card"/>
+    <text x="457" y="256" text-anchor="middle" class="card-title">浏览器用户</text>
+    <text x="457" y="286" text-anchor="middle" class="card-sub">收藏、查看、整理网页</text>
+  </g>
+
+  <g id="entry-extension">
+    <rect x="780" y="204" width="336" height="116" rx="22" fill="url(#mint)" class="card"/>
+    <text x="948" y="250" text-anchor="middle" class="card-title">Chrome Extension</text>
+    <text x="948" y="282" text-anchor="middle" class="card-sub">MV3 · Popup · Side Panel</text>
+  </g>
+
+  <g id="entry-web">
+    <rect x="1288" y="214" width="318" height="96" rx="22" fill="url(#sky)" class="card"/>
+    <text x="1447" y="256" text-anchor="middle" class="card-title">Web 管理端</text>
+    <text x="1447" y="286" text-anchor="middle" class="card-sub">列表、搜索、详情、导入</text>
+  </g>
+
+  <g id="app-extension">
+    <rect x="232" y="464" width="442" height="154" rx="24" fill="url(#mint)" class="card"/>
+    <text x="453" y="514" text-anchor="middle" class="card-title">apps/extension</text>
+    <text x="453" y="548" text-anchor="middle" class="card-sub">捕获网页 · 本地队列 · 同步上传</text>
+    <rect x="282" y="576" width="110" height="28" rx="14" class="chip"/>
+    <text x="337" y="596" text-anchor="middle" class="tag">Content</text>
+    <rect x="410" y="576" width="112" height="28" rx="14" class="chip"/>
+    <text x="466" y="596" text-anchor="middle" class="tag">Background</text>
+    <rect x="540" y="576" width="82" height="28" rx="14" class="chip"/>
+    <text x="581" y="596" text-anchor="middle" class="tag">WXT</text>
+  </g>
+
+  <g id="app-web">
+    <rect x="804" y="464" width="336" height="154" rx="24" fill="url(#sky)" class="card"/>
+    <text x="972" y="514" text-anchor="middle" class="card-title">apps/web</text>
+    <text x="972" y="548" text-anchor="middle" class="card-sub">React + Vite</text>
+    <text x="972" y="582" text-anchor="middle" class="small">管理收藏、筛选、版本与元数据</text>
+  </g>
+
+  <g id="app-api">
+    <rect x="1278" y="448" width="486" height="186" rx="24" fill="#ffffff" class="card"/>
+    <rect x="1278" y="448" width="486" height="186" rx="24" fill="url(#coral)" opacity="0.88"/>
+    <text x="1521" y="502" text-anchor="middle" class="card-title">apps/api</text>
+    <text x="1521" y="536" text-anchor="middle" class="card-sub">Fastify routes + services</text>
+    <rect x="1328" y="566" width="108" height="30" rx="15" class="chip"/>
+    <text x="1382" y="587" text-anchor="middle" class="tag">Bookmarks</text>
+    <rect x="1452" y="566" width="100" height="30" rx="15" class="chip"/>
+    <text x="1502" y="587" text-anchor="middle" class="tag">Captures</text>
+    <rect x="1568" y="566" width="86" height="30" rx="15" class="chip"/>
+    <text x="1611" y="587" text-anchor="middle" class="tag">Uploads</text>
+    <rect x="1328" y="604" width="82" height="30" rx="15" class="chip"/>
+    <text x="1369" y="625" text-anchor="middle" class="tag">Auth</text>
+    <rect x="1426" y="604" width="94" height="30" rx="15" class="chip"/>
+    <text x="1473" y="625" text-anchor="middle" class="tag">Imports</text>
+    <rect x="1536" y="604" width="116" height="30" rx="15" class="chip"/>
+    <text x="1594" y="625" text-anchor="middle" class="tag">Private Mode</text>
+  </g>
+
+  <g id="domain">
+    <rect x="496" y="754" width="420" height="84" rx="22" fill="#ffffff" class="card"/>
+    <rect x="496" y="754" width="420" height="84" rx="22" fill="url(#mint)" opacity="0.78"/>
+    <text x="706" y="790" text-anchor="middle" class="card-title">@keeppage/domain</text>
+    <text x="706" y="820" text-anchor="middle" class="card-sub">Zod schemas · 共享类型 · 状态机</text>
+  </g>
+
+  <g id="dbpkg">
+    <rect x="1114" y="754" width="374" height="84" rx="22" fill="#ffffff" class="card"/>
+    <rect x="1114" y="754" width="374" height="84" rx="22" fill="url(#sky)" opacity="0.82"/>
+    <text x="1301" y="790" text-anchor="middle" class="card-title">@keeppage/db</text>
+    <text x="1301" y="820" text-anchor="middle" class="card-sub">Drizzle schema · migrations</text>
+  </g>
+
+  <g id="indexeddb">
+    <rect x="246" y="974" width="330" height="70" rx="20" fill="#ffffff" class="card"/>
+    <rect x="246" y="974" width="330" height="70" rx="20" fill="url(#lemon)" opacity="0.78"/>
+    <text x="411" y="1004" text-anchor="middle" class="card-title">IndexedDB 队列</text>
+    <text x="411" y="1030" text-anchor="middle" class="card-sub">本地归档与重试</text>
+  </g>
+
+  <g id="repo">
+    <rect x="724" y="974" width="354" height="70" rx="20" fill="#ffffff" class="card"/>
+    <rect x="724" y="974" width="354" height="70" rx="20" fill="url(#mint)" opacity="0.76"/>
+    <text x="901" y="1004" text-anchor="middle" class="card-title">Memory / Postgres</text>
+    <text x="901" y="1030" text-anchor="middle" class="card-sub">Bookmark Repository</text>
+  </g>
+
+  <g id="object-storage">
+    <rect x="1228" y="974" width="364" height="70" rx="20" fill="#ffffff" class="card"/>
+    <rect x="1228" y="974" width="364" height="70" rx="20" fill="url(#sky)" opacity="0.78"/>
+    <text x="1410" y="1004" text-anchor="middle" class="card-title">LocalFS Object Storage</text>
+    <text x="1410" y="1030" text-anchor="middle" class="card-sub">archive.html 与资源</text>
+  </g>
+
+  <g id="web-page">
+    <rect x="1666" y="974" width="210" height="70" rx="20" fill="#ffffff" class="card"/>
+    <rect x="1666" y="974" width="210" height="70" rx="20" fill="url(#coral)" opacity="0.76"/>
+    <text x="1771" y="1004" text-anchor="middle" class="card-title">网页资源</text>
+    <text x="1771" y="1030" text-anchor="middle" class="card-sub">SingleFile / Readability</text>
+  </g>
+
+  <path d="M612 262 C672 262 714 262 774 262" class="soft-line"/>
+  <path d="M948 320 C948 372 648 406 514 462" class="soft-line"/>
+  <path d="M1447 310 C1447 364 1396 396 1334 447" class="soft-line"/>
+  <path d="M674 540 C724 540 748 540 800 540" class="line"/>
+  <text x="736" y="523" text-anchor="middle" class="arrow-label">本地预览</text>
+  <path d="M1140 540 C1196 540 1220 540 1272 540" class="line"/>
+  <text x="1204" y="523" text-anchor="middle" class="arrow-label">HTTP API</text>
+  <path d="M674 585 C870 680 1128 656 1278 604" class="line"/>
+  <text x="976" y="676" text-anchor="middle" class="arrow-label">sync / upload</text>
+
+  <path d="M454 618 C446 748 428 876 412 970" class="soft-line"/>
+  <path d="M1608 634 C1538 764 1468 890 1420 970" class="soft-line"/>
+  <path d="M1428 634 C1274 748 1056 888 924 970" class="soft-line"/>
+  <path d="M504 618 C778 856 1332 890 1760 970" class="soft-line"/>
+
+  <path d="M452 618 C514 684 594 718 670 750" class="dependency"/>
+  <path d="M972 618 C904 688 800 720 730 750" class="dependency"/>
+  <path d="M1448 634 C1280 712 1014 744 916 782" class="dependency"/>
+  <path d="M1520 634 C1450 690 1370 724 1312 750" class="dependency"/>
+
+  <text x="1024" y="1110" text-anchor="middle" class="small">npm workspaces: apps/api · apps/web · apps/extension · packages/domain · packages/db</text>
+</svg>

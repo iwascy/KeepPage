@@ -1,5 +1,6 @@
 import type {
   BookmarkVersionMediaFile,
+  BookmarkIconCandidate,
   CaptureDownloadableMedia,
   CaptureCompleteRequest,
   CaptureInitRequest,
@@ -20,6 +21,11 @@ const logger = createLogger("sync-api");
 type SyncResult = {
   bookmarkId: string;
   versionId: string;
+};
+
+export type IconRefreshResult = {
+  refreshed: number;
+  skipped: number;
 };
 
 type UploadPayload = {
@@ -478,6 +484,7 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     mediaFiles: uploadedMediaFiles.length > 0 ? uploadedMediaFiles : undefined,
     quality,
     source: task.source,
+    iconCandidates: readIconCandidatesFromTask(task),
     deviceId,
   };
   await logSync("debug", debugTabId, "Submitting capture complete payload.", {
@@ -513,6 +520,44 @@ export async function syncTaskToApi(task: CaptureTask, debugTabId?: number): Pro
     bookmarkId: completeResponse.bookmarkId,
     versionId: completeResponse.versionId,
   };
+}
+
+export async function refreshAllBookmarkIcons(): Promise<IconRefreshResult> {
+  const apiBaseUrl = await getApiBaseUrl();
+  const authHeaders = await getAuthHeaders();
+  const result = await postJson(`${apiBaseUrl}/bookmarks/icons/refresh-all`, {}, authHeaders);
+  const record = result && typeof result === "object" ? result as Record<string, unknown> : {};
+  return {
+    refreshed: typeof record.refreshed === "number" ? record.refreshed : 0,
+    skipped: typeof record.skipped === "number" ? record.skipped : 0,
+  };
+}
+
+function readIconCandidatesFromTask(task: CaptureTask): BookmarkIconCandidate[] | undefined {
+  const raw = task.artifacts?.meta?.iconCandidates;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const candidates = raw
+    .map((candidate) => {
+      if (!candidate || typeof candidate !== "object") {
+        return null;
+      }
+      const record = candidate as Record<string, unknown>;
+      if (typeof record.url !== "string" || typeof record.source !== "string") {
+        return null;
+      }
+      return {
+        url: record.url,
+        source: record.source,
+        sizes: typeof record.sizes === "string" ? record.sizes : undefined,
+        type: typeof record.type === "string" ? record.type : undefined,
+        width: typeof record.width === "number" ? record.width : undefined,
+        height: typeof record.height === "number" ? record.height : undefined,
+      } as BookmarkIconCandidate;
+    })
+    .filter((candidate): candidate is BookmarkIconCandidate => Boolean(candidate));
+  return candidates.length > 0 ? candidates : undefined;
 }
 
 async function uploadDownloadableMediaFiles(input: {

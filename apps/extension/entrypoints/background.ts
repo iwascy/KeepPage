@@ -17,6 +17,7 @@ import {
 } from "../src/lib/extension-errors";
 import { createLogger } from "../src/lib/logger";
 import { getFetchChunkSize } from "../src/lib/singlefile-fetch";
+import { refreshAllBookmarkIcons } from "../src/lib/sync-api";
 import {
   captureProfileSchema,
   captureScopeSchema,
@@ -253,6 +254,15 @@ export default defineBackground(() => {
       if (message.type === MESSAGE_TYPE.LockPrivateVault) {
         const summary = await lockPrivateVault();
         sendResponse({ ok: true, summary });
+        return;
+      }
+      if (message.type === MESSAGE_TYPE.RefreshAllBookmarkIcons) {
+        if (!await ensureAuthenticated("refresh-all-bookmark-icons")) {
+          sendResponse({ ok: false, error: "请先登录 KeepPage。" });
+          return;
+        }
+        const result = await refreshAllBookmarkIcons();
+        sendResponse({ ok: true, ...result });
         return;
       }
     })().catch((error) => {

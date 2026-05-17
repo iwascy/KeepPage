@@ -1,4 +1,5 @@
 import type {
+  BookmarkIconCandidate,
   CaptureDownloadableMedia,
   CapturePageSignals,
   CaptureProfile,
@@ -24,6 +25,7 @@ export const MESSAGE_TYPE = {
   CreatePrivateVault: "keeppage/create-private-vault",
   UnlockPrivateVault: "keeppage/unlock-private-vault",
   LockPrivateVault: "keeppage/lock-private-vault",
+  RefreshAllBookmarkIcons: "keeppage/refresh-all-bookmark-icons",
   TaskUpdated: "keeppage/task-updated",
   DebugLog: "keeppage/debug-log",
 } as const;
@@ -37,6 +39,7 @@ export interface CollectLiveSignalsResponse {
   ok: boolean;
   sourcePatch?: Partial<CaptureSource>;
   liveSignals?: CapturePageSignals;
+  iconCandidates?: BookmarkIconCandidate[];
   error?: string;
 }
 
@@ -148,6 +151,10 @@ export interface LockPrivateVaultRequest {
   type: typeof MESSAGE_TYPE.LockPrivateVault;
 }
 
+export interface RefreshAllBookmarkIconsRequest {
+  type: typeof MESSAGE_TYPE.RefreshAllBookmarkIcons;
+}
+
 export interface TaskUpdatedEvent {
   type: typeof MESSAGE_TYPE.TaskUpdated;
   task: CaptureTask;
@@ -176,7 +183,8 @@ export type BackgroundRequest =
   | GetPrivateVaultStateRequest
   | CreatePrivateVaultRequest
   | UnlockPrivateVaultRequest
-  | LockPrivateVaultRequest;
+  | LockPrivateVaultRequest
+  | RefreshAllBookmarkIconsRequest;
 
 export function isContentRequest(message: unknown): message is ContentRequest {
   if (!message || typeof message !== "object") {
@@ -214,6 +222,7 @@ export function isBackgroundRequest(message: unknown): message is BackgroundRequ
     maybe.type === MESSAGE_TYPE.GetPrivateVaultState ||
     maybe.type === MESSAGE_TYPE.CreatePrivateVault ||
     maybe.type === MESSAGE_TYPE.UnlockPrivateVault ||
-    maybe.type === MESSAGE_TYPE.LockPrivateVault
+    maybe.type === MESSAGE_TYPE.LockPrivateVault ||
+    maybe.type === MESSAGE_TYPE.RefreshAllBookmarkIcons
   );
 }

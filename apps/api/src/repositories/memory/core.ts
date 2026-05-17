@@ -1,5 +1,7 @@
 import {
   type ApiToken,
+  bookmarkIconSchema,
+  type BookmarkIcon,
   createBookmarkId,
   createImportTaskId,
   createImportTaskItemId,
@@ -30,6 +32,8 @@ import { hashNormalizedUrl, normalizeSourceUrl } from "../../lib/url";
 import type { ObjectStorage } from "../../storage/object-storage";
 import type {
   ApiTokenAuthRecord,
+  BookmarkIconRefreshTarget,
+  BookmarkIconUpsertInput,
   BookmarkSearchQuery,
   CreateApiTokenInput,
   CreateImportTaskInput,
@@ -84,6 +88,7 @@ export class InMemoryRepositoryCore {
   private readonly stateByUserId = new Map<string, UserBookmarkState>();
   private readonly apiTokensById = new Map<string, StoredApiToken>();
   private readonly apiTokenIdsByUserId = new Map<string, Set<string>>();
+  private readonly bookmarkIconsByHostname = new Map<string, BookmarkIcon>();
   private readonly objectStorage: ObjectStorage;
 
   constructor(options: InMemoryBookmarkRepositoryOptions) {
@@ -337,9 +342,9 @@ export class InMemoryRepositoryCore {
       bookmark.sourceUrl = input.source.url;
       bookmark.canonicalUrl = input.source.canonicalUrl;
       bookmark.title = input.source.title;
-      bookmark.domain = input.source.domain;
-      bookmark.faviconUrl = input.source.faviconUrl;
       bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, existingByObjectKey.mediaFiles ?? []);
+      bookmark.domain = normalizeHostname(input.source.domain || input.source.url);
+      bookmark.faviconUrl = this.resolveBookmarkIconUrl(input.source.domain, input.source.faviconUrl);
       bookmark.latestVersionId = existingByObjectKey.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -380,9 +385,9 @@ export class InMemoryRepositoryCore {
       bookmark.sourceUrl = input.source.url;
       bookmark.canonicalUrl = input.source.canonicalUrl;
       bookmark.title = input.source.title;
-      bookmark.domain = input.source.domain;
-      bookmark.faviconUrl = input.source.faviconUrl;
       bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, matchedVersion.mediaFiles ?? []);
+      bookmark.domain = normalizeHostname(input.source.domain || input.source.url);
+      bookmark.faviconUrl = this.resolveBookmarkIconUrl(input.source.domain, input.source.faviconUrl);
       bookmark.latestVersionId = matchedVersion.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -428,9 +433,9 @@ export class InMemoryRepositoryCore {
     bookmark.sourceUrl = input.source.url;
     bookmark.canonicalUrl = input.source.canonicalUrl;
     bookmark.title = input.source.title;
-    bookmark.domain = input.source.domain;
-    bookmark.faviconUrl = input.source.faviconUrl;
     bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, version.mediaFiles ?? []);
+    bookmark.domain = normalizeHostname(input.source.domain || input.source.url);
+    bookmark.faviconUrl = this.resolveBookmarkIconUrl(input.source.domain, input.source.faviconUrl);
     bookmark.versionCount = versions.length;
     bookmark.updatedAt = now;
     state.bookmarks.set(bookmark.id, bookmark);
@@ -465,9 +470,9 @@ export class InMemoryRepositoryCore {
       bookmark.sourceUrl = input.source.url;
       bookmark.canonicalUrl = input.source.canonicalUrl;
       bookmark.title = input.source.title;
-      bookmark.domain = input.source.domain;
-      bookmark.faviconUrl = input.source.faviconUrl;
       bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, existingByObjectKey.mediaFiles ?? []);
+      bookmark.domain = normalizeHostname(input.source.domain || input.source.url);
+      bookmark.faviconUrl = this.resolveBookmarkIconUrl(input.source.domain, input.source.faviconUrl);
       bookmark.latestVersionId = existingByObjectKey.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -505,9 +510,9 @@ export class InMemoryRepositoryCore {
       bookmark.sourceUrl = input.source.url;
       bookmark.canonicalUrl = input.source.canonicalUrl;
       bookmark.title = input.source.title;
-      bookmark.domain = input.source.domain;
-      bookmark.faviconUrl = input.source.faviconUrl;
       bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, matchedVersion.mediaFiles ?? []);
+      bookmark.domain = normalizeHostname(input.source.domain || input.source.url);
+      bookmark.faviconUrl = this.resolveBookmarkIconUrl(input.source.domain, input.source.faviconUrl);
       bookmark.latestVersionId = matchedVersion.id;
       bookmark.latestQuality = input.quality;
       bookmark.updatedAt = now;
@@ -553,9 +558,9 @@ export class InMemoryRepositoryCore {
     bookmark.sourceUrl = input.source.url;
     bookmark.canonicalUrl = input.source.canonicalUrl;
     bookmark.title = input.source.title;
-    bookmark.domain = input.source.domain;
-    bookmark.faviconUrl = input.source.faviconUrl;
     bookmark.coverImageUrl = this.resolveStoredCoverImageUrl(input.source, version.mediaFiles ?? []);
+    bookmark.domain = normalizeHostname(input.source.domain || input.source.url);
+    bookmark.faviconUrl = this.resolveBookmarkIconUrl(input.source.domain, input.source.faviconUrl);
     bookmark.versionCount = versions.length;
     bookmark.updatedAt = now;
     state.privateBookmarks.set(bookmark.id, bookmark);
@@ -565,6 +570,83 @@ export class InMemoryRepositoryCore {
       versionId: version.id,
       createdNewVersion: true,
       deduplicated: false,
+    };
+  }
+
+  async upsertBookmarkIcon(input: BookmarkIconUpsertInput): Promise<BookmarkIcon> {
+    const hostname = normalizeHostname(input.hostname);
+    const now = new Date().toISOString();
+    const existing = this.bookmarkIconsByHostname.get(hostname);
+    const icon = bookmarkIconSchema.parse({
+      id: existing?.id ?? crypto.randomUUID(),
+      hostname,
+      iconUrl: input.iconUrl,
+      sourceUrl: input.sourceUrl,
+      sourceType: input.sourceType,
+      width: input.width,
+      height: input.height,
+      format: input.format,
+      refreshedAt: now,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    });
+    this.bookmarkIconsByHostname.set(hostname, icon);
+    for (const state of this.stateByUserId.values()) {
+      for (const bookmark of [...state.bookmarks.values(), ...state.privateBookmarks.values()]) {
+        if (normalizeHostname(bookmark.domain) === hostname) {
+          bookmark.faviconUrl = icon.iconUrl;
+        }
+      }
+    }
+    return icon;
+  }
+
+  async getBookmarkIconByHostname(hostname: string): Promise<BookmarkIcon | null> {
+    return this.bookmarkIconsByHostname.get(normalizeHostname(hostname)) ?? null;
+  }
+
+  async listBookmarkIconRefreshTargets(userId: string): Promise<BookmarkIconRefreshTarget[]> {
+    const state = this.ensureUserState(userId);
+    const byHostname = new Map<string, BookmarkIconRefreshTarget>();
+    for (const bookmark of [...state.bookmarks.values(), ...state.privateBookmarks.values()]) {
+      const hostname = normalizeHostname(bookmark.domain || bookmark.sourceUrl);
+      if (!hostname) {
+        continue;
+      }
+      const candidate = bookmark.faviconUrl
+        ? [{ url: bookmark.faviconUrl, source: "rel-icon" as const }]
+        : [];
+      const existing = byHostname.get(hostname);
+      if (existing) {
+        existing.candidates.push(...candidate);
+        continue;
+      }
+      byHostname.set(hostname, {
+        bookmarkId: bookmark.id,
+        hostname,
+        sourceUrl: bookmark.sourceUrl,
+        candidates: candidate,
+      });
+    }
+    return [...byHostname.values()].map((target) => ({
+      ...target,
+      candidates: dedupeIconCandidates(target.candidates),
+    }));
+  }
+
+  async getBookmarkIconRefreshTarget(userId: string, bookmarkId: string): Promise<BookmarkIconRefreshTarget | null> {
+    const state = this.ensureUserState(userId);
+    const bookmark = state.bookmarks.get(bookmarkId) ?? state.privateBookmarks.get(bookmarkId);
+    if (!bookmark) {
+      return null;
+    }
+    return {
+      bookmarkId: bookmark.id,
+      hostname: normalizeHostname(bookmark.domain || bookmark.sourceUrl),
+      sourceUrl: bookmark.sourceUrl,
+      candidates: bookmark.faviconUrl
+        ? [{ url: bookmark.faviconUrl, source: "rel-icon" as const }]
+        : [],
     };
   }
 
@@ -1426,9 +1508,9 @@ export class InMemoryRepositoryCore {
       sourceUrl: input.source.url,
       canonicalUrl: input.source.canonicalUrl,
       title: input.source.title,
-      domain: input.source.domain,
-      faviconUrl: input.source.faviconUrl,
       coverImageUrl: this.resolveStoredCoverImageUrl(input.source, this.attachPublicUrlsToMediaFiles(input.mediaFiles)),
+      domain: normalizeHostname(input.source.domain || input.source.url),
+      faviconUrl: this.resolveBookmarkIconUrl(input.source.domain, input.source.faviconUrl),
       note: "",
       isFavorite: false,
       tags: [],
@@ -1461,9 +1543,9 @@ export class InMemoryRepositoryCore {
       sourceUrl: input.source.url,
       canonicalUrl: input.source.canonicalUrl,
       title: input.source.title,
-      domain: input.source.domain,
-      faviconUrl: input.source.faviconUrl,
       coverImageUrl: this.resolveStoredCoverImageUrl(input.source, this.attachPublicUrlsToMediaFiles(input.mediaFiles)),
+      domain: normalizeHostname(input.source.domain || input.source.url),
+      faviconUrl: this.resolveBookmarkIconUrl(input.source.domain, input.source.faviconUrl),
       note: "",
       isFavorite: false,
       tags: [],
@@ -1474,6 +1556,10 @@ export class InMemoryRepositoryCore {
     };
     state.privateBookmarks.set(bookmark.id, bookmark);
     return bookmark;
+  }
+
+  private resolveBookmarkIconUrl(domain: string, fallback?: string) {
+    return this.bookmarkIconsByHostname.get(normalizeHostname(domain))?.iconUrl ?? fallback;
   }
 
   private findObjectKeyByVersionId(state: UserBookmarkState, versionId: string) {
@@ -1741,4 +1827,28 @@ export class InMemoryRepositoryCore {
     }
     state.privateVersionsByObjectKey.set(readerObjectKey, version);
   }
+}
+
+function normalizeHostname(input: string) {
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    return new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`).hostname.replace(/^www\./, "");
+  } catch {
+    return trimmed.replace(/^www\./, "");
+  }
+}
+
+function dedupeIconCandidates<T extends { url: string }>(candidates: T[]) {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = candidate.url.trim();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }

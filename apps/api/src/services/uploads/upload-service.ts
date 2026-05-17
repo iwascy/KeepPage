@@ -73,6 +73,18 @@ export class UploadService {
     };
   }
 
+  async getPublicObject(objectKey: string) {
+    if (!(await this.objectStorage.hasObject(objectKey))) {
+      throw new HttpError(404, "ObjectNotFound", "Object not found.");
+    }
+
+    return {
+      body: await this.objectStorage.readObject(objectKey),
+      contentType: guessContentType(objectKey),
+      publicUrl: this.objectStorage.createPublicUrl?.(objectKey) ?? null,
+    };
+  }
+
   async uploadObject(input: ObjectUploadInput) {
     const { userId, objectKey, body, headers } = input;
     await this.assertCanWrite(userId, objectKey);

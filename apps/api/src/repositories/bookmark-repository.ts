@@ -3,6 +3,9 @@ import type {
   ApiTokenScope,
   AuthUser,
   Bookmark,
+  BookmarkIcon,
+  BookmarkIconCandidate,
+  BookmarkIconSourceType,
   BookmarkListView,
   BookmarkMetadataUpdateRequest,
   BookmarkSearchResponse,
@@ -120,6 +123,23 @@ export type IngestBookmarkResult = {
   deduplicated: boolean;
 };
 
+export type BookmarkIconUpsertInput = {
+  hostname: string;
+  iconUrl: string;
+  sourceUrl?: string;
+  sourceType: BookmarkIconSourceType;
+  width?: number;
+  height?: number;
+  format?: string;
+};
+
+export type BookmarkIconRefreshTarget = {
+  bookmarkId?: string;
+  hostname: string;
+  sourceUrl?: string;
+  candidates: BookmarkIconCandidate[];
+};
+
 export interface RepositoryInfo {
   readonly kind: "memory" | "postgres";
 }
@@ -186,6 +206,13 @@ export interface BookmarkWriteRepository extends RepositoryInfo {
   ): Promise<Bookmark | null>;
 }
 
+export interface BookmarkIconRepository extends RepositoryInfo {
+  upsertBookmarkIcon(input: BookmarkIconUpsertInput): Promise<BookmarkIcon>;
+  getBookmarkIconByHostname(hostname: string): Promise<BookmarkIcon | null>;
+  listBookmarkIconRefreshTargets(userId: string): Promise<BookmarkIconRefreshTarget[]>;
+  getBookmarkIconRefreshTarget(userId: string, bookmarkId: string): Promise<BookmarkIconRefreshTarget | null>;
+}
+
 export interface TaxonomyRepository extends RepositoryInfo {
   listFolders(userId: string): Promise<Folder[]>;
   createFolder(userId: string, input: FolderCreateRequest): Promise<Folder>;
@@ -222,6 +249,7 @@ export type BookmarkRepository =
   & IngestRepository
   & BookmarkReadRepository
   & BookmarkWriteRepository
+  & BookmarkIconRepository
   & TaxonomyRepository
   & ImportRepository
   & ObjectAccessRepository;

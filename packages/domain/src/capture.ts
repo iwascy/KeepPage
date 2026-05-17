@@ -61,6 +61,60 @@ export const captureSourceSchema = z.object({
   savedAt: z.string().datetime(),
 });
 
+export const bookmarkIconSourceTypeValues = [
+  "simple-icons",
+  "iconify",
+  "rel-icon",
+  "apple-touch-icon",
+  "manifest",
+  "favicon-ico",
+  "default-path",
+  "favicon-api",
+  "google-s2",
+  "manual",
+  "unknown",
+] as const;
+
+export const bookmarkIconSourceTypeSchema = z.enum(bookmarkIconSourceTypeValues);
+
+export const bookmarkIconCandidateSchema = z.object({
+  url: z.url(),
+  source: bookmarkIconSourceTypeSchema,
+  sizes: z.string().optional(),
+  type: z.string().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+});
+
+export const bookmarkIconSchema = z.object({
+  id: z.string().min(1),
+  hostname: z.string().min(1),
+  iconUrl: z.url(),
+  sourceUrl: z.url().optional(),
+  sourceType: bookmarkIconSourceTypeSchema,
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  format: z.string().min(1).optional(),
+  refreshedAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const bookmarkIconRefreshRequestSchema = z.object({
+  bookmarkId: z.string().min(1).optional(),
+  domain: z.string().min(1).optional(),
+  sourceUrl: z.url().optional(),
+  candidates: z.array(bookmarkIconCandidateSchema).max(32).default([]),
+}).refine((value) => value.bookmarkId || value.domain || value.sourceUrl, {
+  message: "bookmarkId, domain, or sourceUrl is required.",
+});
+
+export const bookmarkIconRefreshResponseSchema = z.object({
+  refreshed: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  icons: z.array(bookmarkIconSchema),
+});
+
 export const capturePageSignalsSchema = z.object({
   textLength: z.number().int().nonnegative(),
   imageCount: z.number().int().nonnegative(),
@@ -258,6 +312,7 @@ export const captureCompleteRequestSchema = z.object({
   thumbnailObjectKey: z.string().optional(),
   quality: qualityReportSchema,
   source: captureSourceSchema,
+  iconCandidates: z.array(bookmarkIconCandidateSchema).max(32).optional(),
   deviceId: z.string().min(1),
 });
 
@@ -350,6 +405,11 @@ export const bookmarkDetailResponseSchema = z.object({
 });
 
 export type CaptureSource = z.infer<typeof captureSourceSchema>;
+export type BookmarkIconSourceType = z.infer<typeof bookmarkIconSourceTypeSchema>;
+export type BookmarkIconCandidate = z.infer<typeof bookmarkIconCandidateSchema>;
+export type BookmarkIcon = z.infer<typeof bookmarkIconSchema>;
+export type BookmarkIconRefreshRequest = z.infer<typeof bookmarkIconRefreshRequestSchema>;
+export type BookmarkIconRefreshResponse = z.infer<typeof bookmarkIconRefreshResponseSchema>;
 export type CapturePageSignals = z.infer<typeof capturePageSignalsSchema>;
 export type QualityReason = z.infer<typeof qualityReasonSchema>;
 export type QualityReport = z.infer<typeof qualityReportSchema>;

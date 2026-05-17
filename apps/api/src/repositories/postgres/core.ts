@@ -1,6 +1,8 @@
 import {
   apiTokenScopeSchema,
   authUserSchema,
+  bookmarkIconSchema,
+  bookmarkIconCandidateSchema,
   type ApiToken,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
@@ -13,6 +15,7 @@ import {
   qualityReportSchema,
   type AuthUser,
   type Bookmark,
+  type BookmarkIcon,
   type BookmarkMetadataUpdateRequest,
   type BookmarkVersion,
   type CaptureCompleteRequest,
@@ -31,6 +34,7 @@ import {
 } from "@keeppage/domain";
 import {
   apiTokens,
+  bookmarkIcons,
   bookmarks,
   bookmarkTags,
   bookmarkVersions,
@@ -65,6 +69,8 @@ import type { ObjectStorage } from "../../storage/object-storage";
 import type {
   ApiTokenAuthRecord,
   BookmarkSearchQuery,
+  BookmarkIconRefreshTarget,
+  BookmarkIconUpsertInput,
   CreateApiTokenInput,
   CreateImportTaskInput,
   CompleteCaptureResult,
@@ -627,7 +633,7 @@ export class PostgresRepositoryCore {
             qualityReasonsJson: input.quality.reasons,
             qualityReportJson: input.quality,
             sourceMetaJson: this.buildSourceMetaPayload(
-              input.source,
+              input,
               input.mediaFiles,
               existingByObjectKey[0].sourceMetaJson,
             ),
@@ -640,7 +646,7 @@ export class PostgresRepositoryCore {
             sourceUrl: input.source.url,
             canonicalUrl: input.source.canonicalUrl,
             title: input.source.title,
-            domain: input.source.domain,
+            domain: normalizeHostname(input.source.domain || input.source.url),
             latestVersionId: existingByObjectKey[0].versionId,
             updatedAt: now,
           })
@@ -706,7 +712,7 @@ export class PostgresRepositoryCore {
           canonicalUrl: input.source.canonicalUrl,
           normalizedUrlHash,
           title: input.source.title,
-          domain: input.source.domain,
+          domain: normalizeHostname(input.source.domain || input.source.url),
           note: "",
           isFavorite: false,
           isPinnedOffline: false,
@@ -747,7 +753,7 @@ export class PostgresRepositoryCore {
             qualityReasonsJson: input.quality.reasons,
             qualityReportJson: input.quality,
             sourceMetaJson: this.buildSourceMetaPayload(
-              input.source,
+              input,
               input.mediaFiles,
               duplicateVersionRows[0].sourceMetaJson,
             ),
@@ -759,7 +765,7 @@ export class PostgresRepositoryCore {
             sourceUrl: input.source.url,
             canonicalUrl: input.source.canonicalUrl,
             title: input.source.title,
-            domain: input.source.domain,
+            domain: normalizeHostname(input.source.domain || input.source.url),
             latestVersionId: duplicatedVersionId,
             updatedAt: now,
           })
@@ -803,7 +809,7 @@ export class PostgresRepositoryCore {
         qualityGrade: input.quality.grade,
         qualityReasonsJson: input.quality.reasons,
         qualityReportJson: input.quality,
-        sourceMetaJson: this.buildSourceMetaPayload(input.source, input.mediaFiles),
+        sourceMetaJson: this.buildSourceMetaPayload(input, input.mediaFiles),
         extractedText: input.extractedText ?? null,
         createdByDeviceId: null,
         createdAt: now,
@@ -815,7 +821,7 @@ export class PostgresRepositoryCore {
           sourceUrl: input.source.url,
           canonicalUrl: input.source.canonicalUrl,
           title: input.source.title,
-          domain: input.source.domain,
+          domain: normalizeHostname(input.source.domain || input.source.url),
           latestVersionId: versionId,
           updatedAt: now,
         })
@@ -872,7 +878,7 @@ export class PostgresRepositoryCore {
             qualityReasonsJson: input.quality.reasons,
             qualityReportJson: input.quality,
             sourceMetaJson: this.buildSourceMetaPayload(
-              input.source,
+              input,
               input.mediaFiles,
               existingByObjectKey[0].sourceMetaJson,
             ),
@@ -885,7 +891,7 @@ export class PostgresRepositoryCore {
             sourceUrl: input.source.url,
             canonicalUrl: input.source.canonicalUrl,
             title: input.source.title,
-            domain: input.source.domain,
+            domain: normalizeHostname(input.source.domain || input.source.url),
             latestVersionId: existingByObjectKey[0].versionId,
             updatedAt: now,
           })
@@ -951,7 +957,7 @@ export class PostgresRepositoryCore {
           canonicalUrl: input.source.canonicalUrl,
           normalizedUrlHash,
           title: input.source.title,
-          domain: input.source.domain,
+          domain: normalizeHostname(input.source.domain || input.source.url),
           note: "",
           isFavorite: false,
           createdAt: now,
@@ -991,7 +997,7 @@ export class PostgresRepositoryCore {
             qualityReasonsJson: input.quality.reasons,
             qualityReportJson: input.quality,
             sourceMetaJson: this.buildSourceMetaPayload(
-              input.source,
+              input,
               input.mediaFiles,
               duplicateVersionRows[0].sourceMetaJson,
             ),
@@ -1003,7 +1009,7 @@ export class PostgresRepositoryCore {
             sourceUrl: input.source.url,
             canonicalUrl: input.source.canonicalUrl,
             title: input.source.title,
-            domain: input.source.domain,
+            domain: normalizeHostname(input.source.domain || input.source.url),
             latestVersionId: duplicatedVersionId,
             updatedAt: now,
           })
@@ -1047,7 +1053,7 @@ export class PostgresRepositoryCore {
         qualityGrade: input.quality.grade,
         qualityReasonsJson: input.quality.reasons,
         qualityReportJson: input.quality,
-        sourceMetaJson: this.buildSourceMetaPayload(input.source, input.mediaFiles),
+        sourceMetaJson: this.buildSourceMetaPayload(input, input.mediaFiles),
         extractedText: input.extractedText ?? null,
         createdByDeviceId: null,
         createdAt: now,
@@ -1059,7 +1065,7 @@ export class PostgresRepositoryCore {
           sourceUrl: input.source.url,
           canonicalUrl: input.source.canonicalUrl,
           title: input.source.title,
-          domain: input.source.domain,
+          domain: normalizeHostname(input.source.domain || input.source.url),
           latestVersionId: versionId,
           updatedAt: now,
         })
@@ -1081,6 +1087,157 @@ export class PostgresRepositoryCore {
       versionId: transactionResult.versionId,
       createdNewVersion: transactionResult.createdNewVersion,
       deduplicated: transactionResult.deduplicated,
+    };
+  }
+
+  async upsertBookmarkIcon(input: BookmarkIconUpsertInput): Promise<BookmarkIcon> {
+    const hostname = normalizeHostname(input.hostname);
+    const now = new Date();
+    const rows = await this.db
+      .insert(bookmarkIcons)
+      .values({
+        hostname,
+        iconUrl: input.iconUrl,
+        sourceUrl: input.sourceUrl,
+        sourceType: input.sourceType,
+        width: input.width,
+        height: input.height,
+        format: input.format,
+        refreshedAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: bookmarkIcons.hostname,
+        set: {
+          iconUrl: input.iconUrl,
+          sourceUrl: input.sourceUrl,
+          sourceType: input.sourceType,
+          width: input.width,
+          height: input.height,
+          format: input.format,
+          refreshedAt: now,
+          updatedAt: now,
+        },
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Failed to upsert bookmark icon.");
+    }
+    return this.mapBookmarkIconRow(row);
+  }
+
+  async getBookmarkIconByHostname(hostname: string): Promise<BookmarkIcon | null> {
+    const rows = await this.db
+      .select()
+      .from(bookmarkIcons)
+      .where(eq(bookmarkIcons.hostname, normalizeHostname(hostname)))
+      .limit(1);
+    return rows[0] ? this.mapBookmarkIconRow(rows[0]) : null;
+  }
+
+  async listBookmarkIconRefreshTargets(userId: string): Promise<BookmarkIconRefreshTarget[]> {
+    const normalRows = await this.db
+      .select({
+        bookmarkId: bookmarks.id,
+        domain: bookmarks.domain,
+        sourceUrl: bookmarks.sourceUrl,
+        latestSourceMeta: bookmarkVersions.sourceMetaJson,
+      })
+      .from(bookmarks)
+      .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
+      .where(eq(bookmarks.userId, userId));
+    const privateRows = await this.db
+      .select({
+        bookmarkId: privateBookmarks.id,
+        domain: privateBookmarks.domain,
+        sourceUrl: privateBookmarks.sourceUrl,
+        latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
+      })
+      .from(privateBookmarks)
+      .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .where(eq(privateBookmarks.userId, userId));
+
+    const byHostname = new Map<string, BookmarkIconRefreshTarget>();
+    for (const row of [...normalRows, ...privateRows]) {
+      const hostname = normalizeHostname(row.domain || row.sourceUrl);
+      if (!hostname) {
+        continue;
+      }
+      const existing = byHostname.get(hostname);
+      const candidates = this.readIconCandidates(row.latestSourceMeta);
+      const faviconUrl = this.readFaviconUrl(row.latestSourceMeta);
+      const nextCandidates = [
+        ...candidates,
+        ...(faviconUrl ? [{ url: faviconUrl, source: "rel-icon" as const }] : []),
+      ];
+      if (existing) {
+        existing.candidates.push(...nextCandidates);
+        continue;
+      }
+      byHostname.set(hostname, {
+        bookmarkId: row.bookmarkId,
+        hostname,
+        sourceUrl: row.sourceUrl,
+        candidates: nextCandidates,
+      });
+    }
+    return [...byHostname.values()].map((target) => ({
+      ...target,
+      candidates: dedupeIconCandidates(target.candidates),
+    }));
+  }
+
+  async getBookmarkIconRefreshTarget(userId: string, bookmarkId: string): Promise<BookmarkIconRefreshTarget | null> {
+    const normalRows = await this.db
+      .select({
+        bookmarkId: bookmarks.id,
+        domain: bookmarks.domain,
+        sourceUrl: bookmarks.sourceUrl,
+        latestSourceMeta: bookmarkVersions.sourceMetaJson,
+      })
+      .from(bookmarks)
+      .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
+      .where(and(eq(bookmarks.userId, userId), eq(bookmarks.id, bookmarkId)))
+      .limit(1);
+    const row = normalRows[0];
+    if (row) {
+      const faviconUrl = this.readFaviconUrl(row.latestSourceMeta);
+      return {
+        bookmarkId: row.bookmarkId,
+        hostname: normalizeHostname(row.domain || row.sourceUrl),
+        sourceUrl: row.sourceUrl,
+        candidates: dedupeIconCandidates([
+          ...this.readIconCandidates(row.latestSourceMeta),
+          ...(faviconUrl ? [{ url: faviconUrl, source: "rel-icon" as const }] : []),
+        ]),
+      };
+    }
+
+    const privateRows = await this.db
+      .select({
+        bookmarkId: privateBookmarks.id,
+        domain: privateBookmarks.domain,
+        sourceUrl: privateBookmarks.sourceUrl,
+        latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
+      })
+      .from(privateBookmarks)
+      .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .where(and(eq(privateBookmarks.userId, userId), eq(privateBookmarks.id, bookmarkId)))
+      .limit(1);
+    const privateRow = privateRows[0];
+    if (!privateRow) {
+      return null;
+    }
+    const faviconUrl = this.readFaviconUrl(privateRow.latestSourceMeta);
+    return {
+      bookmarkId: privateRow.bookmarkId,
+      hostname: normalizeHostname(privateRow.domain || privateRow.sourceUrl),
+      sourceUrl: privateRow.sourceUrl,
+      candidates: dedupeIconCandidates([
+        ...this.readIconCandidates(privateRow.latestSourceMeta),
+        ...(faviconUrl ? [{ url: faviconUrl, source: "rel-icon" as const }] : []),
+      ]),
     };
   }
 
@@ -1140,9 +1297,11 @@ export class PostgresRepositoryCore {
         updatedAt: privateBookmarks.updatedAt,
         latestQualityReport: privateBookmarkVersions.qualityReportJson,
         latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
+        iconUrl: bookmarkIcons.iconUrl,
       })
       .from(privateBookmarks)
       .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .leftJoin(bookmarkIcons, normalizedHostnameEq(privateBookmarks.domain, bookmarkIcons.hostname))
       .where(and(...conditions))
       .orderBy(desc(privateBookmarks.updatedAt))
       .limit(query.limit)
@@ -1387,10 +1546,12 @@ export class PostgresRepositoryCore {
         folderParentId: folders.parentId,
         latestQualityReport: bookmarkVersions.qualityReportJson,
         latestSourceMeta: bookmarkVersions.sourceMetaJson,
+        iconUrl: bookmarkIcons.iconUrl,
       })
       .from(bookmarks)
       .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
       .leftJoin(folders, eq(bookmarks.folderId, folders.id))
+      .leftJoin(bookmarkIcons, normalizedHostnameEq(bookmarks.domain, bookmarkIcons.hostname))
       .where(and(...conditions))
       .orderBy(desc(bookmarks.updatedAt))
       .limit(query.limit)
@@ -2164,6 +2325,22 @@ export class PostgresRepositoryCore {
     });
   }
 
+  private mapBookmarkIconRow(row: typeof bookmarkIcons.$inferSelect) {
+    return bookmarkIconSchema.parse({
+      id: row.id,
+      hostname: row.hostname,
+      iconUrl: row.iconUrl,
+      sourceUrl: row.sourceUrl ?? undefined,
+      sourceType: row.sourceType,
+      width: row.width ?? undefined,
+      height: row.height ?? undefined,
+      format: row.format ?? undefined,
+      refreshedAt: row.refreshedAt.toISOString(),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    });
+  }
+
   private async loadBookmark(bookmarkId: string, userId: string): Promise<Bookmark> {
     const bookmark = await this.loadBookmarkOrNull(bookmarkId, userId);
     if (!bookmark) {
@@ -2192,10 +2369,12 @@ export class PostgresRepositoryCore {
         folderParentId: folders.parentId,
         latestQualityReport: bookmarkVersions.qualityReportJson,
         latestSourceMeta: bookmarkVersions.sourceMetaJson,
+        iconUrl: bookmarkIcons.iconUrl,
       })
       .from(bookmarks)
       .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
       .leftJoin(folders, eq(bookmarks.folderId, folders.id))
+      .leftJoin(bookmarkIcons, normalizedHostnameEq(bookmarks.domain, bookmarkIcons.hostname))
       .where(
         and(
           eq(bookmarks.userId, userId),
@@ -2240,9 +2419,11 @@ export class PostgresRepositoryCore {
         updatedAt: privateBookmarks.updatedAt,
         latestQualityReport: privateBookmarkVersions.qualityReportJson,
         latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
+        iconUrl: bookmarkIcons.iconUrl,
       })
       .from(privateBookmarks)
       .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .leftJoin(bookmarkIcons, normalizedHostnameEq(privateBookmarks.domain, bookmarkIcons.hostname))
       .where(
         and(
           eq(privateBookmarks.id, bookmarkId),
@@ -2872,6 +3053,7 @@ export class PostgresRepositoryCore {
       folderParentId: string | null;
       latestQualityReport: unknown;
       latestSourceMeta: unknown;
+      iconUrl?: string | null;
     },
     options: {
       tags: Array<{ id: string; name: string; color?: string }>;
@@ -2885,7 +3067,7 @@ export class PostgresRepositoryCore {
       canonicalUrl: row.canonicalUrl ?? undefined,
       title: row.title,
       domain: row.domain,
-      faviconUrl: this.readFaviconUrl(row.latestSourceMeta),
+      faviconUrl: row.iconUrl ?? this.readFaviconUrl(row.latestSourceMeta),
       coverImageUrl: this.readCoverImageUrl(row.latestSourceMeta),
       note: row.note,
       isFavorite: row.isFavorite,
@@ -2916,6 +3098,22 @@ export class PostgresRepositoryCore {
     return source?.faviconUrl;
   }
 
+  private readIconCandidates(sourceMeta: unknown) {
+    if (!sourceMeta || typeof sourceMeta !== "object") {
+      return [];
+    }
+    const maybeCandidates = (sourceMeta as Record<string, unknown>).iconCandidates;
+    if (!Array.isArray(maybeCandidates)) {
+      return [];
+    }
+    return maybeCandidates
+      .map((candidate) => {
+        const parsed = bookmarkIconCandidateSchema.safeParse(candidate);
+        return parsed.success ? parsed.data : null;
+      })
+      .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+  }
+
   private readCaptureSource(sourceMeta: unknown) {
     if (!sourceMeta || typeof sourceMeta !== "object") {
       return undefined;
@@ -2940,7 +3138,7 @@ export class PostgresRepositoryCore {
   }
 
   private buildSourceMetaPayload(
-    source: CaptureCompleteRequest["source"],
+    input: Pick<CaptureCompleteRequest, "source" | "iconCandidates">,
     mediaFiles?: CaptureCompleteRequest["mediaFiles"],
     existingSourceMeta?: unknown,
   ) {
@@ -2951,10 +3149,14 @@ export class PostgresRepositoryCore {
     }));
     return {
       source: {
-        ...source,
-        coverImageUrl: this.resolveStoredCoverImageUrl(source, mergedMediaFiles),
+        ...input.source,
+        coverImageUrl: this.resolveStoredCoverImageUrl(input.source, mergedMediaFiles),
       },
       mediaFiles: mergedMediaFiles,
+      iconCandidates: dedupeIconCandidates([
+        ...this.readIconCandidates(existingSourceMeta),
+        ...(input.iconCandidates ?? []),
+      ]),
     };
   }
 
@@ -3143,4 +3345,35 @@ export class PostgresRepositoryCore {
     }
     return readerObjectKey;
   }
+}
+
+function normalizeHostname(input: string) {
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    return new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`).hostname.replace(/^www\./, "");
+  } catch {
+    return trimmed.replace(/^www\./, "");
+  }
+}
+
+function normalizedHostnameEq(
+  left: typeof bookmarks.domain | typeof privateBookmarks.domain,
+  right: typeof bookmarkIcons.hostname,
+) {
+  return sql`regexp_replace(lower(${left}), '^www\\.', '') = ${right}`;
+}
+
+function dedupeIconCandidates<T extends { url: string }>(candidates: T[]) {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = candidate.url.trim();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }

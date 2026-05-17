@@ -11,6 +11,7 @@ import type {
 import {
   MESSAGE_TYPE,
   type PrivateVaultStateResponse,
+  type RefreshAllBookmarkIconsRequest,
   type TaskUpdatedEvent,
 } from "../../src/lib/messages";
 import { getStoredAuthToken, getStoredAuthUser } from "../../src/lib/auth-storage";
@@ -28,6 +29,7 @@ import {
 
 type AsyncState = "idle" | "capturing" | "error";
 type SettingsState = "idle" | "saving" | "saved" | "error";
+type IconRefreshState = "idle" | "refreshing" | "saved" | "error";
 type ConnectionState = "idle" | "testing" | "ok" | "error";
 type AuthState = "idle" | "submitting" | "ok" | "error";
 type AuthMode = "login" | "register";
@@ -159,6 +161,8 @@ export function App() {
   const [debugMode, setDebugMode] = useState(false);
   const [settingsState, setSettingsState] = useState<SettingsState>("idle");
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [iconRefreshState, setIconRefreshState] = useState<IconRefreshState>("idle");
+  const [iconRefreshMessage, setIconRefreshMessage] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -580,6 +584,29 @@ export function App() {
       setSettingsMessage(
         saveError instanceof Error ? saveError.message : "重置 API 地址失败。",
       );
+    }
+  }
+
+  async function refreshAllIcons() {
+    setIconRefreshState("refreshing");
+    setIconRefreshMessage(null);
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: MESSAGE_TYPE.RefreshAllBookmarkIcons,
+      } satisfies RefreshAllBookmarkIconsRequest) as {
+        ok: boolean;
+        refreshed?: number;
+        skipped?: number;
+        error?: string;
+      };
+      if (!response?.ok) {
+        throw new Error(response?.error ?? "刷新网站图标失败。");
+      }
+      setIconRefreshState("saved");
+      setIconRefreshMessage(`已刷新 ${response.refreshed ?? 0} 个网站图标，跳过 ${response.skipped ?? 0} 个。`);
+    } catch (refreshError) {
+      setIconRefreshState("error");
+      setIconRefreshMessage(refreshError instanceof Error ? refreshError.message : "刷新网站图标失败。");
     }
   }
 
@@ -1084,8 +1111,21 @@ export function App() {
           <button className="ghost-btn" onClick={resetApiBaseUrl} type="button">
             恢复默认
           </button>
+          <button
+            className="ghost-btn"
+            disabled={iconRefreshState === "refreshing"}
+            onClick={refreshAllIcons}
+            type="button"
+          >
+            {iconRefreshState === "refreshing" ? "刷新中..." : "重刷全部图标"}
+          </button>
         </div>
       </section>
+      {iconRefreshMessage && (
+        <section className={`settings-banner settings-${iconRefreshState === "error" ? "error" : "saved"}`}>
+          {iconRefreshMessage}
+        </section>
+      )}
       {settingsMessage && (
         <section className={`settings-banner settings-${settingsState}`}>{settingsMessage}</section>
       )}

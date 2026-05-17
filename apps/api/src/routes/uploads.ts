@@ -24,6 +24,26 @@ export async function registerUploadRoutes(
   uploadService: UploadService,
 ) {
   app.get<{ Querystring: { key: string } }>(
+    "/public/objects",
+    async (request, reply) => {
+      const query = objectQuerySchema.parse(request.query);
+      if (!isPublicAssetObjectKey(query.key)) {
+        return reply.status(404).send({
+          error: "ObjectNotFound",
+          message: "Object not found.",
+        });
+      }
+      const result = await uploadService.getPublicObject(query.key);
+      if (result.publicUrl) {
+        return reply.redirect(result.publicUrl, 302);
+      }
+      reply.header("content-type", result.contentType);
+      reply.header("cache-control", cacheControlForObjectKey(query.key));
+      return reply.send(result.body);
+    },
+  );
+
+  app.get<{ Querystring: { key: string } }>(
     "/objects",
     async (request, reply) => {
       const user = await authService.requireUser(request);
@@ -115,12 +135,12 @@ function isPrivateObjectKey(objectKey: string) {
   return objectKey.startsWith("private-captures/");
 }
 
+function isPublicAssetObjectKey(objectKey: string) {
+  return !isPrivateObjectKey(objectKey) && /\.(avif|gif|jpe?g|png|webp|mp4|webm|mov)$/i.test(objectKey);
+}
+
 function cacheControlForObjectKey(objectKey: string) {
   return isPublicAssetObjectKey(objectKey)
     ? "public, max-age=31536000, immutable"
     : "private, max-age=0, no-store";
-}
-
-function isPublicAssetObjectKey(objectKey: string) {
-  return !isPrivateObjectKey(objectKey) && /\.(avif|gif|jpe?g|png|webp|mp4|webm|mov)$/i.test(objectKey);
 }

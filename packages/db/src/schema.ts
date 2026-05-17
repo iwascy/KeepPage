@@ -1,4 +1,5 @@
 import {
+  bookmarkIconSourceTypeValues,
   captureProfileValues,
   importDedupeResultValues,
   importItemStatusValues,
@@ -30,6 +31,7 @@ export const importModeEnum = pgEnum("import_mode", importModeValues);
 export const importTaskStatusEnum = pgEnum("import_task_status", importTaskStatusValues);
 export const importItemStatusEnum = pgEnum("import_item_status", importItemStatusValues);
 export const importDedupeResultEnum = pgEnum("import_dedupe_result", importDedupeResultValues);
+export const bookmarkIconSourceTypeEnum = pgEnum("bookmark_icon_source_type", bookmarkIconSourceTypeValues);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -127,6 +129,27 @@ export const bookmarks = pgTable(
     bookmarkUserUpdatedIdx: index("bookmarks_user_updated_idx").on(table.userId, table.updatedAt),
     bookmarkUserFolderIdx: index("bookmarks_user_folder_idx").on(table.userId, table.folderId),
     bookmarkLatestVersionIdx: index("bookmarks_latest_version_idx").on(table.latestVersionId),
+  }),
+);
+
+export const bookmarkIcons = pgTable(
+  "bookmark_icons",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    hostname: varchar("hostname", { length: 255 }).notNull(),
+    iconUrl: text("icon_url").notNull(),
+    sourceUrl: text("source_url"),
+    sourceType: bookmarkIconSourceTypeEnum("source_type").notNull().default("unknown"),
+    width: integer("width"),
+    height: integer("height"),
+    format: varchar("format", { length: 40 }),
+    refreshedAt: timestamp("refreshed_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    bookmarkIconsHostnameIdx: uniqueIndex("bookmark_icons_hostname_idx").on(table.hostname),
+    bookmarkIconsRefreshedIdx: index("bookmark_icons_refreshed_idx").on(table.refreshedAt),
   }),
 );
 

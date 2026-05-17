@@ -8,6 +8,7 @@ import { ApiTokenService } from "./services/api-tokens/api-token-service";
 import { AuthService } from "./services/auth/auth-service";
 import { PrivateModeService } from "./services/auth/private-mode-service";
 import { BookmarkService } from "./services/bookmarks/bookmark-service";
+import { IconRefreshService } from "./services/icons/icon-refresh-service";
 import { ImportService } from "./services/imports/import-service";
 import { UploadService } from "./services/uploads/upload-service";
 import { createObjectStorage } from "./storage/object-storage";
@@ -21,6 +22,9 @@ export function buildServer(config: ApiConfig) {
     },
   });
   app.addContentTypeParser(/^text\/html(?:;.*)?$/i, { parseAs: "buffer" }, (_request, body, done) => {
+    done(null, body);
+  });
+  app.addContentTypeParser(/^(image|video)\/.+$/i, { parseAs: "buffer" }, (_request, body, done) => {
     done(null, body);
   });
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => {
@@ -52,6 +56,9 @@ export function buildServer(config: ApiConfig) {
     config,
     repository,
     objectStorage,
+  });
+  const iconRefreshService = new IconRefreshService({
+    repository,
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -127,6 +134,7 @@ export function buildServer(config: ApiConfig) {
       apiTokenService,
       repository,
       bookmarkService,
+      iconRefreshService,
       importService,
       uploadService,
     );

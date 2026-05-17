@@ -2,6 +2,7 @@ import type {
   ApiToken,
   AuthUser,
   Bookmark,
+  BookmarkIcon,
   BookmarkMetadataUpdateRequest,
   PrivateVaultSummary,
   BookmarkSearchResponse,
@@ -24,6 +25,8 @@ import type {
   BookmarkRepository,
   BookmarkSearchQuery,
   CompleteCaptureResult,
+  BookmarkIconRefreshTarget,
+  BookmarkIconUpsertInput,
   CreateApiTokenInput,
   CreateImportTaskInput,
   ImportBookmarkMatch,
@@ -115,6 +118,22 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
   async completePrivateCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
     return this.core.completePrivateCapture(userId, input);
+  }
+
+  async upsertBookmarkIcon(input: BookmarkIconUpsertInput): Promise<BookmarkIcon> {
+    return this.core.upsertBookmarkIcon(input);
+  }
+
+  async getBookmarkIconByHostname(hostname: string): Promise<BookmarkIcon | null> {
+    return this.core.getBookmarkIconByHostname(hostname);
+  }
+
+  async listBookmarkIconRefreshTargets(userId: string): Promise<BookmarkIconRefreshTarget[]> {
+    return this.core.listBookmarkIconRefreshTargets(userId);
+  }
+
+  async getBookmarkIconRefreshTarget(userId: string, bookmarkId: string): Promise<BookmarkIconRefreshTarget | null> {
+    return this.core.getBookmarkIconRefreshTarget(userId, bookmarkId);
   }
 
   async ingestBookmark(userId: string, input: IngestBookmarkRequest): Promise<IngestBookmarkResult> {

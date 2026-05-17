@@ -8,6 +8,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { BookmarkRepository } from "../repositories";
 import type { AuthService } from "../services/auth/auth-service";
+import type { IconRefreshService } from "../services/icons/icon-refresh-service";
 import { PrivateModeService } from "../services/auth/private-mode-service";
 
 const captureCompleteResponseSchema = z.object({
@@ -23,6 +24,7 @@ export async function registerPrivateCaptureRoutes(
   authService: AuthService,
   privateModeService: PrivateModeService,
   repository: BookmarkRepository,
+  iconRefreshService: IconRefreshService,
 ) {
   app.post("/private/captures/init", async (request, reply) => {
     const user = await authService.requireUser(request, {
@@ -48,6 +50,12 @@ export async function registerPrivateCaptureRoutes(
     privateModeService.requireUnlocked(request, user.id);
     const payload = captureCompleteRequestSchema.parse(request.body);
     const result = await repository.completePrivateCapture(user.id, payload);
+    void iconRefreshService.refreshForCapture({
+      userId: user.id,
+      domain: payload.source.domain,
+      sourceUrl: payload.source.url,
+      candidates: payload.iconCandidates,
+    });
     return reply.send(captureCompleteResponseSchema.parse({
       bookmarkId: result.bookmark.id,
       versionId: result.versionId,

@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { fileURLToPath } from "node:url";
+
+const defaultObjectStorageRoot = fileURLToPath(new URL("../data/object-storage", import.meta.url));
 
 const booleanFlagSchema = z.preprocess((value) => {
   if (typeof value === "boolean") {
@@ -26,7 +29,7 @@ const configSchema = z.object({
   API_PUBLIC_BASE_URL: z.string().optional(),
   STORAGE_DRIVER: z.enum(["memory", "postgres"]).default("memory"),
   OBJECT_STORAGE_DRIVER: z.enum(["localfs", "r2"]).default("localfs"),
-  OBJECT_STORAGE_ROOT: z.string().default("./data/object-storage"),
+  OBJECT_STORAGE_ROOT: z.string().default(defaultObjectStorageRoot),
   R2_ENDPOINT: z.string().optional(),
   R2_BUCKET: z.string().optional(),
   R2_PUBLIC_BUCKET: z.string().optional(),

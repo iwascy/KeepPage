@@ -5,7 +5,8 @@
       "Bash(find /Users/hcy/code/KeepPage/apps/web -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.vue \\\\\\))",
       "Bash(npx tsc:*)",
       "Bash(npm run:*)",
-      "Bash(find /Users/hcy/code/KeepPage/packages -type f \\\\\\(-name *.tsx -o -name *.jsx -o -name *.vue \\\\\\) ! -path */node_modules/* ! -path */dist/*)"
+      "Bash(find /Users/hcy/code/KeepPage/packages -type f \\\\\\(-name *.tsx -o -name *.jsx -o -name *.vue \\\\\\) ! -path */node_modules/* ! -path */dist/*)",
+      "Bash(wc -l /Users/hcy/code/KeepPage/apps/api/src/index.ts /Users/hcy/code/KeepPage/apps/api/src/server.ts /Users/hcy/code/KeepPage/apps/api/src/routes/*.ts)"
     ]
   }
 }

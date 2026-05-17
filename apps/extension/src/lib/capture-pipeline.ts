@@ -199,6 +199,7 @@ async function captureTab(
       ...workingTask.source,
       ...liveResult.sourcePatch,
     };
+    const iconCandidates = liveResult.iconCandidates ?? [];
     await logCapture(saveMode, "debug", tabId, "Merged capture source after live signals.", {
       taskId: task.id,
       sourcePatch: liveResult.sourcePatch,
@@ -285,6 +286,8 @@ async function captureTab(
         screenshotDataUrl: screenshotDataUrl ?? undefined,
         downloadableMedia: archiveResult.ok ? archiveResult.downloadableMedia ?? [] : [],
         meta: {
+          ...(workingTask.artifacts?.meta ?? {}),
+          iconCandidates,
           usedSingleFile: archiveResult.ok && archiveResult.usedSingleFile === true,
         },
       },

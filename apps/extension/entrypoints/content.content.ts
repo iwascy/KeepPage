@@ -1,4 +1,5 @@
 import type {
+  BookmarkIconCandidate,
   CaptureDownloadableMedia,
   CapturePageSignals,
   CaptureProfile,
@@ -180,6 +181,7 @@ export default defineContentScript({
             ok: true,
             sourcePatch,
             liveSignals,
+            iconCandidates: collectIconCandidates(),
           };
           logger.info("Live signals collected.", response.liveSignals);
           sendResponse(response);
@@ -850,6 +852,76 @@ function normalizeCoverImageUrl(rawUrl: string | null | undefined) {
   } catch {
     return undefined;
   }
+}
+
+function collectIconCandidates(): BookmarkIconCandidate[] {
+  const candidates: BookmarkIconCandidate[] = [];
+  document.querySelectorAll<HTMLLinkElement>("link[rel][href]").forEach((element) => {
+    const rel = (element.getAttribute("rel") ?? "").toLowerCase();
+    const href = normalizeIconUrl(element.getAttribute("href"));
+    if (!href) {
+      return;
+    }
+    const type = element.getAttribute("type") ?? undefined;
+    const sizes = element.getAttribute("sizes") ?? undefined;
+    if (rel.includes("apple-touch-icon")) {
+      candidates.push({
+        url: href,
+        source: "apple-touch-icon",
+        sizes,
+        type,
+      });
+      return;
+    }
+    const relParts = rel.split(/\s+/);
+    if (relParts.includes("icon") || rel.includes("shortcut icon")) {
+      candidates.push({
+        url: href,
+        source: "rel-icon",
+        sizes,
+        type,
+      });
+    }
+  });
+
+  const manifestHref = document.querySelector<HTMLLinkElement>('link[rel~="manifest"]')?.href;
+  const manifestUrl = normalizeIconUrl(manifestHref);
+  if (manifestUrl) {
+    candidates.push({
+      url: manifestUrl,
+      source: "manifest",
+      type: "application/manifest+json",
+    });
+  }
+
+  return dedupeIconCandidates(candidates).slice(0, 32);
+}
+
+function normalizeIconUrl(rawUrl: string | null | undefined) {
+  const value = rawUrl?.trim();
+  if (!value) {
+    return undefined;
+  }
+  try {
+    const normalized = new URL(value, location.href);
+    if (normalized.protocol !== "http:" && normalized.protocol !== "https:") {
+      return undefined;
+    }
+    return normalized.href;
+  } catch {
+    return undefined;
+  }
+}
+
+function dedupeIconCandidates(candidates: BookmarkIconCandidate[]) {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    if (seen.has(candidate.url)) {
+      return false;
+    }
+    seen.add(candidate.url);
+    return true;
+  });
 }
 
 function readCanonicalUrl() {
