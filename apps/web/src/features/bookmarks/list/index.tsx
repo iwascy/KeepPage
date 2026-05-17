@@ -294,6 +294,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   const summary = summarizeBookmark(bookmark);
   const hasCoverImage = Boolean(bookmark.coverImageUrl) && !coverImageFailed;
   const folderLabel = bookmark.folder?.name ?? "未归类";
+  const tagCount = bookmark.tags.length;
   const coverTone = homeCoverTone(bookmark.domain);
   const coverInitial = (bookmark.title.trim()[0] ?? bookmark.domain.trim()[0] ?? "K").toUpperCase();
   const coverImageVariants = buildCoverImageVariants(bookmark.coverImageUrl);
@@ -410,6 +411,14 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
           <p>{summary}</p>
           <footer className="home-bookmark-meta">
             <span className="home-bookmark-domain">{bookmark.domain}</span>
+            <span className="home-bookmark-pills" aria-label="归档标签">
+              {bookmark.folder ? (
+                <span className="home-bookmark-pill">已归档</span>
+              ) : null}
+              {tagCount > 0 ? (
+                <span className="home-bookmark-pill">{tagCount} 个标签</span>
+              ) : null}
+            </span>
             <span className="home-bookmark-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
           </footer>
         </div>
