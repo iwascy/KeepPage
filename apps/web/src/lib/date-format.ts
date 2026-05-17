@@ -47,3 +47,37 @@ export function formatRelativeWhen(input: string) {
 
   return formatWhen(input);
 }
+
+const COMPACT_RELATIVE_UNITS = [
+  { ms: 365 * 24 * 60 * 60 * 1000, label: "年" },
+  { ms: 30 * 24 * 60 * 60 * 1000, label: "个月" },
+  { ms: 7 * 24 * 60 * 60 * 1000, label: "周" },
+  { ms: 24 * 60 * 60 * 1000, label: "天" },
+  { ms: 60 * 60 * 1000, label: "小时" },
+  { ms: 60 * 1000, label: "分钟" },
+] as const;
+
+export function formatCompactRelativeWhen(input: string) {
+  const target = new Date(input);
+  const diffMs = target.getTime() - Date.now();
+  if (Number.isNaN(diffMs)) {
+    return formatWhen(input);
+  }
+
+  if (diffMs > 0) {
+    return formatWhen(input);
+  }
+
+  const absMs = Math.abs(diffMs);
+  if (absMs < 60_000) {
+    return "刚刚";
+  }
+
+  for (const { ms, label } of COMPACT_RELATIVE_UNITS) {
+    if (absMs >= ms) {
+      return `${Math.floor(absMs / ms)} ${label}前`;
+    }
+  }
+
+  return "刚刚";
+}

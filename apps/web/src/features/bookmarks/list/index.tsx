@@ -1,6 +1,5 @@
 import {
   memo,
-  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   useEffect,
   useMemo,
@@ -14,8 +13,7 @@ import type {
   Tag,
 } from "@keeppage/domain";
 import {
-  formatRelativeWhen,
-  formatWhen,
+  formatCompactRelativeWhen,
 } from "../../../lib/date-format";
 import {
   buildCoverImageSrcSet,
@@ -32,26 +30,8 @@ type InlineFeedback = {
   message: string;
 };
 
-type VirtualGridMetrics = {
-  columns: number;
-  totalSize: number;
-  virtualRows: Array<{
-    index: number;
-    start: number;
-    height: number;
-    items: Array<{
-      bookmark: Bookmark;
-      itemIndex: number;
-    }>;
-  }>;
-};
-
-const DESKTOP_GRID_MIN_COLUMN_WIDTH = 260;
-const DESKTOP_GRID_GAP = 16;
-const DESKTOP_GRID_ROW_HEIGHT = 150;
-const MOBILE_GRID_GAP = 12;
-const MOBILE_GRID_ROW_HEIGHT = 132;
-const VIRTUAL_GRID_OVERSCAN_ROWS = 4;
+const PAGE_SIZE_OPTIONS = [12, 24, 48] as const;
+const DEFAULT_PAGE_SIZE = 24;
 
 function homeCoverTone(domain: string) {
   const tones = ["peach", "mist", "sand", "sky"] as const;
@@ -62,160 +42,15 @@ function homeCoverTone(domain: string) {
   return tones[hash % tones.length];
 }
 
-function useVirtualBookmarkGrid(items: Bookmark[]) {
-  const gridRef = useRef<HTMLElement | null>(null);
-  const [viewport, setViewport] = useState(() => ({
-    height: typeof window === "undefined" ? 800 : window.innerHeight,
-    scrollY: typeof window === "undefined" ? 0 : window.scrollY,
-  }));
-  const [gridRect, setGridRect] = useState(() => ({
-    top: 0,
-    width: getInitialGridWidth(),
-  }));
-
-  useEffect(() => {
-    let frame = 0;
-
-    function measure() {
-      frame = 0;
-      setViewport({
-        height: window.innerHeight,
-        scrollY: window.scrollY,
-      });
-      const element = gridRef.current;
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        setGridRect({
-          top: rect.top + window.scrollY,
-          width: rect.width,
-        });
-      }
-    }
-
-    function scheduleMeasure() {
-      if (frame) {
-        return;
-      }
-      frame = window.requestAnimationFrame(measure);
-    }
-
-    measure();
-    window.addEventListener("scroll", scheduleMeasure, { passive: true });
-    window.addEventListener("resize", scheduleMeasure);
-
-    const resizeObserver = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(scheduleMeasure);
-    if (gridRef.current && resizeObserver) {
-      resizeObserver.observe(gridRef.current);
-    }
-
-    return () => {
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
-      window.removeEventListener("scroll", scheduleMeasure);
-      window.removeEventListener("resize", scheduleMeasure);
-      resizeObserver?.disconnect();
-    };
-  }, []);
-
-  const metrics = useMemo<VirtualGridMetrics>(() => {
-    const columns = calculateGridColumns(gridRect.width);
-    const rowCount = Math.ceil(items.length / columns);
-    const totalSize = calculateVirtualGridTotalSize(rowCount, columns);
-    const viewportStart = Math.max(0, viewport.scrollY - gridRect.top);
-    const viewportEnd = viewportStart + viewport.height;
-    const startIndex = Math.max(0, findVirtualRowIndex(viewportStart, rowCount, columns) - VIRTUAL_GRID_OVERSCAN_ROWS);
-    const endIndex = Math.min(
-      rowCount - 1,
-      findVirtualRowIndex(viewportEnd, rowCount, columns) + VIRTUAL_GRID_OVERSCAN_ROWS,
-    );
-    const virtualRows = [];
-
-    for (let rowIndex = startIndex; rowIndex <= endIndex; rowIndex += 1) {
-      const rowItems = items
-        .slice(rowIndex * columns, rowIndex * columns + columns)
-        .map((bookmark, offset) => ({
-          bookmark,
-          itemIndex: rowIndex * columns + offset,
-        }));
-      virtualRows.push({
-        index: rowIndex,
-        start: calculateVirtualRowStart(rowIndex, columns),
-        height: calculateVirtualRowHeight(columns),
-        items: rowItems,
-      });
-    }
-
-    return {
-      columns,
-      totalSize,
-      virtualRows,
-    };
-  }, [gridRect.top, gridRect.width, items, viewport.height, viewport.scrollY]);
-
-  return {
-    gridRef,
-    metrics,
-  };
-}
-
-function getInitialGridWidth() {
-  if (typeof window === "undefined") {
-    return DESKTOP_GRID_MIN_COLUMN_WIDTH;
-  }
-
-  if (window.innerWidth < 720) {
-    return window.innerWidth;
-  }
-
-  return Math.max(DESKTOP_GRID_MIN_COLUMN_WIDTH, window.innerWidth - 320);
-}
-
-function calculateGridColumns(width: number) {
-  if (width < 720) {
-    return 1;
-  }
-  return Math.max(1, Math.floor((width + DESKTOP_GRID_GAP) / (DESKTOP_GRID_MIN_COLUMN_WIDTH + DESKTOP_GRID_GAP)));
-}
-
-function rowMetrics(columns: number) {
-  if (columns > 1) {
-    return { rowHeight: DESKTOP_GRID_ROW_HEIGHT, gap: DESKTOP_GRID_GAP };
-  }
-  return { rowHeight: MOBILE_GRID_ROW_HEIGHT, gap: MOBILE_GRID_GAP };
-}
-
-function calculateVirtualGridTotalSize(rowCount: number, columns: number) {
-  if (rowCount === 0) {
-    return 0;
-  }
-  const { rowHeight, gap } = rowMetrics(columns);
-  return rowCount * rowHeight + (rowCount - 1) * gap;
-}
-
-function calculateVirtualRowStart(rowIndex: number, columns: number) {
-  const { rowHeight, gap } = rowMetrics(columns);
-  return rowIndex * (rowHeight + gap);
-}
-
-function calculateVirtualRowHeight(columns: number) {
-  return rowMetrics(columns).rowHeight;
-}
-
-function findVirtualRowIndex(offset: number, rowCount: number, columns: number) {
-  if (rowCount === 0) {
-    return 0;
-  }
-  const { rowHeight, gap } = rowMetrics(columns);
-  return Math.min(rowCount - 1, Math.floor(offset / (rowHeight + gap)));
+function formatDomain(domain: string) {
+  return domain.replace(/^www\./i, "");
 }
 
 const HomeBookmarkCard = memo(function HomeBookmarkCard({
   bookmark,
   onOpen,
   onOpenOriginal,
+  onToggleFavorite,
   onContextMenu,
   onOpenContextMenuAt,
   isContextOpen,
@@ -227,6 +62,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
   onOpenOriginal: (bookmark: Bookmark) => void;
+  onToggleFavorite: (bookmark: Bookmark) => void;
   onContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   onOpenContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
   isContextOpen: boolean;
@@ -253,6 +89,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
 
   const cardClasses = [
     "home-bookmark-card",
+    hasCoverImage ? "is-cover" : "is-plain",
     isContextOpen ? "is-context-open" : "",
     selectionMode ? "is-selection-mode" : "",
     isSelected ? "is-selected" : "",
@@ -279,45 +116,49 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
         onClick={() => selectionMode ? onToggleSelect(bookmark.id) : onOpen(bookmark.id)}
         aria-label={selectionMode ? `选择书签：${bookmark.title}` : `打开归档：${bookmark.title}`}
       />
-      <div
-        className={`home-bookmark-thumb is-${coverTone}${hasCoverImage ? " has-image" : ""}`}
-        aria-hidden="true"
-      >
-        {hasCoverImage ? (
+      {hasCoverImage ? (
+        <div className="home-bookmark-cover" aria-hidden="true">
           <img
-            className="home-bookmark-thumb-media"
+            className="home-bookmark-cover-media"
             src={coverImageSrc}
             srcSet={buildCoverImageSrcSet(coverImageVariants)}
-            sizes="72px"
+            sizes="(max-width: 1080px) 100vw, 264px"
             alt=""
             loading={priority ? "eager" : "lazy"}
             decoding="async"
             fetchPriority={priority ? "high" : "low"}
             onError={() => setCoverImageFailed(true)}
           />
-        ) : siteIconSrc ? (
-          <img
-            className="home-bookmark-thumb-icon"
-            src={siteIconSrc}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            onError={handleSiteIconError}
-          />
-        ) : (
-          <span className="home-bookmark-thumb-initial">{coverInitial}</span>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div
+          className={`home-bookmark-thumb is-${coverTone}`}
+          aria-hidden="true"
+        >
+          {siteIconSrc ? (
+            <img
+              className="home-bookmark-thumb-icon"
+              src={siteIconSrc}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={handleSiteIconError}
+            />
+          ) : (
+            <span className="home-bookmark-thumb-initial">{coverInitial}</span>
+          )}
+        </div>
+      )}
       <div className="home-bookmark-body">
         <div className="home-bookmark-top">
-          <span className="home-bookmark-domain">{bookmark.domain}</span>
-          <span className="home-bookmark-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+          <span className="home-bookmark-domain">{formatDomain(bookmark.domain)}</span>
+          <span className="home-bookmark-time">{formatCompactRelativeWhen(bookmark.updatedAt)}</span>
         </div>
         <h2 className="home-bookmark-title">{bookmark.title}</h2>
         <footer className="home-bookmark-actions">
           {!selectionMode ? (
             <button
-              className="home-bookmark-open"
+              className="home-bookmark-iconbtn"
               type="button"
               aria-label={`新标签打开原网页：${bookmark.title}`}
               onClick={(event) => {
@@ -328,7 +169,9 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
             >
               <Icon name="open_in_new" />
             </button>
-          ) : null}
+          ) : (
+            <span className="home-bookmark-iconbtn-spacer" />
+          )}
           <span className="home-bookmark-pills" aria-label="归档标签">
             {bookmark.folder ? (
               <span className="home-bookmark-pill">已归档</span>
@@ -337,24 +180,35 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
               <span className="home-bookmark-pill">{tagCount} 个标签</span>
             ) : null}
           </span>
-          <span className="home-bookmark-actions-spacer" />
-          {bookmark.isFavorite ? (
-            <Icon className="home-bookmark-favorite" name="star" />
-          ) : null}
           {!selectionMode ? (
-            <button
-              className="home-bookmark-menu-button"
-              type="button"
-              aria-label={`打开归档菜单：${bookmark.title}`}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const rect = event.currentTarget.getBoundingClientRect();
-                onOpenContextMenuAt(bookmark, rect.right - 8, rect.bottom + 8);
-              }}
-            >
-              <Icon name="more_vert" />
-            </button>
+            <>
+              <button
+                className={`home-bookmark-iconbtn home-bookmark-star${bookmark.isFavorite ? " is-active" : ""}`}
+                type="button"
+                aria-pressed={bookmark.isFavorite}
+                aria-label={bookmark.isFavorite ? `取消收藏：${bookmark.title}` : `收藏：${bookmark.title}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onToggleFavorite(bookmark);
+                }}
+              >
+                <Icon name="star" />
+              </button>
+              <button
+                className="home-bookmark-iconbtn"
+                type="button"
+                aria-label={`打开归档菜单：${bookmark.title}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  onOpenContextMenuAt(bookmark, rect.right - 8, rect.bottom + 8);
+                }}
+              >
+                <Icon name="more_horiz" />
+              </button>
+            </>
           ) : null}
         </footer>
       </div>
@@ -364,7 +218,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
 
 function HomeBookmarkSkeleton() {
   return (
-    <article className="home-bookmark-card home-bookmark-card-skeleton">
+    <article className="home-bookmark-card is-plain home-bookmark-card-skeleton">
       <div className="home-skeleton-thumb" />
       <div className="home-bookmark-body">
         <span className="home-skeleton-line is-meta" />
@@ -375,8 +229,104 @@ function HomeBookmarkSkeleton() {
   );
 }
 
+function buildPageList(current: number, total: number): Array<number | "ellipsis"> {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, index) => index + 1);
+  }
+
+  const pages = new Set<number>([1, total, current, current - 1, current + 1]);
+  const ordered = [...pages]
+    .filter((page) => page >= 1 && page <= total)
+    .sort((a, b) => a - b);
+
+  const result: Array<number | "ellipsis"> = [];
+  let previous = 0;
+  for (const page of ordered) {
+    if (previous && page - previous > 1) {
+      result.push("ellipsis");
+    }
+    result.push(page);
+    previous = page;
+  }
+  return result;
+}
+
+function BookmarkPager({
+  currentPage,
+  totalPages,
+  pageSize,
+  onChangePage,
+  onChangePageSize,
+}: {
+  currentPage: number;
+  totalPages: number;
+  pageSize: number;
+  onChangePage: (page: number) => void;
+  onChangePageSize: (size: number) => void;
+}) {
+  const pages = buildPageList(currentPage, totalPages);
+
+  return (
+    <nav className="home-bookmark-pager" aria-label="分页导航">
+      <div className="home-bookmark-pager-pages">
+        <button
+          type="button"
+          className="home-bookmark-pager-arrow"
+          disabled={currentPage <= 1}
+          aria-label="上一页"
+          onClick={() => onChangePage(currentPage - 1)}
+        >
+          <Icon className="home-bookmark-pager-prev-icon" name="keyboard_arrow_right" />
+        </button>
+        {pages.map((page, index) =>
+          page === "ellipsis" ? (
+            <span key={`ellipsis-${index}`} className="home-bookmark-pager-ellipsis">
+              …
+            </span>
+          ) : (
+            <button
+              key={page}
+              type="button"
+              className={`home-bookmark-pager-page${page === currentPage ? " is-active" : ""}`}
+              aria-current={page === currentPage ? "page" : undefined}
+              onClick={() => onChangePage(page)}
+            >
+              {page}
+            </button>
+          )
+        )}
+        <button
+          type="button"
+          className="home-bookmark-pager-arrow"
+          disabled={currentPage >= totalPages}
+          aria-label="下一页"
+          onClick={() => onChangePage(currentPage + 1)}
+        >
+          <Icon name="keyboard_arrow_right" />
+        </button>
+      </div>
+      <label className="home-bookmark-pager-size">
+        每页
+        <select
+          value={pageSize}
+          onChange={(event) => onChangePageSize(Number(event.target.value))}
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+        项
+      </label>
+    </nav>
+  );
+}
+
 function HomePage({
   items,
+  totalItems,
+  listSignature,
   bookmarkView,
   loadState,
   listError,
@@ -387,6 +337,7 @@ function HomePage({
   managerFeedback,
   onOpenBookmark,
   onOpenOriginal,
+  onToggleFavorite,
   onLoadMore,
   contextMenuBookmarkId,
   onBookmarkContextMenu,
@@ -396,6 +347,8 @@ function HomePage({
   onToggleSelect,
 }: {
   items: Bookmark[];
+  totalItems: number;
+  listSignature: string;
   bookmarkView: BookmarkListView;
   loadState: LoadState;
   listError: string | null;
@@ -406,6 +359,7 @@ function HomePage({
   managerFeedback: InlineFeedback | null;
   onOpenBookmark: (bookmarkId: string) => void;
   onOpenOriginal: (bookmark: Bookmark) => void;
+  onToggleFavorite: (bookmark: Bookmark) => void;
   onLoadMore: () => void;
   contextMenuBookmarkId: string | null;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
@@ -414,13 +368,40 @@ function HomePage({
   selectedIds: Set<string>;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [currentPage, setCurrentPage] = useState(1);
+
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
-  const showEmpty = !showLoading && !showError && items.length === 0;
-  const visibleItems = items;
-  const { gridRef, metrics } = useVirtualBookmarkGrid(visibleItems);
-  const highPriorityImageCount = 4;
+  const showEmpty = !showLoading && !showError && items.length === 0 && totalItems === 0;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [listSignature, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(Math.max(totalItems, items.length) / pageSize));
+  const page = Math.min(currentPage, totalPages);
+
+  useEffect(() => {
+    if (page !== currentPage) {
+      setCurrentPage(page);
+    }
+  }, [page, currentPage]);
+
+  const neededCount = page * pageSize;
+
+  useEffect(() => {
+    if (items.length < neededCount && hasMoreItems && !loadingMore && loadState === "ready") {
+      onLoadMore();
+    }
+  }, [items.length, neededCount, hasMoreItems, loadingMore, loadState, onLoadMore]);
+
+  const pageItems = useMemo(
+    () => items.slice((page - 1) * pageSize, page * pageSize),
+    [items, page, pageSize],
+  );
+  const awaitingPage = pageItems.length === 0 && items.length < neededCount && (hasMoreItems || loadingMore);
+
   const emptyTitle = hasActiveFilters
     ? "当前筛选下没有匹配的归档"
     : bookmarkView === "favorites"
@@ -449,41 +430,7 @@ function HomePage({
       : bookmarkView === "recent"
         ? "最近更新"
         : "归档总览";
-  const mobileHeroCount = `${items.length} 条${bookmarkView === "recent" ? "更新" : "归档"}`;
-
-  useEffect(() => {
-    if (
-      !hasMoreItems
-      || loadingMore
-      || showLoading
-      || showError
-      || showEmpty
-      || typeof IntersectionObserver === "undefined"
-    ) {
-      return;
-    }
-
-    const target = loadMoreRef.current;
-    if (!target) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          onLoadMore();
-        }
-      },
-      {
-        rootMargin: "280px 0px",
-      },
-    );
-
-    observer.observe(target);
-    return () => {
-      observer.disconnect();
-    };
-  }, [hasMoreItems, loadingMore, onLoadMore, showEmpty, showError, showLoading]);
+  const mobileHeroCount = `${Math.max(totalItems, items.length)} 条${bookmarkView === "recent" ? "更新" : "归档"}`;
 
   return (
     <>
@@ -509,7 +456,7 @@ function HomePage({
 
       {showLoading && items.length === 0 ? (
         <section className="home-grid">
-          {Array.from({ length: 6 }).map((_, index) => (
+          {Array.from({ length: 8 }).map((_, index) => (
             <HomeBookmarkSkeleton key={index} />
           ))}
         </section>
@@ -525,50 +472,42 @@ function HomePage({
         </section>
       ) : (
         <>
-          <section
-            ref={gridRef}
-            className="home-grid home-grid-virtual"
-            style={{
-              "--home-grid-total-size": `${metrics.totalSize}px`,
-            } as CSSProperties}
-          >
-            {metrics.virtualRows.map((row) => (
-              <div
-                key={row.index}
-                className="home-grid-virtual-row"
-                style={{
-                  "--home-grid-row-start": `${row.start}px`,
-                  "--home-grid-row-height": `${row.height}px`,
-                  "--home-grid-columns": metrics.columns,
-                } as CSSProperties}
-              >
-                {row.items.map(({ bookmark, itemIndex }) => (
-                  <HomeBookmarkCard
-                    key={bookmark.id}
-                    bookmark={bookmark}
-                    onOpen={onOpenBookmark}
-                    onOpenOriginal={onOpenOriginal}
-                    onContextMenu={onBookmarkContextMenu}
-                    onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
-                    isContextOpen={contextMenuBookmarkId === bookmark.id}
-                    selectionMode={selectionMode}
-                    isSelected={selectedIds.has(bookmark.id)}
-                    onToggleSelect={onToggleSelect}
-                    priority={itemIndex < highPriorityImageCount}
-                  />
-                ))}
-              </div>
-            ))}
-          </section>
-          {hasMoreItems ? (
-            <div className="home-load-more-anchor" ref={loadMoreRef} aria-hidden="true" />
-          ) : null}
-          {loadingMore ? (
-            <p className="home-loading-note home-loading-note-inline">正在加载更多归档...</p>
-          ) : null}
+          {awaitingPage ? (
+            <section className="home-grid">
+              {Array.from({ length: Math.min(pageSize, 8) }).map((_, index) => (
+                <HomeBookmarkSkeleton key={index} />
+              ))}
+            </section>
+          ) : (
+            <section className="home-grid">
+              {pageItems.map((bookmark, offset) => (
+                <HomeBookmarkCard
+                  key={bookmark.id}
+                  bookmark={bookmark}
+                  onOpen={onOpenBookmark}
+                  onOpenOriginal={onOpenOriginal}
+                  onToggleFavorite={onToggleFavorite}
+                  onContextMenu={onBookmarkContextMenu}
+                  onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
+                  isContextOpen={contextMenuBookmarkId === bookmark.id}
+                  selectionMode={selectionMode}
+                  isSelected={selectedIds.has(bookmark.id)}
+                  onToggleSelect={onToggleSelect}
+                  priority={offset < 8}
+                />
+              ))}
+            </section>
+          )}
           {loadMoreError ? (
             <p className="home-feedback is-error home-loading-note-inline">{loadMoreError}</p>
           ) : null}
+          <BookmarkPager
+            currentPage={page}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            onChangePage={setCurrentPage}
+            onChangePageSize={setPageSize}
+          />
         </>
       )}
 
@@ -775,6 +714,8 @@ export function BookmarksListRoute({
   selectedIds,
   selectionBusy,
   items,
+  totalItems,
+  listSignature,
   bookmarkView,
   loadState,
   listError,
@@ -798,6 +739,7 @@ export function BookmarksListRoute({
   onExitSelection,
   onOpenBookmark,
   onOpenOriginal,
+  onToggleFavorite,
   onLoadMore,
   onBookmarkContextMenu,
   onOpenBookmarkContextMenuAt,
@@ -807,6 +749,8 @@ export function BookmarksListRoute({
   selectedIds: Set<string>;
   selectionBusy: boolean;
   items: Bookmark[];
+  totalItems: number;
+  listSignature: string;
   bookmarkView: BookmarkListView;
   loadState: LoadState;
   listError: string | null;
@@ -830,6 +774,7 @@ export function BookmarksListRoute({
   onExitSelection: () => void;
   onOpenBookmark: (bookmarkId: string) => void;
   onOpenOriginal: (bookmark: Bookmark) => void;
+  onToggleFavorite: (bookmark: Bookmark) => void;
   onLoadMore: () => void;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   onOpenBookmarkContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
@@ -858,6 +803,8 @@ export function BookmarksListRoute({
       ) : null}
       <HomePage
         items={items}
+        totalItems={totalItems}
+        listSignature={listSignature}
         bookmarkView={bookmarkView}
         loadState={loadState}
         listError={listError}
@@ -868,6 +815,7 @@ export function BookmarksListRoute({
         managerFeedback={managerFeedback}
         onOpenBookmark={onOpenBookmark}
         onOpenOriginal={onOpenOriginal}
+        onToggleFavorite={onToggleFavorite}
         onLoadMore={onLoadMore}
         contextMenuBookmarkId={contextMenuBookmarkId}
         onBookmarkContextMenu={onBookmarkContextMenu}

@@ -3618,6 +3618,14 @@ export function App({
             selectedIds={selectedIds}
             selectionBusy={selectionBusy}
             items={items}
+            totalItems={listTotal}
+            listSignature={[
+              bookmarkView,
+              deferredSearch,
+              qualityFilter,
+              selectedFolderId,
+              selectedTagId,
+            ].join("|")}
             bookmarkView={bookmarkView}
             loadState={loadState}
             listError={listError}
@@ -3649,6 +3657,7 @@ export function App({
             onOpenOriginal={(bookmark) => {
               window.open(bookmark.sourceUrl, "_blank", "noopener,noreferrer");
             }}
+            onToggleFavorite={(bookmark) => void handleToggleFavorite(bookmark, !bookmark.isFavorite)}
             onLoadMore={() => void loadMoreBookmarks()}
             onBookmarkContextMenu={openBookmarkContextMenu}
             onOpenBookmarkContextMenuAt={openBookmarkContextMenuAt}
