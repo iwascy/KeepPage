@@ -46,36 +46,12 @@ type VirtualGridMetrics = {
   }>;
 };
 
-const DESKTOP_GRID_MIN_COLUMN_WIDTH = 280;
-const DESKTOP_GRID_GAP = 23.2;
-const DESKTOP_GRID_ROW_HEIGHT = 430;
-const MOBILE_GRID_GAP = 14.4;
-const MOBILE_FEATURED_ROW_HEIGHT = 398;
-const MOBILE_COMPACT_ROW_HEIGHT = 136;
+const DESKTOP_GRID_MIN_COLUMN_WIDTH = 260;
+const DESKTOP_GRID_GAP = 16;
+const DESKTOP_GRID_ROW_HEIGHT = 150;
+const MOBILE_GRID_GAP = 12;
+const MOBILE_GRID_ROW_HEIGHT = 132;
 const VIRTUAL_GRID_OVERSCAN_ROWS = 4;
-
-function summarizeBookmark(bookmark: Bookmark) {
-  const note = bookmark.note.trim();
-  if (note) {
-    return note;
-  }
-
-  const firstReason = bookmark.latestQuality?.reasons.find((reason) => reason.code !== "screenshot-missing")?.message?.trim();
-  if (firstReason) {
-    return firstReason;
-  }
-
-  if (bookmark.folder?.path) {
-    return `已归档到 ${bookmark.folder.path}，当前共保留 ${bookmark.versionCount} 个版本，可随时打开查看。`;
-  }
-
-  if (bookmark.tags.length > 0) {
-    const tagNames = bookmark.tags.slice(0, 3).map((tag) => `#${tag.name}`).join("、");
-    return `标签：${tagNames}。当前共保留 ${bookmark.versionCount} 个版本。`;
-  }
-
-  return `已保存来自 ${bookmark.domain} 的网页归档，当前共保留 ${bookmark.versionCount} 个版本。`;
-}
 
 function homeCoverTone(domain: string) {
   const tones = ["peach", "mist", "sand", "sky"] as const;
@@ -86,10 +62,7 @@ function homeCoverTone(domain: string) {
   return tones[hash % tones.length];
 }
 
-function useVirtualBookmarkGrid(
-  items: Bookmark[],
-  selectionMode: boolean,
-) {
+function useVirtualBookmarkGrid(items: Bookmark[]) {
   const gridRef = useRef<HTMLElement | null>(null);
   const [viewport, setViewport] = useState(() => ({
     height: typeof window === "undefined" ? 800 : window.innerHeight,
@@ -150,13 +123,13 @@ function useVirtualBookmarkGrid(
   const metrics = useMemo<VirtualGridMetrics>(() => {
     const columns = calculateGridColumns(gridRect.width);
     const rowCount = Math.ceil(items.length / columns);
-    const totalSize = calculateVirtualGridTotalSize(rowCount, columns, selectionMode);
+    const totalSize = calculateVirtualGridTotalSize(rowCount, columns);
     const viewportStart = Math.max(0, viewport.scrollY - gridRect.top);
     const viewportEnd = viewportStart + viewport.height;
-    const startIndex = Math.max(0, findVirtualRowIndex(viewportStart, rowCount, columns, selectionMode) - VIRTUAL_GRID_OVERSCAN_ROWS);
+    const startIndex = Math.max(0, findVirtualRowIndex(viewportStart, rowCount, columns) - VIRTUAL_GRID_OVERSCAN_ROWS);
     const endIndex = Math.min(
       rowCount - 1,
-      findVirtualRowIndex(viewportEnd, rowCount, columns, selectionMode) + VIRTUAL_GRID_OVERSCAN_ROWS,
+      findVirtualRowIndex(viewportEnd, rowCount, columns) + VIRTUAL_GRID_OVERSCAN_ROWS,
     );
     const virtualRows = [];
 
@@ -169,8 +142,8 @@ function useVirtualBookmarkGrid(
         }));
       virtualRows.push({
         index: rowIndex,
-        start: calculateVirtualRowStart(rowIndex, columns, selectionMode),
-        height: calculateVirtualRowHeight(rowIndex, columns, selectionMode),
+        start: calculateVirtualRowStart(rowIndex, columns),
+        height: calculateVirtualRowHeight(columns),
         items: rowItems,
       });
     }
@@ -180,7 +153,7 @@ function useVirtualBookmarkGrid(
       totalSize,
       virtualRows,
     };
-  }, [gridRect.top, gridRect.width, items, selectionMode, viewport.height, viewport.scrollY]);
+  }, [gridRect.top, gridRect.width, items, viewport.height, viewport.scrollY]);
 
   return {
     gridRef,
@@ -207,93 +180,69 @@ function calculateGridColumns(width: number) {
   return Math.max(1, Math.floor((width + DESKTOP_GRID_GAP) / (DESKTOP_GRID_MIN_COLUMN_WIDTH + DESKTOP_GRID_GAP)));
 }
 
-function calculateVirtualGridTotalSize(rowCount: number, columns: number, selectionMode: boolean) {
+function rowMetrics(columns: number) {
+  if (columns > 1) {
+    return { rowHeight: DESKTOP_GRID_ROW_HEIGHT, gap: DESKTOP_GRID_GAP };
+  }
+  return { rowHeight: MOBILE_GRID_ROW_HEIGHT, gap: MOBILE_GRID_GAP };
+}
+
+function calculateVirtualGridTotalSize(rowCount: number, columns: number) {
   if (rowCount === 0) {
     return 0;
   }
-  if (columns > 1) {
-    return rowCount * DESKTOP_GRID_ROW_HEIGHT + (rowCount - 1) * DESKTOP_GRID_GAP;
-  }
-  if (selectionMode) {
-    return rowCount * MOBILE_COMPACT_ROW_HEIGHT + (rowCount - 1) * MOBILE_GRID_GAP;
-  }
-  return MOBILE_FEATURED_ROW_HEIGHT
-    + Math.max(0, rowCount - 1) * MOBILE_COMPACT_ROW_HEIGHT
-    + (rowCount - 1) * MOBILE_GRID_GAP;
+  const { rowHeight, gap } = rowMetrics(columns);
+  return rowCount * rowHeight + (rowCount - 1) * gap;
 }
 
-function calculateVirtualRowStart(rowIndex: number, columns: number, selectionMode: boolean) {
-  if (columns > 1) {
-    return rowIndex * (DESKTOP_GRID_ROW_HEIGHT + DESKTOP_GRID_GAP);
-  }
-  if (selectionMode || rowIndex === 0) {
-    return rowIndex === 0 ? 0 : rowIndex * (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP);
-  }
-  return MOBILE_FEATURED_ROW_HEIGHT + MOBILE_GRID_GAP + (rowIndex - 1) * (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP);
+function calculateVirtualRowStart(rowIndex: number, columns: number) {
+  const { rowHeight, gap } = rowMetrics(columns);
+  return rowIndex * (rowHeight + gap);
 }
 
-function calculateVirtualRowHeight(rowIndex: number, columns: number, selectionMode: boolean) {
-  if (columns > 1) {
-    return DESKTOP_GRID_ROW_HEIGHT;
-  }
-  if (selectionMode || rowIndex > 0) {
-    return MOBILE_COMPACT_ROW_HEIGHT;
-  }
-  return MOBILE_FEATURED_ROW_HEIGHT;
+function calculateVirtualRowHeight(columns: number) {
+  return rowMetrics(columns).rowHeight;
 }
 
-function findVirtualRowIndex(offset: number, rowCount: number, columns: number, selectionMode: boolean) {
+function findVirtualRowIndex(offset: number, rowCount: number, columns: number) {
   if (rowCount === 0) {
     return 0;
   }
-  if (columns > 1) {
-    return Math.min(rowCount - 1, Math.floor(offset / (DESKTOP_GRID_ROW_HEIGHT + DESKTOP_GRID_GAP)));
-  }
-  if (selectionMode) {
-    return Math.min(rowCount - 1, Math.floor(offset / (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP)));
-  }
-  if (offset <= MOBILE_FEATURED_ROW_HEIGHT + MOBILE_GRID_GAP) {
-    return 0;
-  }
-  return Math.min(
-    rowCount - 1,
-    1 + Math.floor((offset - MOBILE_FEATURED_ROW_HEIGHT - MOBILE_GRID_GAP) / (MOBILE_COMPACT_ROW_HEIGHT + MOBILE_GRID_GAP)),
-  );
+  const { rowHeight, gap } = rowMetrics(columns);
+  return Math.min(rowCount - 1, Math.floor(offset / (rowHeight + gap)));
 }
 
 const HomeBookmarkCard = memo(function HomeBookmarkCard({
   bookmark,
   onOpen,
+  onOpenOriginal,
   onContextMenu,
   onOpenContextMenuAt,
   isContextOpen,
   selectionMode,
   isSelected,
   onToggleSelect,
-  mobileVariant,
   priority,
 }: {
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
+  onOpenOriginal: (bookmark: Bookmark) => void;
   onContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   onOpenContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
   isContextOpen: boolean;
   selectionMode: boolean;
   isSelected: boolean;
   onToggleSelect: (bookmarkId: string) => void;
-  mobileVariant: "featured" | "compact";
   priority: boolean;
 }) {
   const [coverImageFailed, setCoverImageFailed] = useState(false);
-  const { siteIconSrc, handleSiteIconError } = useBookmarkSiteIcon(bookmark, 192);
+  const { siteIconSrc, handleSiteIconError } = useBookmarkSiteIcon(bookmark, 96);
 
   useEffect(() => {
     setCoverImageFailed(false);
   }, [bookmark.id, bookmark.coverImageUrl]);
 
-  const summary = summarizeBookmark(bookmark);
   const hasCoverImage = Boolean(bookmark.coverImageUrl) && !coverImageFailed;
-  const folderLabel = bookmark.folder?.name ?? "未归类";
   const tagCount = bookmark.tags.length;
   const coverTone = homeCoverTone(bookmark.domain);
   const coverInitial = (bookmark.title.trim()[0] ?? bookmark.domain.trim()[0] ?? "K").toUpperCase();
@@ -307,7 +256,6 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
     isContextOpen ? "is-context-open" : "",
     selectionMode ? "is-selection-mode" : "",
     isSelected ? "is-selected" : "",
-    mobileVariant === "featured" ? "is-mobile-featured" : "is-mobile-compact",
   ].filter(Boolean).join(" ");
 
   return (
@@ -324,105 +272,92 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
           {isSelected ? "✓" : ""}
         </span>
       ) : null}
-      {!selectionMode ? (
-        <button
-          className="home-bookmark-menu-button"
-          type="button"
-          aria-label={`打开归档菜单：${bookmark.title}`}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const rect = event.currentTarget.getBoundingClientRect();
-            onOpenContextMenuAt(bookmark, rect.right - 8, rect.bottom + 8);
-          }}
-        >
-          <Icon name="more_vert" />
-        </button>
-      ) : null}
       <button
         className="home-bookmark-hitarea"
         type="button"
         onContextMenuCapture={(event) => onContextMenu(bookmark, event)}
         onClick={() => selectionMode ? onToggleSelect(bookmark.id) : onOpen(bookmark.id)}
         aria-label={selectionMode ? `选择书签：${bookmark.title}` : `打开归档：${bookmark.title}`}
+      />
+      <div
+        className={`home-bookmark-thumb is-${coverTone}${hasCoverImage ? " has-image" : ""}`}
+        aria-hidden="true"
       >
-        <div
-          className={`home-bookmark-cover is-${coverTone}${hasCoverImage ? " has-image" : " has-summary-preview"}`}
-          aria-hidden="true"
-        >
-          {hasCoverImage ? (
-            <>
-              <img
-                className="home-bookmark-cover-media"
-                src={coverImageSrc}
-                srcSet={buildCoverImageSrcSet(coverImageVariants)}
-                sizes="(max-width: 720px) 96px, (max-width: 1180px) 50vw, 400px"
-                alt=""
-                loading={priority ? "eager" : "lazy"}
-                decoding="async"
-                fetchPriority={priority ? "high" : "low"}
-                onError={() => setCoverImageFailed(true)}
-              />
-              <div className="home-bookmark-cover-shade" aria-hidden="true" />
-            </>
-          ) : (
-            <div className="home-bookmark-paper" aria-hidden="true">
-              <div className="home-bookmark-paper-eyebrow">
-                <span>{bookmark.domain}</span>
-                <strong>
-                  {siteIconSrc ? (
-                  <img
-                    className="home-bookmark-paper-icon"
-                    src={siteIconSrc ?? undefined}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    onError={handleSiteIconError}
-                  />
-                  ) : coverInitial}
-                </strong>
-              </div>
-              <div className="home-bookmark-paper-title">
-                <span>{bookmark.title}</span>
-              </div>
-              <div className="home-bookmark-paper-lines">
-                <span />
-                <span />
-                <span />
-              </div>
-            </div>
-          )}
-          {hasCoverImage ? (
-            <div className="home-bookmark-cover-overlay">
-              <div className="home-bookmark-cover-overlay-meta">
-                <span className="home-bookmark-overlay-badge">{folderLabel}</span>
-                <span className="home-bookmark-overlay-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
-              </div>
-            </div>
+        {hasCoverImage ? (
+          <img
+            className="home-bookmark-thumb-media"
+            src={coverImageSrc}
+            srcSet={buildCoverImageSrcSet(coverImageVariants)}
+            sizes="72px"
+            alt=""
+            loading={priority ? "eager" : "lazy"}
+            decoding="async"
+            fetchPriority={priority ? "high" : "low"}
+            onError={() => setCoverImageFailed(true)}
+          />
+        ) : siteIconSrc ? (
+          <img
+            className="home-bookmark-thumb-icon"
+            src={siteIconSrc}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={handleSiteIconError}
+          />
+        ) : (
+          <span className="home-bookmark-thumb-initial">{coverInitial}</span>
+        )}
+      </div>
+      <div className="home-bookmark-body">
+        <div className="home-bookmark-top">
+          <span className="home-bookmark-domain">{bookmark.domain}</span>
+          <span className="home-bookmark-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
+        </div>
+        <h2 className="home-bookmark-title">{bookmark.title}</h2>
+        <footer className="home-bookmark-actions">
+          {!selectionMode ? (
+            <button
+              className="home-bookmark-open"
+              type="button"
+              aria-label={`新标签打开原网页：${bookmark.title}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onOpenOriginal(bookmark);
+              }}
+            >
+              <Icon name="open_in_new" />
+            </button>
           ) : null}
-        </div>
-        <div className="home-bookmark-body">
-          <div className="home-bookmark-title-row">
-            <h2>{bookmark.title}</h2>
-            {bookmark.isFavorite ? (
-              <Icon className="home-bookmark-favorite" name="star" />
+          <span className="home-bookmark-pills" aria-label="归档标签">
+            {bookmark.folder ? (
+              <span className="home-bookmark-pill">已归档</span>
             ) : null}
-          </div>
-          <p>{summary}</p>
-          <footer className="home-bookmark-meta">
-            <span className="home-bookmark-domain">{bookmark.domain}</span>
-            <span className="home-bookmark-pills" aria-label="归档标签">
-              {bookmark.folder ? (
-                <span className="home-bookmark-pill">已归档</span>
-              ) : null}
-              {tagCount > 0 ? (
-                <span className="home-bookmark-pill">{tagCount} 个标签</span>
-              ) : null}
-            </span>
-            <span className="home-bookmark-time">{formatRelativeWhen(bookmark.updatedAt)}</span>
-          </footer>
-        </div>
-      </button>
+            {tagCount > 0 ? (
+              <span className="home-bookmark-pill">{tagCount} 个标签</span>
+            ) : null}
+          </span>
+          <span className="home-bookmark-actions-spacer" />
+          {bookmark.isFavorite ? (
+            <Icon className="home-bookmark-favorite" name="star" />
+          ) : null}
+          {!selectionMode ? (
+            <button
+              className="home-bookmark-menu-button"
+              type="button"
+              aria-label={`打开归档菜单：${bookmark.title}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect();
+                onOpenContextMenuAt(bookmark, rect.right - 8, rect.bottom + 8);
+              }}
+            >
+              <Icon name="more_vert" />
+            </button>
+          ) : null}
+        </footer>
+      </div>
     </article>
   );
 });
@@ -430,17 +365,11 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
 function HomeBookmarkSkeleton() {
   return (
     <article className="home-bookmark-card home-bookmark-card-skeleton">
-      <div className="home-bookmark-hitarea is-skeleton">
-        <div className="home-skeleton-cover" />
-        <div className="home-bookmark-body">
-          <span className="home-skeleton-line is-title" />
-          <span className="home-skeleton-line" />
-          <span className="home-skeleton-line is-short" />
-          <footer className="home-bookmark-meta">
-            <span className="home-skeleton-line is-meta" />
-            <span className="home-skeleton-line is-meta-short" />
-          </footer>
-        </div>
+      <div className="home-skeleton-thumb" />
+      <div className="home-bookmark-body">
+        <span className="home-skeleton-line is-meta" />
+        <span className="home-skeleton-line is-title" />
+        <span className="home-skeleton-line is-short" />
       </div>
     </article>
   );
@@ -457,6 +386,7 @@ function HomePage({
   loadingMore,
   managerFeedback,
   onOpenBookmark,
+  onOpenOriginal,
   onLoadMore,
   contextMenuBookmarkId,
   onBookmarkContextMenu,
@@ -475,6 +405,7 @@ function HomePage({
   loadingMore: boolean;
   managerFeedback: InlineFeedback | null;
   onOpenBookmark: (bookmarkId: string) => void;
+  onOpenOriginal: (bookmark: Bookmark) => void;
   onLoadMore: () => void;
   contextMenuBookmarkId: string | null;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
@@ -488,8 +419,7 @@ function HomePage({
   const showError = loadState === "error";
   const showEmpty = !showLoading && !showError && items.length === 0;
   const visibleItems = items;
-  const { gridRef, metrics } = useVirtualBookmarkGrid(visibleItems, selectionMode);
-  const mobileFeaturedBookmarkId = !selectionMode ? items[0]?.id ?? null : null;
+  const { gridRef, metrics } = useVirtualBookmarkGrid(visibleItems);
   const highPriorityImageCount = 4;
   const emptyTitle = hasActiveFilters
     ? "当前筛选下没有匹配的归档"
@@ -617,13 +547,13 @@ function HomePage({
                     key={bookmark.id}
                     bookmark={bookmark}
                     onOpen={onOpenBookmark}
+                    onOpenOriginal={onOpenOriginal}
                     onContextMenu={onBookmarkContextMenu}
                     onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
                     isContextOpen={contextMenuBookmarkId === bookmark.id}
                     selectionMode={selectionMode}
                     isSelected={selectedIds.has(bookmark.id)}
                     onToggleSelect={onToggleSelect}
-                    mobileVariant={bookmark.id === mobileFeaturedBookmarkId ? "featured" : "compact"}
                     priority={itemIndex < highPriorityImageCount}
                   />
                 ))}
@@ -867,6 +797,7 @@ export function BookmarksListRoute({
   onBatchDelete,
   onExitSelection,
   onOpenBookmark,
+  onOpenOriginal,
   onLoadMore,
   onBookmarkContextMenu,
   onOpenBookmarkContextMenuAt,
@@ -898,6 +829,7 @@ export function BookmarksListRoute({
   onBatchDelete: () => void;
   onExitSelection: () => void;
   onOpenBookmark: (bookmarkId: string) => void;
+  onOpenOriginal: (bookmark: Bookmark) => void;
   onLoadMore: () => void;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   onOpenBookmarkContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
@@ -935,6 +867,7 @@ export function BookmarksListRoute({
         loadingMore={loadingMore}
         managerFeedback={managerFeedback}
         onOpenBookmark={onOpenBookmark}
+        onOpenOriginal={onOpenOriginal}
         onLoadMore={onLoadMore}
         contextMenuBookmarkId={contextMenuBookmarkId}
         onBookmarkContextMenu={onBookmarkContextMenu}

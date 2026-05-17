@@ -3646,6 +3646,9 @@ export function App({
             onBatchDelete={() => openManagerDialog({ kind: "delete-bookmarks-batch", bookmarkIds: [...selectedIds], count: selectedIds.size })}
             onExitSelection={exitSelectionMode}
             onOpenBookmark={openBookmark}
+            onOpenOriginal={(bookmark) => {
+              window.open(bookmark.sourceUrl, "_blank", "noopener,noreferrer");
+            }}
             onLoadMore={() => void loadMoreBookmarks()}
             onBookmarkContextMenu={openBookmarkContextMenu}
             onOpenBookmarkContextMenuAt={openBookmarkContextMenuAt}

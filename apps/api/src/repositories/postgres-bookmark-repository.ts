@@ -40,6 +40,7 @@ import * as authRepository from "./postgres/auth";
 import * as bookmarksRepository from "./postgres/bookmarks";
 import { PostgresRepositoryCore, type PostgresBookmarkRepositoryOptions } from "./postgres/core";
 import * as capturesRepository from "./postgres/captures";
+import * as iconsRepository from "./postgres/icons";
 import * as importsRepository from "./postgres/imports";
 import * as objectsRepository from "./postgres/objects";
 import * as taxonomyRepository from "./postgres/taxonomy";
@@ -121,19 +122,19 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
   }
 
   async upsertBookmarkIcon(input: BookmarkIconUpsertInput): Promise<BookmarkIcon> {
-    return this.core.upsertBookmarkIcon(input);
+    return iconsRepository.upsertBookmarkIcon(this.core, input);
   }
 
   async getBookmarkIconByHostname(hostname: string): Promise<BookmarkIcon | null> {
-    return this.core.getBookmarkIconByHostname(hostname);
+    return iconsRepository.getBookmarkIconByHostname(this.core, hostname);
   }
 
   async listBookmarkIconRefreshTargets(userId: string): Promise<BookmarkIconRefreshTarget[]> {
-    return this.core.listBookmarkIconRefreshTargets(userId);
+    return iconsRepository.listBookmarkIconRefreshTargets(this.core, userId);
   }
 
   async getBookmarkIconRefreshTarget(userId: string, bookmarkId: string): Promise<BookmarkIconRefreshTarget | null> {
-    return this.core.getBookmarkIconRefreshTarget(userId, bookmarkId);
+    return iconsRepository.getBookmarkIconRefreshTarget(this.core, userId, bookmarkId);
   }
 
   async ingestBookmark(userId: string, input: IngestBookmarkRequest): Promise<IngestBookmarkResult> {
