@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Bookmark } from "@keeppage/domain";
 
+const simpleIconSlugByHostname: Record<string, string> = {
+  "card.weibo.com": "sinaweibo",
+  "github.com": "github",
+  "m.weibo.cn": "sinaweibo",
+  "s.weibo.com": "sinaweibo",
+  "weibo.com": "sinaweibo",
+  "xiaohongshu.com": "xiaohongshu",
+};
+
 export function buildBookmarkSiteIconCandidates(
   bookmark: Pick<Bookmark, "domain" | "faviconUrl">,
   size: number,
 ) {
   const fallbackDomain = bookmark.domain.trim();
+  const simpleIconUrl = buildSimpleIconUrl(fallbackDomain);
   const googleIconSizes = fallbackDomain
     ? Array.from(new Set([Math.max(size, 256), size, 128, 64]))
     : [];
@@ -13,12 +23,36 @@ export function buildBookmarkSiteIconCandidates(
     new Set(
       [
         bookmark.faviconUrl?.trim() || "",
+        simpleIconUrl,
         ...googleIconSizes.map((iconSize) => (
           `https://www.google.com/s2/favicons?domain=${encodeURIComponent(fallbackDomain)}&sz=${iconSize}`
         )),
       ].filter(Boolean),
     ),
   );
+}
+
+function buildSimpleIconUrl(domain: string) {
+  const slug = resolveSimpleIconSlug(domain);
+  return slug
+    ? `/api/public/objects?key=${encodeURIComponent(`assets/site-icons/simple-icons/${slug}.svg`)}`
+    : "";
+}
+
+function resolveSimpleIconSlug(domain: string) {
+  const normalizedDomain = domain.trim().toLowerCase().replace(/^www\./, "");
+  if (!normalizedDomain) {
+    return "";
+  }
+  return simpleIconSlugByHostname[normalizedDomain]
+    ?? simpleIconSlugByHostname[findParentHostname(normalizedDomain) ?? ""]
+    ?? "";
+}
+
+function findParentHostname(domain: string) {
+  return Object.keys(simpleIconSlugByHostname)
+    .filter((hostname) => domain.endsWith(`.${hostname}`))
+    .sort((left, right) => right.length - left.length)[0];
 }
 
 export function useBookmarkSiteIcon(
