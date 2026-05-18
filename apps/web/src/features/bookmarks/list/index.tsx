@@ -2,9 +2,7 @@ import {
   memo,
   type MouseEvent as ReactMouseEvent,
   useEffect,
-  useMemo,
   useRef,
-  useState,
 } from "react";
 import type {
   Bookmark,
@@ -24,9 +22,6 @@ type InlineFeedback = {
   kind: "success" | "error";
   message: string;
 };
-
-const PAGE_SIZE_OPTIONS = [12, 24, 48] as const;
-const DEFAULT_PAGE_SIZE = 24;
 
 function homeCoverTone(domain: string) {
   const tones = ["peach", "mist", "sand", "sky"] as const;
@@ -166,104 +161,9 @@ function HomeBookmarkSkeleton() {
   );
 }
 
-function buildPageList(current: number, total: number): Array<number | "ellipsis"> {
-  if (total <= 7) {
-    return Array.from({ length: total }, (_, index) => index + 1);
-  }
-
-  const pages = new Set<number>([1, total, current, current - 1, current + 1]);
-  const ordered = [...pages]
-    .filter((page) => page >= 1 && page <= total)
-    .sort((a, b) => a - b);
-
-  const result: Array<number | "ellipsis"> = [];
-  let previous = 0;
-  for (const page of ordered) {
-    if (previous && page - previous > 1) {
-      result.push("ellipsis");
-    }
-    result.push(page);
-    previous = page;
-  }
-  return result;
-}
-
-function BookmarkPager({
-  currentPage,
-  totalPages,
-  pageSize,
-  onChangePage,
-  onChangePageSize,
-}: {
-  currentPage: number;
-  totalPages: number;
-  pageSize: number;
-  onChangePage: (page: number) => void;
-  onChangePageSize: (size: number) => void;
-}) {
-  const pages = buildPageList(currentPage, totalPages);
-
-  return (
-    <nav className="home-bookmark-pager" aria-label="分页导航">
-      <div className="home-bookmark-pager-pages">
-        <button
-          type="button"
-          className="home-bookmark-pager-arrow"
-          disabled={currentPage <= 1}
-          aria-label="上一页"
-          onClick={() => onChangePage(currentPage - 1)}
-        >
-          <Icon className="home-bookmark-pager-prev-icon" name="keyboard_arrow_right" />
-        </button>
-        {pages.map((page, index) =>
-          page === "ellipsis" ? (
-            <span key={`ellipsis-${index}`} className="home-bookmark-pager-ellipsis">
-              …
-            </span>
-          ) : (
-            <button
-              key={page}
-              type="button"
-              className={`home-bookmark-pager-page${page === currentPage ? " is-active" : ""}`}
-              aria-current={page === currentPage ? "page" : undefined}
-              onClick={() => onChangePage(page)}
-            >
-              {page}
-            </button>
-          )
-        )}
-        <button
-          type="button"
-          className="home-bookmark-pager-arrow"
-          disabled={currentPage >= totalPages}
-          aria-label="下一页"
-          onClick={() => onChangePage(currentPage + 1)}
-        >
-          <Icon name="keyboard_arrow_right" />
-        </button>
-      </div>
-      <label className="home-bookmark-pager-size">
-        每页
-        <select
-          value={pageSize}
-          onChange={(event) => onChangePageSize(Number(event.target.value))}
-        >
-          {PAGE_SIZE_OPTIONS.map((size) => (
-            <option key={size} value={size}>
-              {size}
-            </option>
-          ))}
-        </select>
-        项
-      </label>
-    </nav>
-  );
-}
-
 function HomePage({
   items,
   totalItems,
-  listSignature,
   bookmarkView,
   loadState,
   listError,
@@ -284,7 +184,6 @@ function HomePage({
 }: {
   items: Bookmark[];
   totalItems: number;
-  listSignature: string;
   bookmarkView: BookmarkListView;
   loadState: LoadState;
   listError: string | null;
@@ -303,39 +202,29 @@ function HomePage({
   selectedIds: Set<string>;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
-  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
-  const [currentPage, setCurrentPage] = useState(1);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const showLoading = loadState === "loading";
   const showError = loadState === "error";
   const showEmpty = !showLoading && !showError && items.length === 0 && totalItems === 0;
+  const canLoadMore = hasMoreItems && !loadingMore && loadState === "ready";
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [listSignature, pageSize]);
-
-  const totalPages = Math.max(1, Math.ceil(Math.max(totalItems, items.length) / pageSize));
-  const page = Math.min(currentPage, totalPages);
-
-  useEffect(() => {
-    if (page !== currentPage) {
-      setCurrentPage(page);
+    const node = loadMoreSentinelRef.current;
+    if (!node || !canLoadMore) {
+      return;
     }
-  }, [page, currentPage]);
-
-  const neededCount = page * pageSize;
-
-  useEffect(() => {
-    if (items.length < neededCount && hasMoreItems && !loadingMore && loadState === "ready") {
-      onLoadMore();
-    }
-  }, [items.length, neededCount, hasMoreItems, loadingMore, loadState, onLoadMore]);
-
-  const pageItems = useMemo(
-    () => items.slice((page - 1) * pageSize, page * pageSize),
-    [items, page, pageSize],
-  );
-  const awaitingPage = pageItems.length === 0 && items.length < neededCount && (hasMoreItems || loadingMore);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          onLoadMore();
+        }
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [canLoadMore, onLoadMore, items.length]);
 
   const emptyTitle = hasActiveFilters
     ? "当前筛选下没有匹配的归档"
@@ -407,40 +296,37 @@ function HomePage({
         </section>
       ) : (
         <>
-          {awaitingPage ? (
-            <section className="home-grid">
-              {Array.from({ length: Math.min(pageSize, 8) }).map((_, index) => (
-                <HomeBookmarkSkeleton key={index} />
-              ))}
-            </section>
-          ) : (
-            <section className="home-grid">
-              {pageItems.map((bookmark) => (
-                <HomeBookmarkCard
-                  key={bookmark.id}
-                  bookmark={bookmark}
-                  onOpen={onOpenBookmark}
-                  onToggleFavorite={onToggleFavorite}
-                  onContextMenu={onBookmarkContextMenu}
-                  onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
-                  isContextOpen={contextMenuBookmarkId === bookmark.id}
-                  selectionMode={selectionMode}
-                  isSelected={selectedIds.has(bookmark.id)}
-                  onToggleSelect={onToggleSelect}
-                />
-              ))}
-            </section>
-          )}
+          <section className="home-grid">
+            {items.map((bookmark) => (
+              <HomeBookmarkCard
+                key={bookmark.id}
+                bookmark={bookmark}
+                onOpen={onOpenBookmark}
+                onToggleFavorite={onToggleFavorite}
+                onContextMenu={onBookmarkContextMenu}
+                onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
+                isContextOpen={contextMenuBookmarkId === bookmark.id}
+                selectionMode={selectionMode}
+                isSelected={selectedIds.has(bookmark.id)}
+                onToggleSelect={onToggleSelect}
+              />
+            ))}
+            {loadingMore
+              ? Array.from({ length: 4 }).map((_, index) => (
+                  <HomeBookmarkSkeleton key={`load-more-skeleton-${index}`} />
+                ))
+              : null}
+          </section>
           {loadMoreError ? (
             <p className="home-feedback is-error home-loading-note-inline">{loadMoreError}</p>
           ) : null}
-          <BookmarkPager
-            currentPage={page}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            onChangePage={setCurrentPage}
-            onChangePageSize={setPageSize}
-          />
+          {hasMoreItems ? (
+            <div
+              ref={loadMoreSentinelRef}
+              className="home-load-more-sentinel"
+              aria-hidden="true"
+            />
+          ) : null}
         </>
       )}
 
@@ -648,7 +534,6 @@ export function BookmarksListRoute({
   selectionBusy,
   items,
   totalItems,
-  listSignature,
   bookmarkView,
   loadState,
   listError,
@@ -682,7 +567,6 @@ export function BookmarksListRoute({
   selectionBusy: boolean;
   items: Bookmark[];
   totalItems: number;
-  listSignature: string;
   bookmarkView: BookmarkListView;
   loadState: LoadState;
   listError: string | null;
@@ -735,7 +619,6 @@ export function BookmarksListRoute({
       <HomePage
         items={items}
         totalItems={totalItems}
-        listSignature={listSignature}
         bookmarkView={bookmarkView}
         loadState={loadState}
         listError={listError}

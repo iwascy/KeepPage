@@ -3619,13 +3619,6 @@ export function App({
             selectionBusy={selectionBusy}
             items={items}
             totalItems={listTotal}
-            listSignature={[
-              bookmarkView,
-              deferredSearch,
-              qualityFilter,
-              selectedFolderId,
-              selectedTagId,
-            ].join("|")}
             bookmarkView={bookmarkView}
             loadState={loadState}
             listError={listError}
