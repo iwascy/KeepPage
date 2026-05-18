@@ -12,10 +12,10 @@ export function buildBookmarkSiteIconCandidates(
   return Array.from(
     new Set(
       [
+        bookmark.faviconUrl?.trim() || "",
         ...googleIconSizes.map((iconSize) => (
           `https://www.google.com/s2/favicons?domain=${encodeURIComponent(fallbackDomain)}&sz=${iconSize}`
         )),
-        bookmark.faviconUrl?.trim() || "",
       ].filter(Boolean),
     ),
   );
