@@ -268,6 +268,9 @@ function guessContentType(objectKey: string) {
   if (objectKey.endsWith(".png")) {
     return "image/png";
   }
+  if (objectKey.endsWith(".svg")) {
+    return "image/svg+xml; charset=utf-8";
+  }
   if (objectKey.endsWith(".jpg") || objectKey.endsWith(".jpeg")) {
     return "image/jpeg";
   }

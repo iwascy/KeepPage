@@ -222,7 +222,7 @@ type RequestOptions = {
 };
 
 const responseCache = new Map<string, unknown>();
-const RESPONSE_CACHE_PREFIX = "keeppage:api-response:v1:";
+const RESPONSE_CACHE_PREFIX = "keeppage:api-response:v2:";
 
 function resolveApiBase() {
   return (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");

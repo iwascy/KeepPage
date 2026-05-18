@@ -8,6 +8,7 @@
     "start": "tsx src/index.ts",
     "db:init": "tsx src/scripts/init-postgres.ts",
     "backup:bookmarks": "tsx src/scripts/backup-bookmarks-to-r2.ts",
+    "icons:import-simple": "tsx src/scripts/import-simple-icons-to-r2.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -18,6 +19,7 @@
     "fastify": "^5.8.2",
     "pg": "^8.16.3",
     "puppeteer": "^24.40.0",
+    "simple-icons": "^16.20.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

@@ -136,7 +136,7 @@ function isPrivateObjectKey(objectKey: string) {
 }
 
 function isPublicAssetObjectKey(objectKey: string) {
-  return !isPrivateObjectKey(objectKey) && /\.(avif|gif|jpe?g|png|webp|mp4|webm|mov)$/i.test(objectKey);
+  return !isPrivateObjectKey(objectKey) && /\.(avif|gif|jpe?g|png|svg|webp|mp4|webm|mov)$/i.test(objectKey);
 }
 
 function cacheControlForObjectKey(objectKey: string) {
