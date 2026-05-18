@@ -15,11 +15,6 @@ import type {
 import {
   formatCompactRelativeWhen,
 } from "../../../lib/date-format";
-import {
-  buildCoverImageSrcSet,
-  buildCoverImageVariants,
-  getLargestCoverImageUrl,
-} from "../../../lib/cover-image";
 import { Icon } from "../../../components/Icon";
 import { useBookmarkSiteIcon } from "../shared/site-icon";
 
@@ -49,7 +44,6 @@ function formatDomain(domain: string) {
 const HomeBookmarkCard = memo(function HomeBookmarkCard({
   bookmark,
   onOpen,
-  onOpenOriginal,
   onToggleFavorite,
   onContextMenu,
   onOpenContextMenuAt,
@@ -57,11 +51,9 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   selectionMode,
   isSelected,
   onToggleSelect,
-  priority,
 }: {
   bookmark: Bookmark;
   onOpen: (bookmarkId: string) => void;
-  onOpenOriginal: (bookmark: Bookmark) => void;
   onToggleFavorite: (bookmark: Bookmark) => void;
   onContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   onOpenContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
@@ -69,27 +61,14 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   selectionMode: boolean;
   isSelected: boolean;
   onToggleSelect: (bookmarkId: string) => void;
-  priority: boolean;
 }) {
-  const [coverImageFailed, setCoverImageFailed] = useState(false);
   const { siteIconSrc, handleSiteIconError } = useBookmarkSiteIcon(bookmark, 96);
 
-  useEffect(() => {
-    setCoverImageFailed(false);
-  }, [bookmark.id, bookmark.coverImageUrl]);
-
-  const hasCoverImage = Boolean(bookmark.coverImageUrl) && !coverImageFailed;
-  const tagCount = bookmark.tags.length;
   const coverTone = homeCoverTone(bookmark.domain);
   const coverInitial = (bookmark.title.trim()[0] ?? bookmark.domain.trim()[0] ?? "K").toUpperCase();
-  const coverImageVariants = buildCoverImageVariants(bookmark.coverImageUrl);
-  const coverImageSrc = bookmark.coverImageUrl
-    ? getLargestCoverImageUrl(coverImageVariants, bookmark.coverImageUrl)
-    : undefined;
 
   const cardClasses = [
     "home-bookmark-card",
-    hasCoverImage ? "is-cover" : "is-plain",
     isContextOpen ? "is-context-open" : "",
     selectionMode ? "is-selection-mode" : "",
     isSelected ? "is-selected" : "",
@@ -116,101 +95,59 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
         onClick={() => selectionMode ? onToggleSelect(bookmark.id) : onOpen(bookmark.id)}
         aria-label={selectionMode ? `选择书签：${bookmark.title}` : `打开归档：${bookmark.title}`}
       />
-      {hasCoverImage ? (
-        <div className="home-bookmark-cover" aria-hidden="true">
+      <div
+        className={`home-bookmark-thumb is-${coverTone}`}
+        aria-hidden="true"
+      >
+        {siteIconSrc ? (
           <img
-            className="home-bookmark-cover-media"
-            src={coverImageSrc}
-            srcSet={buildCoverImageSrcSet(coverImageVariants)}
-            sizes="(max-width: 1080px) 100vw, 264px"
+            className="home-bookmark-thumb-icon"
+            src={siteIconSrc}
             alt=""
-            loading={priority ? "eager" : "lazy"}
+            loading="lazy"
             decoding="async"
-            fetchPriority={priority ? "high" : "low"}
-            onError={() => setCoverImageFailed(true)}
+            onError={handleSiteIconError}
           />
-        </div>
-      ) : (
-        <div
-          className={`home-bookmark-thumb is-${coverTone}`}
-          aria-hidden="true"
-        >
-          {siteIconSrc ? (
-            <img
-              className="home-bookmark-thumb-icon"
-              src={siteIconSrc}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={handleSiteIconError}
-            />
-          ) : (
-            <span className="home-bookmark-thumb-initial">{coverInitial}</span>
-          )}
-        </div>
-      )}
+        ) : (
+          <span className="home-bookmark-thumb-initial">{coverInitial}</span>
+        )}
+      </div>
       <div className="home-bookmark-body">
         <div className="home-bookmark-top">
           <span className="home-bookmark-domain">{formatDomain(bookmark.domain)}</span>
           <span className="home-bookmark-time">{formatCompactRelativeWhen(bookmark.updatedAt)}</span>
         </div>
         <h2 className="home-bookmark-title">{bookmark.title}</h2>
-        <footer className="home-bookmark-actions">
-          {!selectionMode ? (
+        {!selectionMode ? (
+          <footer className="home-bookmark-actions">
             <button
-              className="home-bookmark-iconbtn"
+              className={`home-bookmark-iconbtn home-bookmark-star${bookmark.isFavorite ? " is-active" : ""}`}
               type="button"
-              aria-label={`新标签打开原网页：${bookmark.title}`}
+              aria-pressed={bookmark.isFavorite}
+              aria-label={bookmark.isFavorite ? `取消收藏：${bookmark.title}` : `收藏：${bookmark.title}`}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                onOpenOriginal(bookmark);
+                onToggleFavorite(bookmark);
               }}
             >
-              <Icon name="open_in_new" />
+              <Icon name="star" />
             </button>
-          ) : (
-            <span className="home-bookmark-iconbtn-spacer" />
-          )}
-          <span className="home-bookmark-pills" aria-label="归档标签">
-            {bookmark.folder ? (
-              <span className="home-bookmark-pill">已归档</span>
-            ) : null}
-            {tagCount > 0 ? (
-              <span className="home-bookmark-pill">{tagCount} 个标签</span>
-            ) : null}
-          </span>
-          {!selectionMode ? (
-            <>
-              <button
-                className={`home-bookmark-iconbtn home-bookmark-star${bookmark.isFavorite ? " is-active" : ""}`}
-                type="button"
-                aria-pressed={bookmark.isFavorite}
-                aria-label={bookmark.isFavorite ? `取消收藏：${bookmark.title}` : `收藏：${bookmark.title}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onToggleFavorite(bookmark);
-                }}
-              >
-                <Icon name="star" />
-              </button>
-              <button
-                className="home-bookmark-iconbtn"
-                type="button"
-                aria-label={`打开归档菜单：${bookmark.title}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  onOpenContextMenuAt(bookmark, rect.right - 8, rect.bottom + 8);
-                }}
-              >
-                <Icon name="more_horiz" />
-              </button>
-            </>
-          ) : null}
-        </footer>
+            <button
+              className="home-bookmark-iconbtn"
+              type="button"
+              aria-label={`打开归档菜单：${bookmark.title}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const rect = event.currentTarget.getBoundingClientRect();
+                onOpenContextMenuAt(bookmark, rect.right - 8, rect.bottom + 8);
+              }}
+            >
+              <Icon name="more_horiz" />
+            </button>
+          </footer>
+        ) : null}
       </div>
     </article>
   );
@@ -218,7 +155,7 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
 
 function HomeBookmarkSkeleton() {
   return (
-    <article className="home-bookmark-card is-plain home-bookmark-card-skeleton">
+    <article className="home-bookmark-card home-bookmark-card-skeleton">
       <div className="home-skeleton-thumb" />
       <div className="home-bookmark-body">
         <span className="home-skeleton-line is-meta" />
@@ -336,7 +273,6 @@ function HomePage({
   loadingMore,
   managerFeedback,
   onOpenBookmark,
-  onOpenOriginal,
   onToggleFavorite,
   onLoadMore,
   contextMenuBookmarkId,
@@ -358,7 +294,6 @@ function HomePage({
   loadingMore: boolean;
   managerFeedback: InlineFeedback | null;
   onOpenBookmark: (bookmarkId: string) => void;
-  onOpenOriginal: (bookmark: Bookmark) => void;
   onToggleFavorite: (bookmark: Bookmark) => void;
   onLoadMore: () => void;
   contextMenuBookmarkId: string | null;
@@ -480,12 +415,11 @@ function HomePage({
             </section>
           ) : (
             <section className="home-grid">
-              {pageItems.map((bookmark, offset) => (
+              {pageItems.map((bookmark) => (
                 <HomeBookmarkCard
                   key={bookmark.id}
                   bookmark={bookmark}
                   onOpen={onOpenBookmark}
-                  onOpenOriginal={onOpenOriginal}
                   onToggleFavorite={onToggleFavorite}
                   onContextMenu={onBookmarkContextMenu}
                   onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
@@ -493,7 +427,6 @@ function HomePage({
                   selectionMode={selectionMode}
                   isSelected={selectedIds.has(bookmark.id)}
                   onToggleSelect={onToggleSelect}
-                  priority={offset < 8}
                 />
               ))}
             </section>
@@ -738,7 +671,6 @@ export function BookmarksListRoute({
   onBatchDelete,
   onExitSelection,
   onOpenBookmark,
-  onOpenOriginal,
   onToggleFavorite,
   onLoadMore,
   onBookmarkContextMenu,
@@ -773,7 +705,6 @@ export function BookmarksListRoute({
   onBatchDelete: () => void;
   onExitSelection: () => void;
   onOpenBookmark: (bookmarkId: string) => void;
-  onOpenOriginal: (bookmark: Bookmark) => void;
   onToggleFavorite: (bookmark: Bookmark) => void;
   onLoadMore: () => void;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
@@ -814,7 +745,6 @@ export function BookmarksListRoute({
         loadingMore={loadingMore}
         managerFeedback={managerFeedback}
         onOpenBookmark={onOpenBookmark}
-        onOpenOriginal={onOpenOriginal}
         onToggleFavorite={onToggleFavorite}
         onLoadMore={onLoadMore}
         contextMenuBookmarkId={contextMenuBookmarkId}
