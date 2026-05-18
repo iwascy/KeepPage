@@ -2,7 +2,7 @@ import type { Bookmark, QualityGrade } from "@keeppage/domain";
 import type { BookmarkListView } from "@keeppage/domain";
 import type { BookmarkQuery, BookmarkResult } from "../api";
 
-const CACHE_PREFIX = "keeppage:bookmark-list:v1:";
+const CACHE_PREFIX = "keeppage:bookmark-list:v2:";
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 type CachedBookmarkList = {

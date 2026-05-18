@@ -1297,11 +1297,10 @@ export class PostgresRepositoryCore {
         updatedAt: privateBookmarks.updatedAt,
         latestQualityReport: privateBookmarkVersions.qualityReportJson,
         latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
-        iconUrl: bookmarkIcons.iconUrl,
+        iconUrl: bookmarkIconUrlForHostname(privateBookmarks.domain),
       })
       .from(privateBookmarks)
       .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
-      .leftJoin(bookmarkIcons, normalizedHostnameEq(privateBookmarks.domain, bookmarkIcons.hostname))
       .where(and(...conditions))
       .orderBy(desc(privateBookmarks.updatedAt))
       .limit(query.limit)
@@ -1546,12 +1545,11 @@ export class PostgresRepositoryCore {
         folderParentId: folders.parentId,
         latestQualityReport: bookmarkVersions.qualityReportJson,
         latestSourceMeta: bookmarkVersions.sourceMetaJson,
-        iconUrl: bookmarkIcons.iconUrl,
+        iconUrl: bookmarkIconUrlForHostname(bookmarks.domain),
       })
       .from(bookmarks)
       .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
       .leftJoin(folders, eq(bookmarks.folderId, folders.id))
-      .leftJoin(bookmarkIcons, normalizedHostnameEq(bookmarks.domain, bookmarkIcons.hostname))
       .where(and(...conditions))
       .orderBy(desc(bookmarks.updatedAt))
       .limit(query.limit)
@@ -2369,12 +2367,11 @@ export class PostgresRepositoryCore {
         folderParentId: folders.parentId,
         latestQualityReport: bookmarkVersions.qualityReportJson,
         latestSourceMeta: bookmarkVersions.sourceMetaJson,
-        iconUrl: bookmarkIcons.iconUrl,
+        iconUrl: bookmarkIconUrlForHostname(bookmarks.domain),
       })
       .from(bookmarks)
       .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
       .leftJoin(folders, eq(bookmarks.folderId, folders.id))
-      .leftJoin(bookmarkIcons, normalizedHostnameEq(bookmarks.domain, bookmarkIcons.hostname))
       .where(
         and(
           eq(bookmarks.userId, userId),
@@ -2419,11 +2416,10 @@ export class PostgresRepositoryCore {
         updatedAt: privateBookmarks.updatedAt,
         latestQualityReport: privateBookmarkVersions.qualityReportJson,
         latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
-        iconUrl: bookmarkIcons.iconUrl,
+        iconUrl: bookmarkIconUrlForHostname(privateBookmarks.domain),
       })
       .from(privateBookmarks)
       .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
-      .leftJoin(bookmarkIcons, normalizedHostnameEq(privateBookmarks.domain, bookmarkIcons.hostname))
       .where(
         and(
           eq(privateBookmarks.id, bookmarkId),
@@ -3359,11 +3355,18 @@ function normalizeHostname(input: string) {
   }
 }
 
-function normalizedHostnameEq(
-  left: typeof bookmarks.domain | typeof privateBookmarks.domain,
-  right: typeof bookmarkIcons.hostname,
+function bookmarkIconUrlForHostname(
+  hostname: typeof bookmarks.domain | typeof privateBookmarks.domain,
 ) {
-  return sql`regexp_replace(lower(${left}), '^www\\.', '') = ${right}`;
+  const normalizedHostname = sql`regexp_replace(lower(${hostname}), '^www\\.', '')`;
+  return sql<string | null>`(
+    select ${bookmarkIcons.iconUrl}
+    from ${bookmarkIcons}
+    where ${normalizedHostname} = ${bookmarkIcons.hostname}
+      or ${normalizedHostname} like concat('%.', ${bookmarkIcons.hostname})
+    order by length(${bookmarkIcons.hostname}) desc
+    limit 1
+  )`;
 }
 
 function dedupeIconCandidates<T extends { url: string }>(candidates: T[]) {

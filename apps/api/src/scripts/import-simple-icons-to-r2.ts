@@ -116,7 +116,7 @@ const explicitHostnameBySlug: Record<string, string[]> = {
   wikipedia: ["wikipedia.org"],
   x: ["x.com", "twitter.com", "t.co"],
   xiaohongshu: ["xiaohongshu.com", "www.xiaohongshu.com"],
-  sinaweibo: ["weibo.com", "s.weibo.com", "m.weibo.cn"],
+  sinaweibo: ["weibo.com", "s.weibo.com", "m.weibo.cn", "card.weibo.com"],
   youtube: ["youtube.com", "youtu.be"],
 };
 
