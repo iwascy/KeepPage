@@ -76,6 +76,7 @@ export function useBookmarkSiteIcon(
 
   return {
     siteIconSrc: candidates[candidateIndex] ?? null,
+    useDefaultSiteIcon: candidateIndex >= candidates.length,
     handleSiteIconError: advanceCandidate,
     handleSiteIconLoad: (image: HTMLImageElement) => {
       const naturalSize = Math.min(image.naturalWidth, image.naturalHeight);

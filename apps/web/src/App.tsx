@@ -3354,27 +3354,33 @@ export function App({
           label: "书签",
           items: [
             {
+              id: "open-original",
+              label: "打开原网页",
+              icon: "GO",
+              shortcut: "Enter",
+              onSelect: () => {
+                window.open(bookmark.sourceUrl, "_blank", "noopener,noreferrer");
+              },
+            },
+            {
+              id: "open-original-new-tab",
+              label: "新标签打开原网页",
+              icon: "NT",
+              onSelect: () => {
+                window.open(bookmark.sourceUrl, "_blank", "noopener,noreferrer");
+              },
+            },
+            {
               id: "open-archive",
               label: "打开归档",
               icon: "AR",
-              shortcut: "Enter",
               onSelect: () => openBookmark(bookmark.id),
             },
             {
               id: "open-archive-new-tab",
               label: "新标签打开归档",
-              icon: "NT",
-              onSelect: () => {
-                window.open(detailUrl, "_blank", "noopener,noreferrer");
-              },
-            },
-            {
-              id: "open-original",
-              label: "打开原网页",
-              icon: "GO",
-              onSelect: () => {
-                window.open(bookmark.sourceUrl, "_blank", "noopener,noreferrer");
-              },
+              icon: "KA",
+              onSelect: () => window.open(detailUrl, "_blank", "noopener,noreferrer"),
             },
           ],
         },
@@ -3646,7 +3652,6 @@ export function App({
             onBatchSetTags={(tagIds) => void handleBatchSetTags(selectedIds, tagIds)}
             onBatchDelete={() => openManagerDialog({ kind: "delete-bookmarks-batch", bookmarkIds: [...selectedIds], count: selectedIds.size })}
             onExitSelection={exitSelectionMode}
-            onOpenBookmark={openBookmark}
             onToggleFavorite={(bookmark) => void handleToggleFavorite(bookmark, !bookmark.isFavorite)}
             onLoadMore={() => void loadMoreBookmarks()}
             onBookmarkContextMenu={openBookmarkContextMenu}

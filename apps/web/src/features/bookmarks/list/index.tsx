@@ -2,6 +2,7 @@ import {
   memo,
   type MouseEvent as ReactMouseEvent,
   useEffect,
+  useId,
   useRef,
 } from "react";
 import type {
@@ -36,9 +37,63 @@ function formatDomain(domain: string) {
   return domain.replace(/^www\./i, "");
 }
 
+function DefaultSiteIcon() {
+  const pageGradientId = useId();
+  const foldGradientId = useId();
+
+  return (
+    <svg
+      className="default-site-icon"
+      aria-hidden="true"
+      focusable="false"
+      role="img"
+      viewBox="0 0 72 72"
+    >
+      <defs>
+        <linearGradient id={pageGradientId} x1="18" y1="10" x2="56" y2="62" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#eef2f7" />
+        </linearGradient>
+        <linearGradient id={foldGradientId} x1="44" y1="10" x2="61" y2="27" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#dbeafe" />
+          <stop offset="1" stopColor="#a7f3d0" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M18 10.5h28.5L58 22v39.5H18V10.5Z"
+        fill={`url(#${pageGradientId})`}
+        stroke="rgba(71, 85, 105, 0.46)"
+        strokeWidth="2"
+      />
+      <path
+        d="M46 10.5V23h12"
+        fill={`url(#${foldGradientId})`}
+        stroke="rgba(71, 85, 105, 0.4)"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <circle cx="36" cy="39" r="12.5" fill="#0f172a" opacity="0.08" />
+      <path
+        d="M24.5 39h23M36 26.5c4.2 4 6.3 8.2 6.3 12.5S40.2 47.5 36 51.5M36 26.5c-4.2 4-6.3 8.2-6.3 12.5s2.1 8.5 6.3 12.5"
+        fill="none"
+        stroke="#334155"
+        strokeLinecap="round"
+        strokeWidth="2.4"
+      />
+      <circle
+        cx="36"
+        cy="39"
+        r="12.5"
+        fill="none"
+        stroke="#334155"
+        strokeWidth="2.4"
+      />
+    </svg>
+  );
+}
+
 const HomeBookmarkCard = memo(function HomeBookmarkCard({
   bookmark,
-  onOpen,
   onToggleFavorite,
   onContextMenu,
   onOpenContextMenuAt,
@@ -48,7 +103,6 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   onToggleSelect,
 }: {
   bookmark: Bookmark;
-  onOpen: (bookmarkId: string) => void;
   onToggleFavorite: (bookmark: Bookmark) => void;
   onContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   onOpenContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
@@ -57,10 +111,14 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   isSelected: boolean;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
-  const { siteIconSrc, handleSiteIconError } = useBookmarkSiteIcon(bookmark, 96);
+  const {
+    siteIconSrc,
+    useDefaultSiteIcon,
+    handleSiteIconError,
+    handleSiteIconLoad,
+  } = useBookmarkSiteIcon(bookmark, 96);
 
   const coverTone = homeCoverTone(bookmark.domain);
-  const coverInitial = (bookmark.title.trim()[0] ?? bookmark.domain.trim()[0] ?? "K").toUpperCase();
 
   const cardClasses = [
     "home-bookmark-card",
@@ -83,15 +141,26 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
           {isSelected ? "✓" : ""}
         </span>
       ) : null}
-      <button
-        className="home-bookmark-hitarea"
-        type="button"
-        onContextMenuCapture={(event) => onContextMenu(bookmark, event)}
-        onClick={() => selectionMode ? onToggleSelect(bookmark.id) : onOpen(bookmark.id)}
-        aria-label={selectionMode ? `选择书签：${bookmark.title}` : `打开归档：${bookmark.title}`}
-      />
+      {selectionMode ? (
+        <button
+          className="home-bookmark-hitarea"
+          type="button"
+          onContextMenuCapture={(event) => onContextMenu(bookmark, event)}
+          onClick={() => onToggleSelect(bookmark.id)}
+          aria-label={`选择书签：${bookmark.title}`}
+        />
+      ) : (
+        <a
+          className="home-bookmark-hitarea"
+          href={bookmark.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          onContextMenuCapture={(event) => onContextMenu(bookmark, event)}
+          aria-label={`打开原网页：${bookmark.title}`}
+        />
+      )}
       <div
-        className={`home-bookmark-thumb is-${coverTone}`}
+        className={`home-bookmark-thumb is-${coverTone}${useDefaultSiteIcon ? " has-default-icon" : ""}`}
         aria-hidden="true"
       >
         {siteIconSrc ? (
@@ -102,9 +171,10 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
             loading="lazy"
             decoding="async"
             onError={handleSiteIconError}
+            onLoad={(event) => handleSiteIconLoad(event.currentTarget)}
           />
         ) : (
-          <span className="home-bookmark-thumb-initial">{coverInitial}</span>
+          <DefaultSiteIcon />
         )}
       </div>
       <div className="home-bookmark-body">
@@ -172,7 +242,6 @@ function HomePage({
   hasMoreItems,
   loadingMore,
   managerFeedback,
-  onOpenBookmark,
   onToggleFavorite,
   onLoadMore,
   contextMenuBookmarkId,
@@ -192,7 +261,6 @@ function HomePage({
   hasMoreItems: boolean;
   loadingMore: boolean;
   managerFeedback: InlineFeedback | null;
-  onOpenBookmark: (bookmarkId: string) => void;
   onToggleFavorite: (bookmark: Bookmark) => void;
   onLoadMore: () => void;
   contextMenuBookmarkId: string | null;
@@ -301,7 +369,6 @@ function HomePage({
               <HomeBookmarkCard
                 key={bookmark.id}
                 bookmark={bookmark}
-                onOpen={onOpenBookmark}
                 onToggleFavorite={onToggleFavorite}
                 onContextMenu={onBookmarkContextMenu}
                 onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
@@ -555,7 +622,6 @@ export function BookmarksListRoute({
   onBatchSetTags,
   onBatchDelete,
   onExitSelection,
-  onOpenBookmark,
   onToggleFavorite,
   onLoadMore,
   onBookmarkContextMenu,
@@ -588,7 +654,6 @@ export function BookmarksListRoute({
   onBatchSetTags: (tagIds: string[]) => void;
   onBatchDelete: () => void;
   onExitSelection: () => void;
-  onOpenBookmark: (bookmarkId: string) => void;
   onToggleFavorite: (bookmark: Bookmark) => void;
   onLoadMore: () => void;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
@@ -627,7 +692,6 @@ export function BookmarksListRoute({
         hasMoreItems={hasMoreItems}
         loadingMore={loadingMore}
         managerFeedback={managerFeedback}
-        onOpenBookmark={onOpenBookmark}
         onToggleFavorite={onToggleFavorite}
         onLoadMore={onLoadMore}
         contextMenuBookmarkId={contextMenuBookmarkId}
