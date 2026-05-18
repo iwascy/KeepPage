@@ -28,7 +28,8 @@ import {
 } from "./api";
 import type { ImportPanelAdapter } from "./features/imports";
 import { BookmarksListRoute } from "./features/bookmarks/list";
-import { buildBookmarkSiteIconCandidates } from "./features/bookmarks/shared/site-icon";
+import { DefaultSiteIcon } from "./features/bookmarks/shared/DefaultSiteIcon";
+import { useBookmarkSiteIcon } from "./features/bookmarks/shared/site-icon";
 import { useDebouncedValue } from "./hooks/use-debounced-value";
 import {
   readCachedBookmarkList,
@@ -327,6 +328,28 @@ function isManagerDialogOpen(state: ManagerDialogState) {
 function DialogCloseIcon() {
   return (
     <Icon name="close" />
+  );
+}
+
+function BookmarkDeleteSiteIcon({ bookmark }: { bookmark: Bookmark }) {
+  const {
+    siteIconSrc,
+    handleSiteIconError,
+    handleSiteIconLoad,
+  } = useBookmarkSiteIcon(bookmark, 64);
+
+  return siteIconSrc ? (
+    <img
+      alt=""
+      className="bookmark-delete-card-favicon"
+      src={siteIconSrc}
+      width={28}
+      height={28}
+      onError={handleSiteIconError}
+      onLoad={(event) => handleSiteIconLoad(event.currentTarget)}
+    />
+  ) : (
+    <DefaultSiteIcon className="bookmark-delete-card-favicon is-default-site-icon" />
   );
 }
 
@@ -1158,9 +1181,6 @@ function ManagerDialog({
   const bookmarkDeleteTarget = state.kind === "delete-bookmark" ? state.bookmark : null;
   const folderDeleteTarget = state.kind === "delete-folder" ? state.folder : null;
   const tagDeleteTarget = state.kind === "delete-tag" ? state.tag : null;
-  const bookmarkDeleteFaviconSrc = bookmarkDeleteTarget
-    ? buildBookmarkSiteIconCandidates(bookmarkDeleteTarget, 64)[0] ?? ""
-    : "";
   const isFolderDialog = state.kind === "edit-folder" || state.kind === "delete-folder";
   const isTagDialog = state.kind === "edit-tag" || state.kind === "delete-tag";
   const tagColor = colorValue.trim();
@@ -1286,13 +1306,7 @@ function ManagerDialog({
               </div>
 
               <section className="bookmark-delete-card">
-                <img
-                  alt=""
-                  className="bookmark-delete-card-favicon"
-                  src={bookmarkDeleteFaviconSrc}
-                  width={28}
-                  height={28}
-                />
+                <BookmarkDeleteSiteIcon bookmark={bookmarkDeleteTarget} />
                 <div className="bookmark-delete-card-body">
                   <strong>{bookmarkDeleteTarget.title}</strong>
                   <span className="bookmark-delete-card-domain">{bookmarkDeleteTarget.domain}</span>

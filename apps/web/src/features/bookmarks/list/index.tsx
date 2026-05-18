@@ -2,7 +2,6 @@ import {
   memo,
   type MouseEvent as ReactMouseEvent,
   useEffect,
-  useId,
   useRef,
 } from "react";
 import type {
@@ -15,6 +14,7 @@ import {
   formatCompactRelativeWhen,
 } from "../../../lib/date-format";
 import { Icon } from "../../../components/Icon";
+import { DefaultSiteIcon } from "../shared/DefaultSiteIcon";
 import { useBookmarkSiteIcon } from "../shared/site-icon";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -35,61 +35,6 @@ function homeCoverTone(domain: string) {
 
 function formatDomain(domain: string) {
   return domain.replace(/^www\./i, "");
-}
-
-function DefaultSiteIcon() {
-  const pageGradientId = useId();
-  const foldGradientId = useId();
-
-  return (
-    <svg
-      className="default-site-icon"
-      aria-hidden="true"
-      focusable="false"
-      role="img"
-      viewBox="0 0 72 72"
-    >
-      <defs>
-        <linearGradient id={pageGradientId} x1="18" y1="10" x2="56" y2="62" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#ffffff" />
-          <stop offset="1" stopColor="#eef2f7" />
-        </linearGradient>
-        <linearGradient id={foldGradientId} x1="44" y1="10" x2="61" y2="27" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#dbeafe" />
-          <stop offset="1" stopColor="#a7f3d0" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M18 10.5h28.5L58 22v39.5H18V10.5Z"
-        fill={`url(#${pageGradientId})`}
-        stroke="rgba(71, 85, 105, 0.46)"
-        strokeWidth="2"
-      />
-      <path
-        d="M46 10.5V23h12"
-        fill={`url(#${foldGradientId})`}
-        stroke="rgba(71, 85, 105, 0.4)"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-      <circle cx="36" cy="39" r="12.5" fill="#0f172a" opacity="0.08" />
-      <path
-        d="M24.5 39h23M36 26.5c4.2 4 6.3 8.2 6.3 12.5S40.2 47.5 36 51.5M36 26.5c-4.2 4-6.3 8.2-6.3 12.5s2.1 8.5 6.3 12.5"
-        fill="none"
-        stroke="#334155"
-        strokeLinecap="round"
-        strokeWidth="2.4"
-      />
-      <circle
-        cx="36"
-        cy="39"
-        r="12.5"
-        fill="none"
-        stroke="#334155"
-        strokeWidth="2.4"
-      />
-    </svg>
-  );
 }
 
 const HomeBookmarkCard = memo(function HomeBookmarkCard({
