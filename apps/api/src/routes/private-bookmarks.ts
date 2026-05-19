@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { AuthService } from "../services/auth/auth-service";
 import { PrivateModeService } from "../services/auth/private-mode-service";
 import type { BookmarkService } from "../services/bookmarks/bookmark-service";
-import { sendCacheableJson } from "./http-cache";
+import type { UserResponseCache } from "./http-cache";
 
 const searchQuerySchema = z.object({
   q: z.string().optional(),
@@ -29,15 +29,19 @@ export async function registerPrivateBookmarkRoutes(
   authService: AuthService,
   privateModeService: PrivateModeService,
   bookmarkService: BookmarkService,
+  responseCache: UserResponseCache,
 ) {
   app.get("/private/bookmarks", async (request, reply) => {
     const user = await authService.requireUser(request);
     privateModeService.requireUnlocked(request, user.id);
     const query = searchQuerySchema.parse(request.query);
-    const payload = privateBookmarkSearchResponseSchema.parse(
-      await bookmarkService.searchPrivateBookmarks(user.id, query),
-    );
-    return sendCacheableJson(request.headers["if-none-match"], reply, payload);
+    return responseCache.sendJson(request, reply, {
+      scope: "private-bookmarks",
+      userId: user.id,
+      load: async () => privateBookmarkSearchResponseSchema.parse(
+        await bookmarkService.searchPrivateBookmarks(user.id, query),
+      ),
+    });
   });
 
   app.get<{ Params: { bookmarkId: string } }>("/private/bookmarks/:bookmarkId", async (request, reply) => {

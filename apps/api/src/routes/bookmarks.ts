@@ -7,7 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AuthService } from "../services/auth/auth-service";
 import type { BookmarkService } from "../services/bookmarks/bookmark-service";
-import { sendCacheableJson } from "./http-cache";
+import type { UserResponseCache } from "./http-cache";
 
 const searchQuerySchema = z.object({
   q: z.string().optional(),
@@ -28,17 +28,25 @@ export async function registerBookmarkRoutes(
   app: FastifyInstance,
   authService: AuthService,
   bookmarkService: BookmarkService,
+  responseCache: UserResponseCache,
 ) {
   app.get("/bookmarks", async (request, reply) => {
     const user = await authService.requireUser(request);
     const query = searchQuerySchema.parse(request.query);
-    const payload = await bookmarkService.searchBookmarks(user.id, query);
-    return sendCacheableJson(request.headers["if-none-match"], reply, payload);
+    return responseCache.sendJson(request, reply, {
+      scope: "bookmarks",
+      userId: user.id,
+      load: () => bookmarkService.searchBookmarks(user.id, query),
+    });
   });
 
   app.get("/bookmarks/sidebar-stats", async (request, reply) => {
     const user = await authService.requireUser(request);
-    return reply.send(await bookmarkService.getBookmarkSidebarStats(user.id));
+    return responseCache.sendJson(request, reply, {
+      scope: "bookmark-sidebar-stats",
+      userId: user.id,
+      load: () => bookmarkService.getBookmarkSidebarStats(user.id),
+    });
   });
 
   app.get<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId", async (request, reply) => {
@@ -51,6 +59,7 @@ export async function registerBookmarkRoutes(
     const user = await authService.requireUser(request);
     const params = bookmarkParamsSchema.parse(request.params);
     await bookmarkService.deleteBookmark(user.id, params.bookmarkId);
+    responseCache.invalidateUser(user.id);
     return reply.status(204).send();
   });
 
@@ -58,6 +67,8 @@ export async function registerBookmarkRoutes(
     const user = await authService.requireUser(request);
     const params = bookmarkParamsSchema.parse(request.params);
     const body = bookmarkMetadataUpdateRequestSchema.parse(request.body);
-    return reply.send(await bookmarkService.updateBookmarkMetadata(user.id, params.bookmarkId, body));
+    const bookmark = await bookmarkService.updateBookmarkMetadata(user.id, params.bookmarkId, body);
+    responseCache.invalidateUser(user.id);
+    return reply.send(bookmark);
   });
 }

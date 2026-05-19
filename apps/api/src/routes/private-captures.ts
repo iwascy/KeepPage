@@ -10,6 +10,7 @@ import type { BookmarkRepository } from "../repositories";
 import type { AuthService } from "../services/auth/auth-service";
 import type { IconRefreshService } from "../services/icons/icon-refresh-service";
 import { PrivateModeService } from "../services/auth/private-mode-service";
+import type { UserResponseCache } from "./http-cache";
 
 const captureCompleteResponseSchema = z.object({
   bookmarkId: z.string().min(1),
@@ -25,6 +26,7 @@ export async function registerPrivateCaptureRoutes(
   privateModeService: PrivateModeService,
   repository: BookmarkRepository,
   iconRefreshService: IconRefreshService,
+  responseCache: UserResponseCache,
 ) {
   app.post("/private/captures/init", async (request, reply) => {
     const user = await authService.requireUser(request, {
@@ -50,6 +52,7 @@ export async function registerPrivateCaptureRoutes(
     privateModeService.requireUnlocked(request, user.id);
     const payload = captureCompleteRequestSchema.parse(request.body);
     const result = await repository.completePrivateCapture(user.id, payload);
+    responseCache.invalidateUser(user.id);
     void iconRefreshService.refreshForCapture({
       userId: user.id,
       domain: payload.source.domain,

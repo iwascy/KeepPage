@@ -634,7 +634,7 @@ export async function fetchPrivateBookmarks(
 }
 
 export async function fetchBookmarkFolderCounts(token: string): Promise<Record<string, number>> {
-  const payload = await requestJson("/bookmarks/sidebar-stats", bookmarkSidebarStatsResponseSchema, {
+  const payload = await requestJsonCached("/bookmarks/sidebar-stats", bookmarkSidebarStatsResponseSchema, {
     token,
   });
   return payload.folderCounts.reduce<Record<string, number>>((accumulator, item) => {
@@ -644,7 +644,7 @@ export async function fetchBookmarkFolderCounts(token: string): Promise<Record<s
 }
 
 export async function fetchWorkspaceBootstrap(token: string): Promise<WorkspaceBootstrapResult> {
-  return requestJson("/workspace/bootstrap", workspaceBootstrapResponseSchema, {
+  return requestJsonCached("/workspace/bootstrap", workspaceBootstrapResponseSchema, {
     token,
   });
 }
@@ -726,7 +726,7 @@ export async function updateBookmarkMetadata(
 }
 
 export async function fetchFolders(token: string): Promise<Folder[]> {
-  const payload = await requestJson("/folders", folderListResponseSchema, {
+  const payload = await requestJsonCached("/folders", folderListResponseSchema, {
     token,
   });
   return payload.items;
@@ -756,7 +756,7 @@ export async function deleteFolder(folderId: string, token: string) {
 }
 
 export async function fetchTags(token: string): Promise<Tag[]> {
-  const payload = await requestJson("/tags", tagListResponseSchema, {
+  const payload = await requestJsonCached("/tags", tagListResponseSchema, {
     token,
   });
   return payload.items;

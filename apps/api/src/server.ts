@@ -12,6 +12,7 @@ import { IconRefreshService } from "./services/icons/icon-refresh-service";
 import { ImportService } from "./services/imports/import-service";
 import { UploadService } from "./services/uploads/upload-service";
 import { createObjectStorage } from "./storage/object-storage";
+import { UserResponseCache } from "./routes/http-cache";
 
 export function buildServer(config: ApiConfig) {
   const app = Fastify({
@@ -36,6 +37,7 @@ export function buildServer(config: ApiConfig) {
 
   const objectStorage = createObjectStorage(config);
   const repository = createRepository(config, objectStorage);
+  const responseCache = new UserResponseCache();
   const apiTokenService = new ApiTokenService({
     repository,
   });
@@ -137,6 +139,7 @@ export function buildServer(config: ApiConfig) {
       iconRefreshService,
       importService,
       uploadService,
+      responseCache,
     );
   });
 

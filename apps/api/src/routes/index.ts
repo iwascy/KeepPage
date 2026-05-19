@@ -23,6 +23,7 @@ import { registerPrivateModeRoutes } from "./private-mode";
 import { registerTagRoutes } from "./tags";
 import { registerUploadRoutes } from "./uploads";
 import { registerWorkspaceRoutes } from "./workspace";
+import type { UserResponseCache } from "./http-cache";
 
 export async function registerRoutes(
   app: FastifyInstance,
@@ -35,20 +36,21 @@ export async function registerRoutes(
   iconRefreshService: IconRefreshService,
   importService: ImportService,
   uploadService: UploadService,
+  responseCache: UserResponseCache,
 ) {
   await registerAuthRoutes(app, authService);
   await registerPrivateModeRoutes(app, authService, privateModeService);
   await registerApiTokenRoutes(app, authService, apiTokenService);
   await registerHealthRoutes(app, repository);
-  await registerCaptureRoutes(app, config, authService, repository, iconRefreshService);
-  await registerPrivateCaptureRoutes(app, config, authService, privateModeService, repository, iconRefreshService);
+  await registerCaptureRoutes(app, config, authService, repository, iconRefreshService, responseCache);
+  await registerPrivateCaptureRoutes(app, config, authService, privateModeService, repository, iconRefreshService, responseCache);
   await registerIconRoutes(app, authService, iconRefreshService);
-  await registerIngestRoutes(app, apiTokenService, repository);
+  await registerIngestRoutes(app, apiTokenService, repository, responseCache);
   await registerUploadRoutes(app, authService, privateModeService, uploadService);
-  await registerWorkspaceRoutes(app, authService, repository, bookmarkService);
-  await registerBookmarkRoutes(app, authService, bookmarkService);
-  await registerPrivateBookmarkRoutes(app, authService, privateModeService, bookmarkService);
-  await registerFolderRoutes(app, authService, repository);
-  await registerTagRoutes(app, authService, repository);
-  await registerImportRoutes(app, authService, importService);
+  await registerWorkspaceRoutes(app, authService, repository, bookmarkService, responseCache);
+  await registerBookmarkRoutes(app, authService, bookmarkService, responseCache);
+  await registerPrivateBookmarkRoutes(app, authService, privateModeService, bookmarkService, responseCache);
+  await registerFolderRoutes(app, authService, repository, responseCache);
+  await registerTagRoutes(app, authService, repository, responseCache);
+  await registerImportRoutes(app, authService, importService, responseCache);
 }

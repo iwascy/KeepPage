@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { TaxonomyRepository } from "../repositories";
 import type { AuthService } from "../services/auth/auth-service";
+import type { UserResponseCache } from "./http-cache";
 
 const tagParamsSchema = z.object({
   tagId: z.string().min(1),
@@ -17,17 +18,25 @@ export async function registerTagRoutes(
   app: FastifyInstance,
   authService: AuthService,
   repository: TaxonomyRepository,
+  responseCache: UserResponseCache,
 ) {
   app.get("/tags", async (request, reply) => {
     const user = await authService.requireUser(request);
-    const items = await repository.listTags(user.id);
-    return reply.send(tagListResponseSchema.parse({ items }));
+    return responseCache.sendJson(request, reply, {
+      scope: "tags",
+      userId: user.id,
+      load: async () => {
+        const items = await repository.listTags(user.id);
+        return tagListResponseSchema.parse({ items });
+      },
+    });
   });
 
   app.post("/tags", async (request, reply) => {
     const user = await authService.requireUser(request);
     const body = tagCreateRequestSchema.parse(request.body);
     const tag = await repository.createTag(user.id, body);
+    responseCache.invalidateUser(user.id);
     return reply.status(201).send(tagSchema.parse(tag));
   });
 
@@ -42,6 +51,7 @@ export async function registerTagRoutes(
         message: "Tag not found.",
       });
     }
+    responseCache.invalidateUser(user.id);
     return reply.send(tagSchema.parse(tag));
   });
 
@@ -55,6 +65,7 @@ export async function registerTagRoutes(
         message: "Tag not found.",
       });
     }
+    responseCache.invalidateUser(user.id);
     return reply.status(204).send();
   });
 }

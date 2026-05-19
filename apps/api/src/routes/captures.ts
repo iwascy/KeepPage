@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { CaptureRepository } from "../repositories";
 import type { AuthService } from "../services/auth/auth-service";
 import type { IconRefreshService } from "../services/icons/icon-refresh-service";
+import type { UserResponseCache } from "./http-cache";
 
 const captureCompleteResponseSchema = z.object({
   bookmarkId: z.string().min(1),
@@ -23,6 +24,7 @@ export async function registerCaptureRoutes(
   authService: AuthService,
   repository: CaptureRepository,
   iconRefreshService: IconRefreshService,
+  responseCache: UserResponseCache,
 ) {
   app.post("/captures/init", async (request, reply) => {
     const user = await authService.requireUser(request, {
@@ -46,6 +48,7 @@ export async function registerCaptureRoutes(
     });
     const payload = captureCompleteRequestSchema.parse(request.body);
     const result = await repository.completeCapture(user.id, payload);
+    responseCache.invalidateUser(user.id);
     void iconRefreshService.refreshForCapture({
       userId: user.id,
       domain: payload.source.domain,
