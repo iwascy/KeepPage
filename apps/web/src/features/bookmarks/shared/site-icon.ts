@@ -12,21 +12,15 @@ const simpleIconSlugByHostname: Record<string, string> = {
 
 export function buildBookmarkSiteIconCandidates(
   bookmark: Pick<Bookmark, "domain" | "faviconUrl">,
-  size: number,
+  _size: number,
 ) {
   const fallbackDomain = bookmark.domain.trim();
   const simpleIconUrl = buildSimpleIconUrl(fallbackDomain);
-  const googleIconSizes = fallbackDomain
-    ? Array.from(new Set([Math.max(size, 256), size, 128, 64]))
-    : [];
   return Array.from(
     new Set(
       [
-        bookmark.faviconUrl?.trim() || "",
+        normalizeDisplayableIconUrl(bookmark.faviconUrl),
         simpleIconUrl,
-        ...googleIconSizes.map((iconSize) => (
-          `https://www.google.com/s2/favicons?domain=${encodeURIComponent(fallbackDomain)}&sz=${iconSize}`
-        )),
       ].filter(Boolean),
     ),
   );
@@ -55,6 +49,33 @@ function findParentHostname(domain: string) {
     .sort((left, right) => right.length - left.length)[0];
 }
 
+function normalizeDisplayableIconUrl(rawUrl?: string) {
+  const value = rawUrl?.trim();
+  if (!value || isKnownFallbackIconUrl(value)) {
+    return "";
+  }
+  return value;
+}
+
+function isKnownFallbackIconUrl(rawUrl: string) {
+  if (/^(?:data|blob|chrome|chrome-extension):/i.test(rawUrl)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    return (
+      hostname === "google.com" && url.pathname.startsWith("/s2/favicons")
+    )
+      || hostname.endsWith("gstatic.com") && url.pathname.startsWith("/favicon")
+      || hostname === "favicon.im"
+      || hostname === "icon.horse";
+  } catch {
+    return false;
+  }
+}
+
 export function useBookmarkSiteIcon(
   bookmark: Pick<Bookmark, "id" | "domain" | "faviconUrl">,
   size: number,
@@ -65,7 +86,7 @@ export function useBookmarkSiteIcon(
   );
   const [candidateIndex, setCandidateIndex] = useState(candidates.length);
   const [validatedSiteIconSrc, setValidatedSiteIconSrc] = useState<string | null>(null);
-  const minimumNaturalSize = Math.min(96, Math.max(48, Math.round(size / 2)));
+  const minimumNaturalSize = Math.max(64, size);
 
   useEffect(() => {
     setValidatedSiteIconSrc(null);

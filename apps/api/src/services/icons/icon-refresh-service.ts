@@ -130,11 +130,9 @@ function buildCandidateList(input: {
     { url: `https://${input.hostname}/favicon.ico`, source: "favicon-ico", type: "image/x-icon" },
     { url: `https://${input.hostname}/site.webmanifest`, source: "manifest", type: "application/manifest+json" },
     { url: `https://${input.hostname}/manifest.json`, source: "manifest", type: "application/json" },
-    { url: `https://favicon.im/${input.hostname}?larger=true`, source: "favicon-api" },
-    { url: `https://icon.horse/icon/${input.hostname}`, source: "favicon-api" },
-    { url: `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(input.hostname)}&sz=256`, source: "google-s2" },
   ];
   return dedupeIconCandidates([...input.candidates, ...defaults])
+    .filter((candidate) => !isKnownFallbackIconUrl(candidate.url))
     .map((candidate) => {
       try {
         return {
@@ -148,6 +146,25 @@ function buildCandidateList(input: {
     })
     .filter((candidate): candidate is ResolvedIconCandidate => Boolean(candidate))
     .sort((left, right) => scoreCandidate(right) - scoreCandidate(left));
+}
+
+function isKnownFallbackIconUrl(rawUrl: string) {
+  if (/^(?:data|blob|chrome|chrome-extension):/i.test(rawUrl)) {
+    return true;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    return (
+      hostname === "google.com" && url.pathname.startsWith("/s2/favicons")
+    )
+      || hostname.endsWith("gstatic.com") && url.pathname.startsWith("/favicon")
+      || hostname === "favicon.im"
+      || hostname === "icon.horse";
+  } catch {
+    return false;
+  }
 }
 
 async function expandManifestCandidates(candidates: ResolvedIconCandidate[]) {

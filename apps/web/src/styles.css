@@ -2917,15 +2917,6 @@ button {
     radial-gradient(120% 120% at 24% 18%, #f9fafb 0%, #edf0f3 48%, #e4e7eb 100%);
 }
 
-.home-bookmark-thumb-icon {
-  width: 66px;
-  height: 66px;
-  display: block;
-  object-fit: contain;
-  border-radius: 10px;
-  filter: drop-shadow(0 8px 14px rgba(16, 24, 40, 0.28));
-}
-
 .default-site-icon {
   width: 72px;
   height: 72px;
@@ -5509,11 +5500,6 @@ button {
     width: 4rem;
     height: 4rem;
     border-radius: 14px;
-  }
-
-  .home-bookmark-card .home-bookmark-thumb-icon {
-    width: 2.4rem;
-    height: 2.4rem;
   }
 
   .home-bookmark-card .default-site-icon {
