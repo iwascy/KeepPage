@@ -63,25 +63,72 @@ export function useBookmarkSiteIcon(
     () => buildBookmarkSiteIconCandidates(bookmark, size),
     [bookmark.domain, bookmark.faviconUrl, size],
   );
-  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [candidateIndex, setCandidateIndex] = useState(candidates.length);
+  const [validatedSiteIconSrc, setValidatedSiteIconSrc] = useState<string | null>(null);
   const minimumNaturalSize = Math.min(96, Math.max(48, Math.round(size / 2)));
 
   useEffect(() => {
+    setValidatedSiteIconSrc(null);
     setCandidateIndex(0);
   }, [bookmark.id, bookmark.domain, bookmark.faviconUrl, size]);
 
-  const advanceCandidate = () => {
+  useEffect(() => {
+    if (candidateIndex >= candidates.length) {
+      setValidatedSiteIconSrc(null);
+      return undefined;
+    }
+
+    const candidate = candidates[candidateIndex];
+    let cancelled = false;
+    const image = new Image();
+
+    image.decoding = "async";
+    image.onload = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const naturalSize = Math.min(image.naturalWidth, image.naturalHeight);
+      if (naturalSize > 0 && naturalSize < minimumNaturalSize) {
+        setCandidateIndex((current) => (
+          current === candidateIndex ? Math.min(current + 1, candidates.length) : current
+        ));
+        return;
+      }
+
+      setValidatedSiteIconSrc(candidate);
+    };
+    image.onerror = () => {
+      if (!cancelled) {
+        setCandidateIndex((current) => (
+          current === candidateIndex ? Math.min(current + 1, candidates.length) : current
+        ));
+      }
+    };
+    image.src = candidate;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateIndex, candidates, minimumNaturalSize]);
+
+  const advanceCandidate = (failedSrc?: string) => {
+    if (failedSrc && failedSrc !== validatedSiteIconSrc) {
+      return;
+    }
+
+    setValidatedSiteIconSrc(null);
     setCandidateIndex((current) => Math.min(current + 1, candidates.length));
   };
 
   return {
-    siteIconSrc: candidates[candidateIndex] ?? null,
-    useDefaultSiteIcon: candidateIndex >= candidates.length,
-    handleSiteIconError: advanceCandidate,
+    siteIconSrc: validatedSiteIconSrc,
+    useDefaultSiteIcon: !validatedSiteIconSrc,
+    handleSiteIconError: () => advanceCandidate(),
     handleSiteIconLoad: (image: HTMLImageElement) => {
       const naturalSize = Math.min(image.naturalWidth, image.naturalHeight);
       if (naturalSize > 0 && naturalSize < minimumNaturalSize) {
-        advanceCandidate();
+        advanceCandidate(image.currentSrc || image.src);
       }
     },
   };
