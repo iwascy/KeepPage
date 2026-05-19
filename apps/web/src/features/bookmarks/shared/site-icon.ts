@@ -76,6 +76,10 @@ function isKnownFallbackIconUrl(rawUrl: string) {
   }
 }
 
+function isDisplayableIconUrl(rawUrl: string) {
+  return Boolean(rawUrl.trim()) && !isKnownFallbackIconUrl(rawUrl);
+}
+
 export function useBookmarkSiteIcon(
   bookmark: Pick<Bookmark, "id" | "domain" | "faviconUrl">,
   size: number,
@@ -134,7 +138,7 @@ export function useBookmarkSiteIcon(
   }, [candidateIndex, candidates, minimumNaturalSize]);
 
   const advanceCandidate = (failedSrc?: string) => {
-    if (failedSrc && failedSrc !== validatedSiteIconSrc) {
+    if (failedSrc && failedSrc !== validatedSiteIconSrc && isDisplayableIconUrl(failedSrc)) {
       return;
     }
 
@@ -147,6 +151,10 @@ export function useBookmarkSiteIcon(
     useDefaultSiteIcon: !validatedSiteIconSrc,
     handleSiteIconError: () => advanceCandidate(),
     handleSiteIconLoad: (image: HTMLImageElement) => {
+      if (!isDisplayableIconUrl(image.currentSrc || image.src)) {
+        advanceCandidate(image.currentSrc || image.src);
+        return;
+      }
       const naturalSize = Math.min(image.naturalWidth, image.naturalHeight);
       if (naturalSize > 0 && naturalSize < minimumNaturalSize) {
         advanceCandidate(image.currentSrc || image.src);

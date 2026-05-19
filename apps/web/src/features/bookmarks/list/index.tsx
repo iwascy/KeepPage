@@ -15,6 +15,7 @@ import {
 } from "../../../lib/date-format";
 import { Icon } from "../../../components/Icon";
 import { DefaultSiteIcon } from "../shared/DefaultSiteIcon";
+import { useBookmarkSiteIcon } from "../shared/site-icon";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -55,6 +56,13 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
   isSelected: boolean;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
+  const {
+    siteIconSrc,
+    useDefaultSiteIcon,
+    handleSiteIconError,
+    handleSiteIconLoad,
+  } = useBookmarkSiteIcon(bookmark, 96);
+
   const coverTone = homeCoverTone(bookmark.domain);
 
   const cardClasses = [
@@ -97,10 +105,22 @@ const HomeBookmarkCard = memo(function HomeBookmarkCard({
         />
       )}
       <div
-        className={`home-bookmark-thumb is-${coverTone} has-default-icon`}
+        className={`home-bookmark-thumb is-${coverTone}${useDefaultSiteIcon ? " has-default-icon" : ""}`}
         aria-hidden="true"
       >
-        <DefaultSiteIcon />
+        {siteIconSrc ? (
+          <img
+            className="home-bookmark-thumb-icon"
+            src={siteIconSrc}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={handleSiteIconError}
+            onLoad={(event) => handleSiteIconLoad(event.currentTarget)}
+          />
+        ) : (
+          <DefaultSiteIcon />
+        )}
       </div>
       <div className="home-bookmark-body">
         <div className="home-bookmark-top">
