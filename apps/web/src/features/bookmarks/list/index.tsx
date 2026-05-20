@@ -1,8 +1,11 @@
 import {
   memo,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   useEffect,
+  useMemo,
   useRef,
+  useState,
 } from "react";
 import type {
   Bookmark,
@@ -22,6 +25,14 @@ type LoadState = "idle" | "loading" | "ready" | "error";
 type InlineFeedback = {
   kind: "success" | "error";
   message: string;
+};
+
+type BatchDropdownOption = {
+  id: string;
+  label: string;
+  detail?: string;
+  color?: string;
+  onSelect: () => void;
 };
 
 function homeCoverTone(domain: string) {
@@ -352,6 +363,140 @@ function HomePage({
   );
 }
 
+function SearchableBatchDropdown({
+  id,
+  label,
+  placeholder,
+  options,
+  emptyLabel,
+  onClose,
+}: {
+  id: string;
+  label: string;
+  placeholder: string;
+  options: BatchDropdownOption[];
+  emptyLabel: string;
+  onClose: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+  const filteredOptions = useMemo(() => {
+    if (!normalizedQuery) {
+      return options;
+    }
+
+    return options.filter((option) => {
+      const searchableText = `${option.label} ${option.detail ?? ""}`.toLocaleLowerCase("zh-CN");
+      return searchableText.includes(normalizedQuery);
+    });
+  }, [normalizedQuery, options]);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [normalizedQuery]);
+
+  useEffect(() => {
+    if (activeIndex > filteredOptions.length - 1) {
+      setActiveIndex(Math.max(filteredOptions.length - 1, 0));
+    }
+  }, [activeIndex, filteredOptions.length]);
+
+  function selectOption(option: BatchDropdownOption) {
+    option.onSelect();
+    onClose();
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+
+    if (filteredOptions.length === 0) {
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveIndex((current) => Math.min(current + 1, filteredOptions.length - 1));
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveIndex((current) => Math.max(current - 1, 0));
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      selectOption(filteredOptions[activeIndex] ?? filteredOptions[0]);
+    }
+  }
+
+  return (
+    <div className="selection-toolbar-dropdown is-searchable">
+      <label className="selection-toolbar-search" htmlFor={`${id}-search`}>
+        <span>{label}</span>
+        <input
+          ref={inputRef}
+          id={`${id}-search`}
+          type="search"
+          value={query}
+          placeholder={placeholder}
+          autoComplete="off"
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={handleKeyDown}
+          role="combobox"
+          aria-expanded="true"
+          aria-controls={`${id}-options`}
+          aria-activedescendant={filteredOptions[activeIndex] ? `${id}-option-${filteredOptions[activeIndex].id}` : undefined}
+        />
+      </label>
+
+      {filteredOptions.length === 0 ? (
+        <span className="selection-toolbar-dropdown-empty" role="status">{emptyLabel}</span>
+      ) : (
+        <div className="selection-toolbar-dropdown-list" id={`${id}-options`} role="listbox" aria-label={label}>
+          {filteredOptions.map((option, index) => (
+            <button
+              key={option.id}
+              id={`${id}-option-${option.id}`}
+              type="button"
+              className={[
+                "selection-toolbar-dropdown-item",
+                index === activeIndex ? "is-active" : "",
+              ].filter(Boolean).join(" ")}
+              role="option"
+              aria-selected={index === activeIndex}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => selectOption(option)}
+            >
+              {option.color ? <span className="selection-toolbar-tag-dot" style={{ background: option.color }} /> : null}
+              <span className="selection-toolbar-option-copy">
+                <span>{option.label}</span>
+                {option.detail ? <small>{option.detail}</small> : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SelectionToolbar({
   selectedCount,
   totalCount,
@@ -404,6 +549,26 @@ function SelectionToolbar({
 
   const allSelected = selectedCount === totalCount && totalCount > 0;
   const hasSelection = selectedCount > 0;
+  const folderOptions = useMemo<BatchDropdownOption[]>(() => [
+    {
+      id: "uncategorized",
+      label: "未归类",
+      detail: "移出当前收藏夹",
+      onSelect: () => onBatchMoveTo(null),
+    },
+    ...folders.map((folder) => ({
+      id: folder.id,
+      label: folder.path,
+      detail: folder.name === folder.path ? undefined : folder.name,
+      onSelect: () => onBatchMoveTo(folder.id),
+    })),
+  ], [folders, onBatchMoveTo]);
+  const tagOptions = useMemo<BatchDropdownOption[]>(() => tags.map((tag) => ({
+    id: tag.id,
+    label: tag.name,
+    color: tag.color,
+    onSelect: () => onBatchSetTags([tag.id]),
+  })), [onBatchSetTags, tags]);
 
   return (
     <div className="selection-toolbar">
@@ -461,31 +626,14 @@ function SelectionToolbar({
             移动到
           </button>
           {batchDropdown === "folder" ? (
-            <div className="selection-toolbar-dropdown">
-              <button
-                type="button"
-                className="selection-toolbar-dropdown-item"
-                onClick={() => {
-                  onBatchMoveTo(null);
-                  onBatchDropdownChange("closed");
-                }}
-              >
-                未归类
-              </button>
-              {folders.map((folder) => (
-                <button
-                  key={folder.id}
-                  type="button"
-                  className="selection-toolbar-dropdown-item"
-                  onClick={() => {
-                    onBatchMoveTo(folder.id);
-                    onBatchDropdownChange("closed");
-                  }}
-                >
-                  {folder.path}
-                </button>
-              ))}
-            </div>
+            <SearchableBatchDropdown
+              id="batch-folder"
+              label="移动到收藏夹"
+              placeholder="搜索收藏夹..."
+              options={folderOptions}
+              emptyLabel="没有匹配的收藏夹"
+              onClose={() => onBatchDropdownChange("closed")}
+            />
           ) : null}
         </div>
         <div className="selection-toolbar-dropdown-wrapper">
@@ -498,25 +646,14 @@ function SelectionToolbar({
             标签
           </button>
           {batchDropdown === "tag" ? (
-            <div className="selection-toolbar-dropdown">
-              {tags.length === 0 ? (
-                <span className="selection-toolbar-dropdown-empty">暂无标签</span>
-              ) : null}
-              {tags.map((tag) => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  className="selection-toolbar-dropdown-item"
-                  onClick={() => {
-                    onBatchSetTags([tag.id]);
-                    onBatchDropdownChange("closed");
-                  }}
-                >
-                  {tag.color ? <span className="selection-toolbar-tag-dot" style={{ background: tag.color }} /> : null}
-                  {tag.name}
-                </button>
-              ))}
-            </div>
+            <SearchableBatchDropdown
+              id="batch-tag"
+              label="设置标签"
+              placeholder="搜索标签..."
+              options={tagOptions}
+              emptyLabel={tags.length === 0 ? "暂无标签" : "没有匹配的标签"}
+              onClose={() => onBatchDropdownChange("closed")}
+            />
           ) : null}
         </div>
         <button
