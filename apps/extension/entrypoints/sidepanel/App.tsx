@@ -690,102 +690,124 @@ export function App() {
       : AUTH_PAGE_REASON === "session-expired"
       ? "登录状态已失效，请重新登录后继续使用扩展。"
       : "完成登录后，扩展会自动回到侧边栏，你就可以直接保存当前页面。";
+    const authPageApiHost = normalizeApiBaseUrl(apiBaseUrl || DEFAULT_API_BASE_URL).replace(/^https?:\/\//, "");
 
     return (
       <div className="auth-page">
         <main className="auth-page-shell">
-          <section className="auth-page-hero">
-            <p className="eyebrow">KeepPage 队列</p>
-            <h1>{authPageTitle}</h1>
-            <p className="auth-page-subtitle">{authPageSubtitle}</p>
+          <section className="auth-page-hero" aria-label="KeepPage 连接状态">
+            <div className="auth-page-hero-copy">
+              <p className="eyebrow">KeepPage 队列</p>
+              <h1>{authPageTitle}</h1>
+              <p className="auth-page-subtitle">{authPageSubtitle}</p>
+            </div>
+            <div className="auth-page-visual" aria-hidden="true">
+              <div className="auth-orbit auth-orbit-one" />
+              <div className="auth-orbit auth-orbit-two" />
+              <div className="auth-page-logo-mark">K</div>
+              <div className="auth-sync-card auth-sync-card-primary">
+                <span className="auth-sync-dot" />
+                <strong>{authUser ? "同步就绪" : "等待登录"}</strong>
+                <span>{authUser ? "归档将进入当前账号" : "连接后自动回到侧边栏"}</span>
+              </div>
+              <div className="auth-sync-card auth-sync-card-secondary">
+                <span>API</span>
+                <strong>{authPageApiHost}</strong>
+              </div>
+            </div>
           </section>
 
           <section className="auth-page-card">
-            <div className="auth-page-card-header">
-              <div>
-                <p className="settings-title">账号</p>
-                <p className="muted">
-                  {authUser
-                    ? "当前扩展会把后续归档同步到这个账号。"
-                    : "登录后，扩展中的新归档任务会自动归到当前账号。"}
-                </p>
+            <div className="auth-page-card-main">
+              <div className="auth-page-card-header">
+                <div>
+                  <p className="settings-title">账号</p>
+                  <p className="muted">
+                    {authUser
+                      ? "当前扩展会把后续归档同步到这个账号。"
+                      : "登录后，扩展中的新归档任务会自动归到当前账号。"}
+                  </p>
+                </div>
               </div>
-            </div>
 
-            {authUser ? (
-              <div className="auth-page-account">
-                <div className="account-chip">
-                  <strong>{authUser.name || authUser.email}</strong>
-                  <span>{authUser.email}</span>
-                </div>
-                <div className="auth-page-actions">
-                  <button onClick={() => void openSidePanelForCurrentWindow()} type="button">
-                    打开侧边栏
-                  </button>
-                  <button className="ghost-btn" onClick={logoutAuth} type="button">
-                    退出登录
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="auth-page-form">
-                  <div className="auth-switch">
-                    <button
-                      className={authMode === "login" ? "auth-switch-btn active" : "auth-switch-btn"}
-                      onClick={() => setAuthMode("login")}
-                      type="button"
-                    >
-                      登录
+              {authUser ? (
+                <div className="auth-page-account">
+                  <div className="auth-account-card">
+                    <div className="auth-account-avatar">{(authUser.name || authUser.email).slice(0, 1)}</div>
+                    <div className="account-chip">
+                      <strong>{authUser.name || authUser.email}</strong>
+                      <span>{authUser.email}</span>
+                    </div>
+                  </div>
+                  <div className="auth-page-actions">
+                    <button onClick={() => void openSidePanelForCurrentWindow()} type="button">
+                      打开侧边栏
                     </button>
-                    <button
-                      className={authMode === "register" ? "auth-switch-btn active" : "auth-switch-btn"}
-                      onClick={() => setAuthMode("register")}
-                      type="button"
-                    >
-                      注册
+                    <button className="ghost-btn" onClick={logoutAuth} type="button">
+                      退出登录
                     </button>
                   </div>
-                  {isRegister ? (
+                </div>
+              ) : (
+                <>
+                  <div className="auth-page-form">
+                    <div className="auth-switch">
+                      <button
+                        className={authMode === "login" ? "auth-switch-btn active" : "auth-switch-btn"}
+                        onClick={() => setAuthMode("login")}
+                        type="button"
+                      >
+                        登录
+                      </button>
+                      <button
+                        className={authMode === "register" ? "auth-switch-btn active" : "auth-switch-btn"}
+                        onClick={() => setAuthMode("register")}
+                        type="button"
+                      >
+                        注册
+                      </button>
+                    </div>
+                    {isRegister ? (
+                      <label className="field-inline">
+                        <span>昵称</span>
+                        <input
+                          value={authName}
+                          onChange={(event) => setAuthName(event.target.value)}
+                          placeholder="可选"
+                        />
+                      </label>
+                    ) : null}
                     <label className="field-inline">
-                      <span>昵称</span>
+                      <span>邮箱</span>
                       <input
-                        value={authName}
-                        onChange={(event) => setAuthName(event.target.value)}
-                        placeholder="可选"
+                        type="email"
+                        value={authEmail}
+                        onChange={(event) => setAuthEmail(event.target.value)}
+                        placeholder="name@example.com"
                       />
                     </label>
-                  ) : null}
-                  <label className="field-inline">
-                    <span>邮箱</span>
-                    <input
-                      type="email"
-                      value={authEmail}
-                      onChange={(event) => setAuthEmail(event.target.value)}
-                      placeholder="name@example.com"
-                    />
-                  </label>
-                  <label className="field-inline">
-                    <span>密码</span>
-                    <input
-                      type="password"
-                      value={authPassword}
-                      onChange={(event) => setAuthPassword(event.target.value)}
-                      placeholder={isRegister ? "至少 8 位" : "输入密码"}
-                    />
-                  </label>
-                </div>
-                <div className="auth-page-actions">
-                  <button onClick={submitAuth} type="button">
-                    {authState === "submitting" ? "提交中..." : isRegister ? "注册并登录" : "登录"}
-                  </button>
-                </div>
-              </>
-            )}
+                    <label className="field-inline">
+                      <span>密码</span>
+                      <input
+                        type="password"
+                        value={authPassword}
+                        onChange={(event) => setAuthPassword(event.target.value)}
+                        placeholder={isRegister ? "至少 8 位" : "输入密码"}
+                      />
+                    </label>
+                  </div>
+                  <div className="auth-page-actions">
+                    <button onClick={submitAuth} type="button">
+                      {authState === "submitting" ? "提交中..." : isRegister ? "注册并登录" : "登录"}
+                    </button>
+                  </div>
+                </>
+              )}
 
-            {authMessage ? (
-              <section className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
-            ) : null}
+              {authMessage ? (
+                <section className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
+              ) : null}
+            </div>
 
             <div className="auth-page-settings">
               <div className="settings-copy">
