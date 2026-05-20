@@ -2,10 +2,12 @@ import {
   bookmarkDetailResponseSchema,
   bookmarkMetadataUpdateRequestSchema,
   bookmarkSchema,
+  bookmarkStatusResponseSchema,
   folderListResponseSchema,
   tagListResponseSchema,
   type Bookmark,
   type BookmarkMetadataUpdateRequest,
+  type BookmarkStatusResponse,
   type Folder,
   type Tag,
 } from "@keeppage/domain";
@@ -28,6 +30,13 @@ export async function fetchBookmark(bookmarkId: string): Promise<Bookmark> {
     bookmarkDetailResponseSchema,
   );
   return payload.bookmark;
+}
+
+export async function fetchBookmarkStatus(url: string): Promise<BookmarkStatusResponse> {
+  return requestJson(
+    `/bookmarks/status?url=${encodeURIComponent(url)}`,
+    bookmarkStatusResponseSchema,
+  );
 }
 
 export async function fetchFolders(): Promise<Folder[]> {

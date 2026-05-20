@@ -20,6 +20,10 @@ const searchQuerySchema = z.object({
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 
+const statusQuerySchema = z.object({
+  url: z.string().url(),
+});
+
 const bookmarkParamsSchema = z.object({
   bookmarkId: z.string().min(1),
 });
@@ -47,6 +51,12 @@ export async function registerBookmarkRoutes(
       userId: user.id,
       load: () => bookmarkService.getBookmarkSidebarStats(user.id),
     });
+  });
+
+  app.get("/bookmarks/status", async (request, reply) => {
+    const user = await authService.requireUser(request);
+    const query = statusQuerySchema.parse(request.query);
+    return reply.send(await bookmarkService.getBookmarkStatus(user.id, query.url));
   });
 
   app.get<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId", async (request, reply) => {

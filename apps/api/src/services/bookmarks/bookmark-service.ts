@@ -3,6 +3,7 @@ import {
   bookmarkSchema,
   bookmarkSearchResponseSchema,
   bookmarkSidebarStatsResponseSchema,
+  bookmarkStatusResponseSchema,
   privateVaultSummarySchema,
   type BookmarkMetadataUpdateRequest,
 } from "@keeppage/domain";
@@ -37,6 +38,14 @@ export class BookmarkService {
   async getBookmarkSidebarStats(userId: string) {
     const result = await this.repository.getBookmarkSidebarStats(userId);
     return bookmarkSidebarStatsResponseSchema.parse(result);
+  }
+
+  async getBookmarkStatus(userId: string, url: string) {
+    const bookmark = await this.repository.findBookmarkByUrl(userId, url);
+    return bookmarkStatusResponseSchema.parse({
+      exists: Boolean(bookmark),
+      bookmark: bookmark ?? undefined,
+    });
   }
 
   async getPrivateVaultSummary(userId: string) {

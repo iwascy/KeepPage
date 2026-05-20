@@ -1571,6 +1571,26 @@ export class PostgresRepositoryCore {
     });
   }
 
+  async findBookmarkByUrl(userId: string, url: string) {
+    const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(url));
+    const rows = await this.db
+      .select({
+        id: bookmarks.id,
+      })
+      .from(bookmarks)
+      .where(
+        and(
+          eq(bookmarks.userId, userId),
+          eq(bookmarks.normalizedUrlHash, normalizedUrlHash),
+        ),
+      )
+      .orderBy(desc(bookmarks.updatedAt))
+      .limit(1);
+
+    const bookmarkId = rows[0]?.id;
+    return bookmarkId ? this.loadBookmarkOrNull(bookmarkId, userId) : null;
+  }
+
   async getBookmarkSidebarStats(userId: string) {
     const rows = await this.db
       .select({

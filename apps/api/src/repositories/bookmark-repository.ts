@@ -193,6 +193,7 @@ export interface IngestRepository extends RepositoryInfo {
 
 export interface BookmarkReadRepository extends RepositoryInfo {
   searchBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse>;
+  findBookmarkByUrl(userId: string, url: string): Promise<Bookmark | null>;
   getBookmarkSidebarStats(userId: string): Promise<BookmarkSidebarStatsResponse>;
   getBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null>;
 }

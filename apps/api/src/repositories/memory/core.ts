@@ -780,6 +780,12 @@ export class InMemoryRepositoryCore {
     };
   }
 
+  async findBookmarkByUrl(userId: string, url: string) {
+    const state = this.ensureUserState(userId);
+    const normalizedUrlHash = hashNormalizedUrl(normalizeSourceUrl(url));
+    return this.findBookmarkByNormalizedHash(state, normalizedUrlHash) ?? null;
+  }
+
   async getBookmarkSidebarStats(userId: string) {
     const state = this.ensureUserState(userId);
     const folderCounts = new Map<string, number>();

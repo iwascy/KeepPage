@@ -321,6 +321,12 @@ export const bookmarkSearchResponseSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 
+export const bookmarkStatusResponseSchema = z.object({
+  exists: z.boolean(),
+  bookmark: bookmarkSchema.optional(),
+});
+export type BookmarkStatusResponse = z.infer<typeof bookmarkStatusResponseSchema>;
+
 export const bookmarkSidebarStatsResponseSchema = z.object({
   folderCounts: z.array(z.object({
     folderId: z.string().min(1),

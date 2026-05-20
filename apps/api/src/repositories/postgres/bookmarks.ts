@@ -28,6 +28,14 @@ export function searchBookmarks(
   return core.searchBookmarks(userId, query);
 }
 
+export function findBookmarkByUrl(
+  core: PostgresRepositoryCore,
+  userId: string,
+  url: string,
+): Promise<Bookmark | null> {
+  return core.findBookmarkByUrl(userId, url);
+}
+
 export function getBookmarkSidebarStats(
   core: PostgresRepositoryCore,
   userId: string,

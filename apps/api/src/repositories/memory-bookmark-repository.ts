@@ -145,6 +145,10 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     return bookmarksRepository.searchBookmarks(this.core, userId, query);
   }
 
+  async findBookmarkByUrl(userId: string, url: string): Promise<Bookmark | null> {
+    return bookmarksRepository.findBookmarkByUrl(this.core, userId, url);
+  }
+
   async getBookmarkSidebarStats(userId: string): Promise<BookmarkSidebarStatsResponse> {
     return bookmarksRepository.getBookmarkSidebarStats(this.core, userId);
   }

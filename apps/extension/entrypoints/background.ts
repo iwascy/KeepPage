@@ -18,6 +18,7 @@ import {
 import { createLogger } from "../src/lib/logger";
 import { getFetchChunkSize } from "../src/lib/singlefile-fetch";
 import { refreshAllBookmarkIcons } from "../src/lib/sync-api";
+import { fetchBookmarkStatus } from "../src/lib/bookmark-metadata-api";
 import {
   captureProfileSchema,
   captureScopeSchema,
@@ -39,6 +40,8 @@ import {
 
 const singleFileTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 const logger = createLogger("background");
+const BOOKMARKED_BADGE_COLOR = "#16a34a";
+const BOOKMARKED_BADGE_TEXT = "✓";
 
 export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
@@ -56,11 +59,13 @@ export default defineBackground(() => {
       });
     });
     void drainLocalArchiveQueue();
+    void refreshActiveTabBookmarkBadge();
   });
 
   chrome.runtime.onStartup?.addListener(() => {
     logger.info("Extension startup detected, resuming local archive queue.");
     void drainLocalArchiveQueue();
+    void refreshActiveTabBookmarkBadge();
   });
 
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -182,8 +187,15 @@ export default defineBackground(() => {
         }
         const profile = captureProfileSchema.parse(message.profile ?? "standard");
         const captureScope = captureScopeSchema.parse(message.captureScope ?? "page");
+        const [activeTab] = await chrome.tabs.query({
+          active: true,
+          lastFocusedWindow: true,
+        });
         logger.info("Triggering active-tab capture.", { profile, saveMode, captureScope });
         const task = await captureActiveTab(profile, saveMode, captureScope);
+        if (saveMode === "standard" && typeof activeTab?.id === "number") {
+          void refreshTabBookmarkBadge(activeTab.id);
+        }
         sendResponse({ ok: true, task });
         return;
       }
@@ -286,6 +298,16 @@ export default defineBackground(() => {
     }
   });
 
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    void refreshTabBookmarkBadge(tabId);
+  });
+
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.url || changeInfo.status === "complete") {
+      void refreshTabBookmarkBadge(tabId, tab.url);
+    }
+  });
+
   chrome.runtime.onSuspend.addListener(() => {
     void lockPrivateVault();
   });
@@ -319,7 +341,13 @@ async function ensureAuthenticated(trigger: string) {
 }
 
 async function attemptQuickCapture(windowId: number | undefined, saveMode: "standard" | "private" = "standard") {
+  let capturedTabId: number | undefined;
   try {
+    const [activeTab] = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
+    capturedTabId = activeTab?.id;
     await captureActiveTab(undefined, saveMode);
   } catch (error) {
     logger.warn("Quick capture failed.", {
@@ -327,9 +355,67 @@ async function attemptQuickCapture(windowId: number | undefined, saveMode: "stan
       error: error instanceof Error ? error.message : String(error),
     });
   } finally {
+    if (typeof capturedTabId === "number" && saveMode === "standard") {
+      void refreshTabBookmarkBadge(capturedTabId);
+    }
     if (windowId != null) {
       await openSidePanelForWindow(windowId);
     }
+  }
+}
+
+async function refreshActiveTabBookmarkBadge() {
+  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const tab = tabs[0];
+  if (typeof tab?.id === "number") {
+    await refreshTabBookmarkBadge(tab.id, tab.url);
+  }
+}
+
+async function refreshTabBookmarkBadge(tabId: number, tabUrl?: string) {
+  try {
+    const url = tabUrl ?? (await chrome.tabs.get(tabId)).url;
+    if (!isBookmarkablePageUrl(url)) {
+      await clearBookmarkBadge(tabId);
+      return;
+    }
+
+    const status = await fetchBookmarkStatus(url);
+    if (status.exists) {
+      await chrome.action.setBadgeText({ tabId, text: BOOKMARKED_BADGE_TEXT });
+      await chrome.action.setBadgeBackgroundColor({ tabId, color: BOOKMARKED_BADGE_COLOR });
+      await chrome.action.setBadgeTextColor?.({ tabId, color: "#ffffff" });
+      await chrome.action.setTitle({
+        tabId,
+        title: `已保存到 KeepPage：${status.bookmark?.title ?? url}`,
+      });
+      return;
+    }
+
+    await clearBookmarkBadge(tabId);
+  } catch (error) {
+    await clearBookmarkBadge(tabId);
+    logger.debug("Bookmark badge refresh skipped.", {
+      tabId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function clearBookmarkBadge(tabId: number) {
+  await chrome.action.setBadgeText({ tabId, text: "" });
+  await chrome.action.setTitle({ tabId, title: "保存当前页面到 KeepPage" });
+}
+
+function isBookmarkablePageUrl(url: string | undefined): url is string {
+  if (!url) {
+    return false;
+  }
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
   }
 }
 
