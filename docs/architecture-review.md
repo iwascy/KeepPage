@@ -28,7 +28,7 @@ KeepPage 当前的仓库级架构是合理的：
 
 | 优先级 | 文件 | 行数 | 主要风险 |
 |---|---:|---:|---|
-| P0 | `apps/web/src/App.tsx` | 3680 | app shell、全局弹窗、私密模式、批量操作仍集中；路由/session 工具已下沉 |
+| P0 | `apps/web/src/App.tsx` | 2277 | session、私密模式、批量操作仍集中；app shell、manager dialog、context menu、本地归档弹窗 UI 已迁出 |
 | P0 | `apps/api/src/repositories/postgres/core.ts` | 3562 | 单个 `PostgresRepositoryCore` 承载大量持久化实现 |
 | P1 | `apps/extension/src/lib/sites/legacy-reader.ts` | 2126 | generic / X / 小红书 / 少数派 archive builder 仍混在 legacy 文件 |
 | P1 | `apps/api/src/repositories/memory/core.ts` | 1942 | memory 实现与 postgres 同步膨胀 |
@@ -48,9 +48,9 @@ KeepPage 当前的仓库级架构是合理的：
 
 AST 粗扫也印证了几个“单个函数/类过长”的点：
 
-- `App` 函数约 2050 行。
-- `AppShell` 约 679 行。
-- `ManagerDialog` 约 454 行。
+- `App` 函数约 2050 行，仍是主要 app 级编排点。
+- `AppShell` 已迁入 `apps/web/src/app/app-shell.tsx`，约 698 行。
+- `ManagerDialog` 已迁入 `apps/web/src/app/manager-dialog.tsx`，约 506 行。
 - `PostgresRepositoryCore` class 约 3427 行。
 - `InMemoryRepositoryCore` class 约 1832 行。
 - `legacy-reader.ts` 中多个站点 builder 都在 250 行以上。
@@ -281,16 +281,17 @@ packages/domain/src/
 
 ### W1：拆 `App.tsx` 余留编排
 
-状态：进行中。2026-05-21 已迁出路由 hash、session token/error、预览选择、剪贴板与用户展示格式到 `apps/web/src/app/**`，`App.tsx` 从 3903 行降到 3680 行。manager dialog、context menu、batch selection、private/local archive 壳层仍需继续下沉。
+状态：进行中。2026-05-21 已迁出路由 hash、session token/error、预览选择、剪贴板与用户展示格式到 `apps/web/src/app/**`，`App.tsx` 从 3903 行降到 3680 行。同日继续迁出 `ManagerDialog`、`ContextMenu`、`LocalArchiveDialog`、`AppShell` 到 `apps/web/src/app/**`，`App.tsx` 降到 2277 行；batch selection 与 private mode 壳层仍需继续下沉。
 
 范围：
 
 - session restore / auth panel。
-- manager dialog。
-- context menu。
+- app shell / sidebar / mobile chrome。（已迁出 UI 组件，仍由 `App.tsx` 提供路由和动作回调）
+- manager dialog。（已迁出 UI 组件与类型，业务 handler 仍在 `App.tsx`）
+- context menu。（已迁出 UI 组件与类型，菜单组装仍在 `App.tsx`）
 - batch selection。
 - private mode 壳层状态。
-- local archive dialog。
+- local archive dialog。（已迁出 UI 组件与类型，队列提交 handler 仍在 `App.tsx`）
 
 完成定义：
 
@@ -522,6 +523,8 @@ packages/domain/src/
 
 ### 2026-05-21 本轮验证记录
 
+- 已通过：`npm run typecheck -w @keeppage/web`，覆盖 W1 的 app shell / manager dialog / context menu / local archive dialog 迁出。
+- 已通过：`npm run build -w @keeppage/web`，覆盖 W1 迁出后的 Web production build。
 - 已通过：`npm run build -w @keeppage/web`，覆盖 W1/W2/W3 的 TypeScript 与 Vite production build。
 - 已通过：`npm run typecheck -w @keeppage/api`，覆盖 A1 facade 落点调整。
 - 已通过：`npm run typecheck`，覆盖 Web/API/Extension/DB/Domain 全仓类型检查。
