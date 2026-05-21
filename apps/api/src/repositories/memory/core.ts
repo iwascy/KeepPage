@@ -7,6 +7,7 @@ import {
   createImportTaskItemId,
   createVersionId,
   type AuthUser,
+  type ExtensionDevice,
   type Bookmark,
   type BookmarkMetadataUpdateRequest,
   type BookmarkVersion,
@@ -36,6 +37,8 @@ import type {
   BookmarkIconUpsertInput,
   BookmarkSearchQuery,
   CreateApiTokenInput,
+  CreateExtensionDeviceInput,
+  ExtensionDeviceAuthRecord,
   CreateImportTaskInput,
   CompleteCaptureResult,
   IngestBookmarkResult,
@@ -58,6 +61,7 @@ type PendingCapture = {
 
 type StoredUser = UserAuthRecord;
 type StoredApiToken = ApiTokenAuthRecord;
+type StoredExtensionDevice = ExtensionDeviceAuthRecord;
 type StoredPrivateModeConfig = PrivateModeConfigRecord;
 
 type UserBookmarkState = {
@@ -88,6 +92,8 @@ export class InMemoryRepositoryCore {
   private readonly stateByUserId = new Map<string, UserBookmarkState>();
   private readonly apiTokensById = new Map<string, StoredApiToken>();
   private readonly apiTokenIdsByUserId = new Map<string, Set<string>>();
+  private readonly extensionDevicesById = new Map<string, StoredExtensionDevice>();
+  private readonly extensionDeviceIdsByUserId = new Map<string, Set<string>>();
   private readonly bookmarkIconsByHostname = new Map<string, BookmarkIcon>();
   private readonly objectStorage: ObjectStorage;
 
@@ -192,6 +198,69 @@ export class InMemoryRepositoryCore {
     }
     token.lastUsedAt = usedAt;
     this.apiTokensById.set(token.id, token);
+  }
+
+  async createExtensionDevice(userId: string, input: CreateExtensionDeviceInput): Promise<ExtensionDevice> {
+    const device: StoredExtensionDevice = {
+      id: input.id,
+      userId,
+      name: input.name,
+      platform: input.platform,
+      tokenPreview: input.tokenPreview,
+      tokenHash: input.tokenHash,
+      lastUsedAt: undefined,
+      expiresAt: input.expiresAt,
+      revokedAt: undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.extensionDevicesById.set(device.id, device);
+    const deviceIds = this.extensionDeviceIdsByUserId.get(userId) ?? new Set<string>();
+    deviceIds.add(device.id);
+    this.extensionDeviceIdsByUserId.set(userId, deviceIds);
+    return this.toPublicExtensionDevice(device);
+  }
+
+  async listExtensionDevices(userId: string): Promise<ExtensionDevice[]> {
+    const deviceIds = this.extensionDeviceIdsByUserId.get(userId);
+    if (!deviceIds) {
+      return [];
+    }
+
+    return [...deviceIds]
+      .map((deviceId) => this.extensionDevicesById.get(deviceId))
+      .filter((device): device is StoredExtensionDevice => Boolean(device))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map((device) => this.toPublicExtensionDevice(device));
+  }
+
+  async getExtensionDeviceAuthRecord(deviceId: string): Promise<ExtensionDeviceAuthRecord | null> {
+    const device = this.extensionDevicesById.get(deviceId);
+    if (!device) {
+      return null;
+    }
+    return { ...device };
+  }
+
+  async revokeExtensionDevice(userId: string, deviceId: string): Promise<boolean> {
+    const device = this.extensionDevicesById.get(deviceId);
+    if (!device || device.userId !== userId) {
+      return false;
+    }
+    if (!device.revokedAt) {
+      device.revokedAt = new Date().toISOString();
+      this.extensionDevicesById.set(device.id, device);
+    }
+    return true;
+  }
+
+  async touchExtensionDevice(deviceId: string, usedAt: string): Promise<void> {
+    const device = this.extensionDevicesById.get(deviceId);
+    if (!device) {
+      return;
+    }
+    device.lastUsedAt = usedAt;
+    this.extensionDevicesById.set(device.id, device);
   }
 
   async getPrivateModeConfig(userId: string): Promise<PrivateModeConfigRecord | null> {
@@ -1767,6 +1836,19 @@ export class InMemoryRepositoryCore {
       expiresAt: token.expiresAt,
       revokedAt: token.revokedAt,
       createdAt: token.createdAt,
+    };
+  }
+
+  private toPublicExtensionDevice(device: StoredExtensionDevice): ExtensionDevice {
+    return {
+      id: device.id,
+      name: device.name,
+      platform: device.platform,
+      tokenPreview: device.tokenPreview,
+      lastUsedAt: device.lastUsedAt,
+      expiresAt: device.expiresAt,
+      revokedAt: device.revokedAt,
+      createdAt: device.createdAt,
     };
   }
 

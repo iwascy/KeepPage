@@ -5,7 +5,7 @@ import { createLogger } from "./logger";
 
 const AUTH_PAGE_FILE = "sidepanel.html";
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
-const EXTENSION_API_TOKEN_NAME = "KeepPage Extension";
+const DEFAULT_WEB_BASE_URL = "https://keeppage.cccy.fun";
 const logger = createLogger("auth-flow");
 
 class ApiResponseError extends Error {
@@ -38,7 +38,14 @@ export async function hasStoredAuthSession() {
 }
 
 export async function clearStoredAuthSession() {
-  await chrome.storage.local.remove(["authToken", "authApiToken", "authUser"]);
+  await chrome.storage.local.remove([
+    "authToken",
+    "authApiToken",
+    "extensionDeviceToken",
+    "extensionDevice",
+    "extensionConnectNonce",
+    "authUser",
+  ]);
 }
 
 export async function getConfiguredApiBaseUrl() {
@@ -77,22 +84,17 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
   try {
     logger.debug("Validating stored auth session.", {
       apiBaseUrl,
-      tokenKind: isApiToken(token) ? "api-token" : "session-token",
+      tokenKind: getTokenKind(token),
       userId: storedUser?.id,
       email: storedUser?.email,
     });
     const user = await fetchCurrentAccount(apiBaseUrl, token);
-    const persistentToken = syncToken || await ensurePersistentAuthToken(apiBaseUrl, token);
-    await persistStoredTokens({
-      authToken: token,
-      authApiToken: persistentToken !== token && isApiToken(persistentToken) ? persistentToken : "",
-      authUser: user,
-    });
+    await persistValidatedAuthState(token, user);
     logger.debug("Stored auth session validated successfully.", {
       apiBaseUrl,
       userId: user.id,
       email: user.email,
-      tokenKind: isApiToken(persistentToken) ? "api-token" : "session-token",
+      tokenKind: getTokenKind(syncToken || token),
     });
     return {
       ok: true,
@@ -165,10 +167,8 @@ export async function authenticateAccount(
 
 export async function persistAuthSession(apiBaseUrl: string, session: AuthSession) {
   const user = authUserSchema.parse(session.user);
-  const persistentToken = await ensurePersistentAuthToken(apiBaseUrl, session.token);
   await persistStoredTokens({
     authToken: session.token,
-    authApiToken: persistentToken !== session.token && isApiToken(persistentToken) ? persistentToken : "",
     authUser: user,
   });
   return {
@@ -184,8 +184,71 @@ export async function recoverUnauthorizedSession(reason = "session-expired") {
 }
 
 export async function openExtensionAuthPage(reason = "login") {
-  logger.debug("Opening extension auth page.", { reason });
-  await openExtensionPage(buildExtensionAuthPageUrl(reason));
+  logger.debug("Opening web extension connect page.", { reason });
+  const connectNonce = crypto.randomUUID();
+  await chrome.storage.local.set({
+    extensionConnectNonce: connectNonce,
+  });
+  await openExtensionPage(await buildWebExtensionConnectUrl(reason, connectNonce));
+}
+
+export async function redeemExtensionConnectCode(input: {
+  apiBaseUrl: string;
+  code: string;
+  connectNonce: string;
+}) {
+  const stored = await chrome.storage.local.get("extensionConnectNonce");
+  const expectedNonce = typeof stored.extensionConnectNonce === "string"
+    ? stored.extensionConnectNonce.trim()
+    : "";
+  const actualNonce = input.connectNonce.trim();
+  if (!expectedNonce || !actualNonce || expectedNonce !== actualNonce) {
+    throw new Error("插件授权请求已失效，请从插件重新打开授权页。");
+  }
+
+  const apiBaseUrl = normalizeApiBaseUrl(input.apiBaseUrl);
+  const response = await fetch(`${apiBaseUrl}/extension/connect/redeem`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      code: input.code,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new ApiResponseError(response.status, await readApiErrorMessage(response));
+  }
+
+  const payload = await response.json() as {
+    token?: unknown;
+    user?: unknown;
+    device?: unknown;
+  };
+  const token = typeof payload.token === "string" ? payload.token.trim() : "";
+  if (!isExtensionDeviceToken(token)) {
+    throw new Error("服务端没有返回有效的插件设备令牌。");
+  }
+
+  const user = authUserSchema.parse(payload.user);
+  await chrome.storage.local.set({
+    apiBaseUrl,
+    extensionDeviceToken: token,
+    extensionDevice: payload.device,
+    authUser: user,
+  });
+  await chrome.storage.local.remove(["authToken", "authApiToken", "extensionConnectNonce"]);
+  logger.info("Extension device connected successfully.", {
+    apiBaseUrl,
+    userId: user.id,
+    email: user.email,
+  });
+  return {
+    token,
+    user,
+  };
 }
 
 export async function openSidePanelForCurrentWindow() {
@@ -229,10 +292,11 @@ export async function openSidePanelForWindow(windowId: number | undefined) {
   }
 }
 
-function buildExtensionAuthPageUrl(reason: string) {
-  const authPageUrl = new URL(chrome.runtime.getURL(AUTH_PAGE_FILE));
-  authPageUrl.searchParams.set("view", "auth");
-  authPageUrl.searchParams.set("reason", reason);
+async function buildWebExtensionConnectUrl(reason: string, connectNonce: string) {
+  const apiBaseUrl = await getConfiguredApiBaseUrl();
+  const webBaseUrl = resolveWebBaseUrl(apiBaseUrl);
+  const authPageUrl = new URL("#/extension/connect", webBaseUrl);
+  authPageUrl.hash = buildExtensionConnectHash(reason, connectNonce);
   return authPageUrl.toString();
 }
 
@@ -255,62 +319,40 @@ async function fetchCurrentAccount(apiBaseUrl: string, authToken: string) {
   return authUserSchema.parse(await response.json());
 }
 
-async function ensurePersistentAuthToken(apiBaseUrl: string, authToken: string) {
-  if (isApiToken(authToken)) {
-    return authToken;
-  }
-
-  try {
-    const response = await fetch(`${apiBaseUrl}/api-tokens`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        name: EXTENSION_API_TOKEN_NAME,
-        scopes: ["bookmark:create"],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new ApiResponseError(response.status, await readApiErrorMessage(response));
-    }
-
-    const payload = await response.json() as { token?: unknown };
-    const persistentToken = typeof payload.token === "string" ? payload.token.trim() : "";
-    if (!persistentToken || !isApiToken(persistentToken)) {
-      throw new Error("服务端没有返回有效的扩展长期令牌。");
-    }
-
-    logger.info("Upgraded extension auth session to long-lived API token.");
-    return persistentToken;
-  } catch (error) {
-    logger.warn("Failed to upgrade session token to long-lived API token, keeping current token.", {
-      apiBaseUrl,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return authToken;
-  }
-}
-
 async function persistStoredTokens(input: {
   authToken: string;
-  authApiToken: string;
   authUser: AuthUser;
 }) {
   await chrome.storage.local.set({
     authToken: input.authToken,
     authUser: input.authUser,
   });
-  if (input.authApiToken) {
+}
+
+async function persistValidatedAuthState(token: string, user: AuthUser) {
+  await chrome.storage.local.set({
+    authUser: user,
+  });
+
+  if (isExtensionDeviceToken(token)) {
     await chrome.storage.local.set({
-      authApiToken: input.authApiToken,
+      extensionDeviceToken: token,
     });
+    await chrome.storage.local.remove(["authToken", "authApiToken"]);
     return;
   }
-  await chrome.storage.local.remove("authApiToken");
+
+  if (isApiToken(token)) {
+    await chrome.storage.local.set({
+      authApiToken: token,
+    });
+    await chrome.storage.local.remove("authToken");
+    return;
+  }
+
+  await chrome.storage.local.set({
+    authToken: token,
+  });
 }
 
 async function readApiErrorMessage(response: Response) {
@@ -325,6 +367,66 @@ async function readApiErrorMessage(response: Response) {
 
 function isApiToken(token: string) {
   return token.startsWith("kp_");
+}
+
+function isExtensionDeviceToken(token: string) {
+  return token.startsWith("kpd_");
+}
+
+function getTokenKind(token: string) {
+  if (isExtensionDeviceToken(token)) {
+    return "extension-device";
+  }
+  if (isApiToken(token)) {
+    return "api-token";
+  }
+  return "session-token";
+}
+
+function resolveWebBaseUrl(apiBaseUrl: string) {
+  try {
+    const url = new URL(apiBaseUrl);
+    if (url.pathname.endsWith("/api")) {
+      url.pathname = url.pathname.slice(0, -4) || "/";
+      url.search = "";
+      url.hash = "";
+      return url.toString().replace(/\/$/, "");
+    }
+  } catch {
+    return DEFAULT_WEB_BASE_URL;
+  }
+  return DEFAULT_WEB_BASE_URL;
+}
+
+function buildExtensionConnectHash(reason: string, connectNonce: string) {
+  const params = new URLSearchParams({
+    reason,
+    deviceName: buildDeviceName(),
+    platform: "Chrome Extension",
+    extensionId: chrome.runtime.id,
+    connectNonce,
+  });
+  return `#/extension/connect?${params.toString()}`;
+}
+
+function buildDeviceName() {
+  const browser = detectBrowserName();
+  const platform = navigator.platform?.trim();
+  return platform ? `${browser} on ${platform}` : `${browser} Extension`;
+}
+
+function detectBrowserName() {
+  const userAgent = navigator.userAgent;
+  if (userAgent.includes("Edg/")) {
+    return "Edge";
+  }
+  if (userAgent.includes("Firefox/")) {
+    return "Firefox";
+  }
+  if (userAgent.includes("Chrome/")) {
+    return "Chrome";
+  }
+  return "KeepPage";
 }
 
 async function openExtensionPage(pageUrl: string) {

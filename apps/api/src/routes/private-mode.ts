@@ -16,6 +16,7 @@ export async function registerPrivateModeRoutes(
   app.get("/private-mode/status", async (request, reply) => {
     const user = await authService.requireUser(request, {
       allowApiToken: true,
+      allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
     const privateToken = Array.isArray(request.headers["x-keeppage-private-token"])
@@ -28,6 +29,7 @@ export async function registerPrivateModeRoutes(
   app.post("/private-mode/setup", async (request, reply) => {
     const user = await authService.requireUser(request, {
       allowApiToken: true,
+      allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
     const payload = privateModeSetupRequestSchema.parse(request.body);
@@ -38,6 +40,7 @@ export async function registerPrivateModeRoutes(
   app.post("/private-mode/unlock", async (request, reply) => {
     const user = await authService.requireUser(request, {
       allowApiToken: true,
+      allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
     const payload = privateModeUnlockRequestSchema.parse(request.body);
@@ -48,6 +51,7 @@ export async function registerPrivateModeRoutes(
   app.post("/private-mode/lock", async (request, reply) => {
     const user = await authService.requireUser(request, {
       allowApiToken: true,
+      allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
     const summary = await privateModeService.getStatus(user.id);

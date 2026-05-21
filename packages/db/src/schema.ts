@@ -71,9 +71,17 @@ export const devices = pgTable("devices", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   label: varchar("label", { length: 120 }).notNull(),
-  platform: varchar("platform", { length: 40 }).notNull(),
+  platform: varchar("platform", { length: 80 }).notNull(),
+  tokenPreview: varchar("token_preview", { length: 80 }),
+  tokenHash: varchar("token_hash", { length: 128 }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  devicesUserCreatedIdx: index("devices_user_created_idx").on(table.userId, table.createdAt),
+  devicesTokenHashIdx: uniqueIndex("devices_token_hash_idx").on(table.tokenHash),
+}));
 
 export const privateModeConfigs = pgTable("private_mode_configs", {
   userId: uuid("user_id")

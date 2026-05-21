@@ -31,6 +31,7 @@ export async function registerPrivateCaptureRoutes(
   app.post("/private/captures/init", async (request, reply) => {
     const user = await authService.requireUser(request, {
       allowApiToken: true,
+      allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
     privateModeService.requireUnlocked(request, user.id);
@@ -47,6 +48,7 @@ export async function registerPrivateCaptureRoutes(
   app.post("/private/captures/complete", async (request, reply) => {
     const user = await authService.requireUser(request, {
       allowApiToken: true,
+      allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
     privateModeService.requireUnlocked(request, user.id);

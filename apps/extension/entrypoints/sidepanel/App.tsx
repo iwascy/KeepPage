@@ -19,11 +19,9 @@ import {
   ensureArchiveBaseHref,
 } from "../../src/lib/domain-runtime";
 import {
-  authenticateAccount,
   clearStoredAuthSession,
   openExtensionAuthPage,
   openSidePanelForCurrentWindow,
-  persistAuthSession,
   validateStoredAuthSession,
 } from "../../src/lib/auth-flow";
 
@@ -32,7 +30,6 @@ type SettingsState = "idle" | "saving" | "saved" | "error";
 type IconRefreshState = "idle" | "refreshing" | "saved" | "error";
 type ConnectionState = "idle" | "testing" | "ok" | "error";
 type AuthState = "idle" | "submitting" | "ok" | "error";
-type AuthMode = "login" | "register";
 
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
 const LOCKED_CAPTURE_PROFILE: CaptureProfile = "complete";
@@ -165,12 +162,8 @@ export function App() {
   const [iconRefreshMessage, setIconRefreshMessage] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authState, setAuthState] = useState<AuthState>("idle");
   const [authMessage, setAuthMessage] = useState<string | null>(null);
-  const [authName, setAuthName] = useState("");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [vaultSummary, setVaultSummary] = useState<PrivateVaultSummary | null>(null);
   const [vaultPassphrase, setVaultPassphrase] = useState("");
@@ -220,7 +213,7 @@ export function App() {
 
   useEffect(() => {
     const listener: Parameters<typeof chrome.storage.onChanged.addListener>[0] = (changes, areaName) => {
-      if (areaName !== "local" || (!changes.authToken && !changes.authUser)) {
+      if (areaName !== "local" || (!changes.authToken && !changes.authApiToken && !changes.extensionDeviceToken && !changes.authUser)) {
         return;
       }
 
@@ -236,7 +229,6 @@ export function App() {
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   const selectedProfileMeta = PROFILE_META[captureProfile] ?? PROFILE_META[LOCKED_CAPTURE_PROFILE];
   const authBannerTone = authState === "ok" ? "ok" : authState;
-  const isRegister = authMode === "register";
   const isPrivateView = saveMode === "private";
   const isVaultEnabled = Boolean(vaultSummary?.enabled);
   const isVaultUnlocked = Boolean(vaultSummary?.unlocked);
@@ -259,7 +251,7 @@ export function App() {
     : "按当前 Profile 重抓";
   const primaryActionLabel = useMemo(() => {
     if (!authUser) {
-      return "去登录";
+      return "连接账号";
     }
     if (state === "capturing") {
       return isPrivateView ? "私密保存中..." : "保存中...";
@@ -284,13 +276,13 @@ export function App() {
       setTasks([]);
       setSelectedTaskId(null);
       setAuthState("idle");
-      setAuthMessage("登录已失效或已退出，请重新登录后再继续保存。");
+      setAuthMessage("插件设备未连接或已退出，请通过网页连接后再继续保存。");
       return;
     }
 
     setAuthUser(user);
     setAuthState("ok");
-    setAuthMessage(`已登录 ${user.email}，现在可以继续使用扩展。`);
+    setAuthMessage(`已连接 ${user.email}，现在可以继续使用扩展。`);
     await refreshTasks(saveMode);
   }
 
@@ -348,7 +340,7 @@ export function App() {
   async function ensureReadyForCaptureAction() {
     if (!authUser) {
       setAuthState("idle");
-      setAuthMessage("请先完成登录，登录成功后就可以开始使用扩展。");
+      setAuthMessage("请先通过网页连接 KeepPage，连接后就可以开始使用扩展。");
       await openExtensionAuthPage("capture-button");
       return false;
     }
@@ -478,6 +470,8 @@ export function App() {
       "incognitoPrivateDefault",
       "debugMode",
       "authToken",
+      "authApiToken",
+      "extensionDeviceToken",
       "authUser",
     ]);
     const normalizedApiBaseUrl = typeof result.apiBaseUrl === "string" && result.apiBaseUrl.trim()
@@ -495,13 +489,19 @@ export function App() {
     );
     setSaveMode(detectedInitialSaveMode);
 
-    const storedToken = typeof result.authToken === "string" ? result.authToken.trim() : "";
+    const storedToken = typeof result.extensionDeviceToken === "string" && result.extensionDeviceToken.trim()
+      ? result.extensionDeviceToken.trim()
+      : typeof result.authApiToken === "string" && result.authApiToken.trim()
+      ? result.authApiToken.trim()
+      : typeof result.authToken === "string"
+      ? result.authToken.trim()
+      : "";
     if (!storedToken) {
       setTasks([]);
       setSelectedTaskId(null);
       if (AUTH_PAGE_VIEW) {
         setAuthState("idle");
-        setAuthMessage("请先登录 KeepPage，完成后就可以直接使用扩展。");
+        setAuthMessage("请在网页端连接 KeepPage，完成后就可以直接使用扩展。");
       }
       return;
     }
@@ -515,7 +515,7 @@ export function App() {
     if (session.ok) {
       setAuthUser(session.user);
       setAuthState("ok");
-      setAuthMessage(`已登录 ${session.user.email}，后续同步将归到这个账号。`);
+      setAuthMessage(`已连接 ${session.user.email}，后续同步将归到这个账号。`);
       await refreshTasks(detectedInitialSaveMode);
       return;
     }
@@ -523,7 +523,7 @@ export function App() {
     if (session.reason === "unreachable" && parsedUser) {
       setAuthUser(parsedUser);
       setAuthState("ok");
-      setAuthMessage(`暂时无法验证服务器连接，已保留 ${parsedUser.email} 的本地登录态。`);
+      setAuthMessage(`暂时无法验证服务器连接，已保留 ${parsedUser.email} 的本地连接。`);
       await refreshTasks(detectedInitialSaveMode);
       return;
     }
@@ -610,35 +610,24 @@ export function App() {
     }
   }
 
-  async function submitAuth() {
+  async function connectAccount() {
     setAuthState("submitting");
     setAuthMessage(null);
     try {
       const normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
-      const session = await authenticateAccount(normalizedApiBaseUrl, authMode, {
-        email: authEmail.trim(),
-        password: authPassword,
-        name: authName.trim() || undefined,
+      await chrome.storage.local.set({
+        apiBaseUrl: normalizedApiBaseUrl,
       });
-      const storedSession = await persistAuthSession(normalizedApiBaseUrl, session);
-      setAuthUser(storedSession.user);
-      setAuthPassword("");
-      setAuthState("ok");
-      const sidePanelOpened = AUTH_PAGE_VIEW
-        ? await openSidePanelForCurrentWindow()
-        : false;
-      setAuthMessage(
-        sidePanelOpened
-          ? `已登录 ${storedSession.user.email}，侧边栏已打开，现在可以直接保存当前页面。`
-          : `已登录 ${storedSession.user.email}，新的保存会同步到这个账号。`,
-      );
+      setApiBaseUrl(normalizedApiBaseUrl);
+      await openExtensionAuthPage("manual-connect");
+      setAuthState("idle");
+      setAuthMessage("已打开网页登录授权页。完成网页授权后，插件会自动连接。");
       setConnectionState("idle");
       setConnectionMessage(null);
-      await refreshTasks(saveMode);
     } catch (authError) {
       setAuthState("error");
       setAuthMessage(
-        authError instanceof Error ? authError.message : "登录失败。",
+        authError instanceof Error ? authError.message : "打开网页授权失败。",
       );
     }
   }
@@ -649,7 +638,7 @@ export function App() {
     setTasks([]);
     setSelectedTaskId(null);
     setAuthState("idle");
-    setAuthMessage("已退出当前账号。要继续保存网页，请先重新登录。");
+    setAuthMessage("已退出当前插件设备。要继续保存网页，请重新通过网页连接。");
     setConnectionState("idle");
     setConnectionMessage(null);
   }
@@ -660,7 +649,7 @@ export function App() {
     try {
       const token = await getStoredAuthToken();
       if (!token) {
-        throw new Error("请先登录账号，再测试同步连接。");
+        throw new Error("请先通过网页连接插件，再测试同步连接。");
       }
 
       const session = await validateStoredAuthSession();
@@ -684,12 +673,12 @@ export function App() {
   }
 
   if (AUTH_PAGE_VIEW) {
-    const authPageTitle = authUser ? "KeepPage 已连接" : "登录 KeepPage";
+    const authPageTitle = authUser ? "KeepPage 已连接" : "连接 KeepPage";
     const authPageSubtitle = authUser
       ? "当前浏览器已经绑定账号，可以回到侧边栏继续保存网页。"
       : AUTH_PAGE_REASON === "session-expired"
-      ? "登录状态已失效，请重新登录后继续使用扩展。"
-      : "完成登录后，扩展会自动回到侧边栏，你就可以直接保存当前页面。";
+      ? "插件授权已失效，请通过网页重新连接后继续使用扩展。"
+      : "完成网页授权后，扩展会自动回到侧边栏，你就可以直接保存当前页面。";
     const authPageApiHost = normalizeApiBaseUrl(apiBaseUrl || DEFAULT_API_BASE_URL).replace(/^https?:\/\//, "");
 
     return (
@@ -707,7 +696,7 @@ export function App() {
               <div className="auth-page-logo-mark">K</div>
               <div className="auth-sync-card auth-sync-card-primary">
                 <span className="auth-sync-dot" />
-                <strong>{authUser ? "同步就绪" : "等待登录"}</strong>
+                <strong>{authUser ? "同步就绪" : "等待连接"}</strong>
                 <span>{authUser ? "归档将进入当前账号" : "连接后自动回到侧边栏"}</span>
               </div>
               <div className="auth-sync-card auth-sync-card-secondary">
@@ -725,7 +714,7 @@ export function App() {
                   <p className="muted">
                     {authUser
                       ? "当前扩展会把后续归档同步到这个账号。"
-                      : "登录后，扩展中的新归档任务会自动归到当前账号。"}
+                      : "通过网页登录授权后，扩展中的新归档任务会自动归到当前账号。"}
                   </p>
                 </div>
               </div>
@@ -749,59 +738,11 @@ export function App() {
                   </div>
                 </div>
               ) : (
-                <>
-                  <div className="auth-page-form">
-                    <div className="auth-switch">
-                      <button
-                        className={authMode === "login" ? "auth-switch-btn active" : "auth-switch-btn"}
-                        onClick={() => setAuthMode("login")}
-                        type="button"
-                      >
-                        登录
-                      </button>
-                      <button
-                        className={authMode === "register" ? "auth-switch-btn active" : "auth-switch-btn"}
-                        onClick={() => setAuthMode("register")}
-                        type="button"
-                      >
-                        注册
-                      </button>
-                    </div>
-                    {isRegister ? (
-                      <label className="field-inline">
-                        <span>昵称</span>
-                        <input
-                          value={authName}
-                          onChange={(event) => setAuthName(event.target.value)}
-                          placeholder="可选"
-                        />
-                      </label>
-                    ) : null}
-                    <label className="field-inline">
-                      <span>邮箱</span>
-                      <input
-                        type="email"
-                        value={authEmail}
-                        onChange={(event) => setAuthEmail(event.target.value)}
-                        placeholder="name@example.com"
-                      />
-                    </label>
-                    <label className="field-inline">
-                      <span>密码</span>
-                      <input
-                        type="password"
-                        value={authPassword}
-                        onChange={(event) => setAuthPassword(event.target.value)}
-                        placeholder={isRegister ? "至少 8 位" : "输入密码"}
-                      />
-                    </label>
-                  </div>
-                  <div className="auth-page-actions">
-                    <button onClick={submitAuth} type="button">
-                      {authState === "submitting" ? "提交中..." : isRegister ? "注册并登录" : "登录"}
-                    </button>
-                  </div>
-                </>
+                <div className="auth-page-actions">
+                  <button onClick={connectAccount} type="button">
+                    {authState === "submitting" ? "打开中..." : "打开网页授权"}
+                  </button>
+                </div>
               )}
 
               {authMessage ? (
@@ -1014,7 +955,7 @@ export function App() {
               ? isPrivateView
                 ? "当前私密保存会同步到这个账号的服务端私密工作区。"
                 : "当前扩展会把新归档同步到这个账号。"
-              : "请先注册或登录账号，新的本地归档任务也会绑定到当前账号。"}
+              : "请先通过网页连接 KeepPage，新的本地归档任务会绑定到当前账号。"}
           </p>
         </div>
 
@@ -1029,59 +970,11 @@ export function App() {
             </button>
           </div>
         ) : (
-          <>
-            <div className="account-form">
-              <div className="auth-switch">
-                <button
-                  className={authMode === "login" ? "auth-switch-btn active" : "auth-switch-btn"}
-                  onClick={() => setAuthMode("login")}
-                  type="button"
-                >
-                  登录
-                </button>
-                <button
-                  className={authMode === "register" ? "auth-switch-btn active" : "auth-switch-btn"}
-                  onClick={() => setAuthMode("register")}
-                  type="button"
-                >
-                  注册
-                </button>
-              </div>
-              {isRegister ? (
-                <label className="field-inline">
-                  <span>昵称</span>
-                  <input
-                    value={authName}
-                    onChange={(event) => setAuthName(event.target.value)}
-                    placeholder="可选"
-                  />
-                </label>
-              ) : null}
-              <label className="field-inline">
-                <span>邮箱</span>
-                <input
-                  type="email"
-                  value={authEmail}
-                  onChange={(event) => setAuthEmail(event.target.value)}
-                  placeholder="name@example.com"
-                />
-              </label>
-              <label className="field-inline">
-                <span>密码</span>
-                <input
-                  type="password"
-                  value={authPassword}
-                  onChange={(event) => setAuthPassword(event.target.value)}
-                  placeholder={isRegister ? "至少 8 位" : "输入密码"}
-                />
-              </label>
-            </div>
-            <div className="settings-actions">
-              <button onClick={submitAuth} type="button">
-                {authState === "submitting" ? "提交中..." : isRegister ? "注册并登录" : "登录"}
-              </button>
-            </div>
-          </>
+          <div className="settings-actions">
+            <button onClick={connectAccount} type="button">
+              {authState === "submitting" ? "打开中..." : "打开网页授权"}
+            </button>
+          </div>
         )}
       </section>
       {authMessage && (
@@ -1165,7 +1058,7 @@ export function App() {
                   : "当前私密模式还没有保存记录。"
                 : authUser
                 ? "当前账号还没有保存记录。点击「保存当前页」，先生成本地归档，再异步进入上传队列。"
-                : "登录后，这里只会显示当前账号的本地保存记录。"}
+                : "连接账号后，这里只会显示当前账号的本地保存记录。"}
             </p>
           )}
           {tasks.map((task) => {

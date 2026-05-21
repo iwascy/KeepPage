@@ -22,6 +22,8 @@ import type { ApiConfig } from "../../config";
 import { HttpError } from "../../lib/http-error";
 import type { ApiTokenService } from "../api-tokens/api-token-service";
 import type { AuthRepository } from "../../repositories";
+import type { ExtensionDeviceService } from "./extension-device-service";
+import { isDeviceToken } from "./extension-device-service";
 
 const scryptAsync = promisify(nodeScrypt);
 
@@ -34,23 +36,27 @@ type TokenPayload = {
 
 type AuthServiceOptions = {
   apiTokenService: ApiTokenService;
+  extensionDeviceService?: ExtensionDeviceService;
   config: ApiConfig;
   repository: AuthRepository;
 };
 
 type RequireUserOptions = {
   allowApiToken?: boolean;
+  allowExtensionDevice?: boolean;
   requiredApiScope?: ApiTokenScope;
 };
 
 export class AuthService {
   private readonly repository: AuthRepository;
   private readonly apiTokenService: ApiTokenService;
+  private readonly extensionDeviceService?: ExtensionDeviceService;
   private readonly tokenSecret: string;
   private readonly tokenTtlMs: number;
 
   constructor(options: AuthServiceOptions) {
     this.apiTokenService = options.apiTokenService;
+    this.extensionDeviceService = options.extensionDeviceService;
     this.repository = options.repository;
     this.tokenSecret = options.config.AUTH_TOKEN_SECRET;
     this.tokenTtlMs = options.config.AUTH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
@@ -98,6 +104,14 @@ export class AuthService {
 
     if (options.allowApiToken && isApiToken(token)) {
       const auth = await this.apiTokenService.authenticateToken(token, options.requiredApiScope);
+      return auth.user;
+    }
+
+    if (options.allowExtensionDevice && isDeviceToken(token)) {
+      if (!this.extensionDeviceService) {
+        throw new HttpError(401, "Unauthorized", "扩展设备授权暂不可用。");
+      }
+      const auth = await this.extensionDeviceService.authenticateDevice(token);
       return auth.user;
     }
 

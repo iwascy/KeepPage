@@ -19,6 +19,7 @@ export const MESSAGE_TYPE = {
   StartSelectionCapture: "keeppage/start-selection-capture",
   TriggerCaptureActiveTab: "keeppage/trigger-capture-active-tab",
   EnqueueLocalArchiveQueue: "keeppage/enqueue-local-archive-queue",
+  RedeemExtensionConnectCode: "keeppage/redeem-extension-connect-code",
   RetryTask: "keeppage/retry-task",
   OpenTaskPreview: "keeppage/open-task-preview",
   GetPrivateVaultState: "keeppage/get-private-vault-state",
@@ -113,6 +114,14 @@ export interface EnqueueLocalArchiveQueueRequest {
   }>;
 }
 
+export interface RedeemExtensionConnectCodeRequest {
+  type: typeof MESSAGE_TYPE.RedeemExtensionConnectCode;
+  code: string;
+  apiBaseUrl: string;
+  connectNonce: string;
+  expiresAt?: string;
+}
+
 export interface RetryTaskRequest {
   type: typeof MESSAGE_TYPE.RetryTask;
   taskId: string;
@@ -178,6 +187,7 @@ export type BackgroundRequest =
   | StartSelectionCaptureRequest
   | TriggerCaptureActiveTabRequest
   | EnqueueLocalArchiveQueueRequest
+  | RedeemExtensionConnectCodeRequest
   | RetryTaskRequest
   | OpenTaskPreviewRequest
   | GetPrivateVaultStateRequest
@@ -217,6 +227,7 @@ export function isBackgroundRequest(message: unknown): message is BackgroundRequ
     maybe.type === MESSAGE_TYPE.StartSelectionCapture ||
     maybe.type === MESSAGE_TYPE.TriggerCaptureActiveTab ||
     maybe.type === MESSAGE_TYPE.EnqueueLocalArchiveQueue ||
+    maybe.type === MESSAGE_TYPE.RedeemExtensionConnectCode ||
     maybe.type === MESSAGE_TYPE.RetryTask ||
     maybe.type === MESSAGE_TYPE.OpenTaskPreview ||
     maybe.type === MESSAGE_TYPE.GetPrivateVaultState ||

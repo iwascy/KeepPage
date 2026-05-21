@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ApiConfig } from "../config";
 import type { BookmarkRepository } from "../repositories";
 import type { ApiTokenService } from "../services/api-tokens/api-token-service";
+import type { ExtensionDeviceService } from "../services/auth/extension-device-service";
 import type { AuthService } from "../services/auth/auth-service";
 import type { PrivateModeService } from "../services/auth/private-mode-service";
 import type { BookmarkService } from "../services/bookmarks/bookmark-service";
@@ -20,6 +21,7 @@ import { registerImportRoutes } from "./imports";
 import { registerPrivateBookmarkRoutes } from "./private-bookmarks";
 import { registerPrivateCaptureRoutes } from "./private-captures";
 import { registerPrivateModeRoutes } from "./private-mode";
+import { registerExtensionDeviceRoutes } from "./extension-devices";
 import { registerTagRoutes } from "./tags";
 import { registerUploadRoutes } from "./uploads";
 import { registerWorkspaceRoutes } from "./workspace";
@@ -31,6 +33,7 @@ export async function registerRoutes(
   authService: AuthService,
   privateModeService: PrivateModeService,
   apiTokenService: ApiTokenService,
+  extensionDeviceService: ExtensionDeviceService,
   repository: BookmarkRepository,
   bookmarkService: BookmarkService,
   iconRefreshService: IconRefreshService,
@@ -41,6 +44,7 @@ export async function registerRoutes(
   await registerAuthRoutes(app, authService);
   await registerPrivateModeRoutes(app, authService, privateModeService);
   await registerApiTokenRoutes(app, authService, apiTokenService);
+  await registerExtensionDeviceRoutes(app, authService, extensionDeviceService);
   await registerHealthRoutes(app, repository);
   await registerCaptureRoutes(app, config, authService, repository, iconRefreshService, responseCache);
   await registerPrivateCaptureRoutes(app, config, authService, privateModeService, repository, iconRefreshService, responseCache);

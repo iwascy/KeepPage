@@ -21,6 +21,9 @@ import {
   privateVaultSummarySchema,
   tagListResponseSchema,
   tagSchema,
+  extensionConnectInitRequestSchema,
+  extensionConnectInitResponseSchema,
+  extensionDeviceListResponseSchema,
   type ApiToken,
   type ApiTokenCreateRequest,
   type ApiTokenCreateResponse,
@@ -41,6 +44,9 @@ import {
   type Tag,
   type TagCreateRequest,
   type TagUpdateRequest,
+  type ExtensionConnectInitRequest,
+  type ExtensionConnectInitResponse,
+  type ExtensionDevice,
   workspaceBootstrapResponseSchema,
   type WorkspaceBootstrapResponse,
 } from "@keeppage/domain";
@@ -212,6 +218,7 @@ export type ImportTaskDetailResult = {
 };
 
 export type ApiTokenItem = ApiToken;
+export type ExtensionDeviceItem = ExtensionDevice;
 
 type RequestOptions = {
   method?: string;
@@ -533,6 +540,32 @@ export async function createApiToken(input: ApiTokenCreateRequest, token: string
 
 export async function revokeApiToken(tokenId: string, token: string) {
   await requestVoid(`/api-tokens/${encodeURIComponent(tokenId)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function createExtensionConnectCode(
+  input: ExtensionConnectInitRequest,
+  token: string,
+): Promise<ExtensionConnectInitResponse> {
+  const payload = extensionConnectInitRequestSchema.parse(input);
+  return requestJson("/extension/connect", extensionConnectInitResponseSchema, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export async function fetchExtensionDevices(token: string): Promise<ExtensionDeviceItem[]> {
+  const payload = await requestJson("/extension/devices", extensionDeviceListResponseSchema, {
+    token,
+  });
+  return payload.items;
+}
+
+export async function revokeExtensionDevice(deviceId: string, token: string) {
+  await requestVoid(`/extension/devices/${encodeURIComponent(deviceId)}`, {
     method: "DELETE",
     token,
   });

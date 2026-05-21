@@ -85,6 +85,7 @@ export async function registerUploadRoutes(
     async (request, reply) => {
       const user = await authService.requireUser(request, {
         allowApiToken: true,
+        allowExtensionDevice: true,
         requiredApiScope: "bookmark:create",
       });
       const params = uploadParamsSchema.parse(request.params);
@@ -107,6 +108,7 @@ export async function registerUploadRoutes(
     async (request, reply) => {
       const user = await authService.requireUser(request, {
         allowApiToken: true,
+        allowExtensionDevice: true,
         requiredApiScope: "bookmark:create",
       });
       const params = uploadChunkParamsSchema.parse(request.params);

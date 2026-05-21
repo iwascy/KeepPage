@@ -11,7 +11,7 @@ import {
   type Folder,
   type Tag,
 } from "@keeppage/domain";
-import { getStoredAuthToken } from "./auth-storage";
+import { getStoredSyncToken } from "./auth-storage";
 import { getConfiguredApiBaseUrl, recoverUnauthorizedSession } from "./auth-flow";
 
 class ExtensionApiError extends Error {
@@ -71,7 +71,7 @@ async function requestJson<T>(
 ): Promise<T> {
   const [apiBaseUrl, token] = await Promise.all([
     getConfiguredApiBaseUrl(),
-    getStoredAuthToken(),
+    getStoredSyncToken(),
   ]);
   if (!token) {
     throw new Error("未登录 KeepPage，请先登录。");

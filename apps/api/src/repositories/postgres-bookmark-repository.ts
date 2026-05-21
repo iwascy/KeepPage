@@ -9,6 +9,7 @@ import type {
   BookmarkSidebarStatsResponse,
   CaptureCompleteRequest,
   CaptureInitRequest,
+  ExtensionDevice,
   Folder,
   FolderCreateRequest,
   FolderUpdateRequest,
@@ -28,7 +29,9 @@ import type {
   BookmarkIconRefreshTarget,
   BookmarkIconUpsertInput,
   CreateApiTokenInput,
+  CreateExtensionDeviceInput,
   CreateImportTaskInput,
+  ExtensionDeviceAuthRecord,
   ImportBookmarkMatch,
   IngestBookmarkResult,
   InitCaptureResult,
@@ -87,6 +90,26 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
   async touchApiToken(tokenId: string, usedAt: string): Promise<void> {
     return apiTokensRepository.touchApiToken(this.core, tokenId, usedAt);
+  }
+
+  async createExtensionDevice(userId: string, input: CreateExtensionDeviceInput): Promise<ExtensionDevice> {
+    return this.core.createExtensionDevice(userId, input);
+  }
+
+  async listExtensionDevices(userId: string): Promise<ExtensionDevice[]> {
+    return this.core.listExtensionDevices(userId);
+  }
+
+  async getExtensionDeviceAuthRecord(deviceId: string): Promise<ExtensionDeviceAuthRecord | null> {
+    return this.core.getExtensionDeviceAuthRecord(deviceId);
+  }
+
+  async revokeExtensionDevice(userId: string, deviceId: string): Promise<boolean> {
+    return this.core.revokeExtensionDevice(userId, deviceId);
+  }
+
+  async touchExtensionDevice(deviceId: string, usedAt: string): Promise<void> {
+    return this.core.touchExtensionDevice(deviceId, usedAt);
   }
 
   async getPrivateModeConfig(userId: string): Promise<PrivateModeConfigRecord | null> {

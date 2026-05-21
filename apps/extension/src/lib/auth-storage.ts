@@ -2,13 +2,32 @@ import type { AuthUser } from "@keeppage/domain";
 import { authUserSchema } from "./domain-runtime";
 
 export async function getStoredAuthToken() {
-  const result = await chrome.storage.local.get("authToken");
-  const token = typeof result.authToken === "string" ? result.authToken.trim() : "";
-  return token.startsWith("kp_") ? "" : token;
+  const result = await chrome.storage.local.get(["extensionDeviceToken", "authApiToken", "authToken"]);
+  const extensionDeviceToken = typeof result.extensionDeviceToken === "string"
+    ? result.extensionDeviceToken.trim()
+    : "";
+  if (extensionDeviceToken) {
+    return extensionDeviceToken;
+  }
+
+  const authApiToken = typeof result.authApiToken === "string" ? result.authApiToken.trim() : "";
+  if (authApiToken) {
+    return authApiToken;
+  }
+
+  const authToken = typeof result.authToken === "string" ? result.authToken.trim() : "";
+  return authToken;
 }
 
 export async function getStoredSyncToken() {
-  const result = await chrome.storage.local.get(["authApiToken", "authToken"]);
+  const result = await chrome.storage.local.get(["extensionDeviceToken", "authApiToken", "authToken"]);
+  const extensionDeviceToken = typeof result.extensionDeviceToken === "string"
+    ? result.extensionDeviceToken.trim()
+    : "";
+  if (extensionDeviceToken) {
+    return extensionDeviceToken;
+  }
+
   const authApiToken = typeof result.authApiToken === "string" ? result.authApiToken.trim() : "";
   if (authApiToken) {
     return authApiToken;

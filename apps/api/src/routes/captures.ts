@@ -29,6 +29,7 @@ export async function registerCaptureRoutes(
   app.post("/captures/init", async (request, reply) => {
     const user = await authService.requireUser(request, {
       allowApiToken: true,
+      allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
     const payload = captureInitRequestSchema.parse(request.body);
@@ -44,6 +45,7 @@ export async function registerCaptureRoutes(
   app.post("/captures/complete", async (request, reply) => {
     const user = await authService.requireUser(request, {
       allowApiToken: true,
+      allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
     const payload = captureCompleteRequestSchema.parse(request.body);

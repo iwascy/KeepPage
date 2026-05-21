@@ -92,6 +92,18 @@ type KeepPageBridgeRequest =
           bookmarkId?: string;
         }>;
       };
+    }
+  | {
+      source: "keeppage-web";
+      target: "keeppage-extension";
+      requestId: string;
+      type: "extension-connect-code";
+      payload: {
+        code: string;
+        apiBaseUrl: string;
+        connectNonce: string;
+        expiresAt?: string;
+      };
     };
 
 type KeepPageBridgeResponse = {
@@ -268,10 +280,6 @@ export default defineContentScript({
 });
 
 function installKeepPageWebBridge(logger: ReturnType<typeof createLogger>) {
-  if (!isKeepPageAppOrigin(location.origin)) {
-    return;
-  }
-
   window.addEventListener("message", (event: MessageEvent<unknown>) => {
     if (event.source !== window) {
       return;
@@ -279,6 +287,14 @@ function installKeepPageWebBridge(logger: ReturnType<typeof createLogger>) {
 
     const request = parseKeepPageBridgeRequest(event.data);
     if (!request) {
+      return;
+    }
+
+    if (!isAllowedKeepPageBridgeRequest(request)) {
+      logger.warn("Rejected KeepPage web bridge request from unauthorized origin.", {
+        requestType: request.type,
+        origin: location.origin,
+      });
       return;
     }
 
@@ -301,6 +317,25 @@ function installKeepPageWebBridge(logger: ReturnType<typeof createLogger>) {
           ok: Boolean(response?.ok),
           payload: response?.ok ? response : undefined,
           error: response?.ok ? undefined : response?.error ?? "本地插件队列提交失败。",
+        });
+        return;
+      }
+
+      if (request.type === "extension-connect-code") {
+        const response = await chrome.runtime.sendMessage({
+          type: MESSAGE_TYPE.RedeemExtensionConnectCode,
+          code: request.payload.code,
+          apiBaseUrl: request.payload.apiBaseUrl,
+          connectNonce: request.payload.connectNonce,
+          expiresAt: request.payload.expiresAt,
+        });
+        postKeepPageBridgeResponse({
+          source: "keeppage-extension",
+          target: "keeppage-web",
+          requestId: request.requestId,
+          ok: Boolean(response?.ok),
+          payload: response?.ok ? response : undefined,
+          error: response?.ok ? undefined : response?.error ?? "插件授权兑换失败。",
         });
       }
     })().catch((error) => {
@@ -329,6 +364,20 @@ function isKeepPageAppOrigin(origin: string) {
   );
 }
 
+function isAllowedKeepPageBridgeRequest(request: KeepPageBridgeRequest) {
+  if (isKeepPageAppOrigin(location.origin)) {
+    return true;
+  }
+  if (request.type !== "extension-connect-code") {
+    return false;
+  }
+  try {
+    return new URL(request.payload.apiBaseUrl).origin === location.origin;
+  } catch {
+    return false;
+  }
+}
+
 function parseKeepPageBridgeRequest(input: unknown): KeepPageBridgeRequest | null {
   if (!input || typeof input !== "object") {
     return null;
@@ -338,7 +387,7 @@ function parseKeepPageBridgeRequest(input: unknown): KeepPageBridgeRequest | nul
   if (
     maybe.source !== "keeppage-web"
     || maybe.target !== "keeppage-extension"
-    || maybe.type !== "enqueue-local-archive"
+    || (maybe.type !== "enqueue-local-archive" && maybe.type !== "extension-connect-code")
     || typeof maybe.requestId !== "string"
   ) {
     return null;
@@ -349,6 +398,27 @@ function parseKeepPageBridgeRequest(input: unknown): KeepPageBridgeRequest | nul
     return null;
   }
   const payloadRecord = payload as Record<string, unknown>;
+  if (maybe.type === "extension-connect-code") {
+    const code = typeof payloadRecord.code === "string" ? payloadRecord.code.trim() : "";
+    const apiBaseUrl = typeof payloadRecord.apiBaseUrl === "string" ? payloadRecord.apiBaseUrl.trim() : "";
+    const connectNonce = typeof payloadRecord.connectNonce === "string" ? payloadRecord.connectNonce.trim() : "";
+    if (!code || !apiBaseUrl || !connectNonce) {
+      return null;
+    }
+    return {
+      source: "keeppage-web",
+      target: "keeppage-extension",
+      requestId: maybe.requestId,
+      type: "extension-connect-code",
+      payload: {
+        code,
+        apiBaseUrl,
+        connectNonce,
+        expiresAt: typeof payloadRecord.expiresAt === "string" ? payloadRecord.expiresAt : undefined,
+      },
+    };
+  }
+
   if (!Array.isArray(payloadRecord.items)) {
     return null;
   }

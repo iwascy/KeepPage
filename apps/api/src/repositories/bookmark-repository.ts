@@ -27,6 +27,7 @@ import type {
   Tag,
   TagCreateRequest,
   TagUpdateRequest,
+  ExtensionDevice,
 } from "@keeppage/domain";
 
 export type BookmarkSearchQuery = {
@@ -100,6 +101,11 @@ export type ApiTokenAuthRecord = ApiToken & {
   tokenHash: string;
 };
 
+export type ExtensionDeviceAuthRecord = ExtensionDevice & {
+  userId: string;
+  tokenHash: string;
+};
+
 export type PrivateModeConfigRecord = {
   userId: string;
   passwordHash: string;
@@ -114,6 +120,15 @@ export type CreateApiTokenInput = {
   tokenPreview: string;
   tokenHash: string;
   scopes: ApiTokenScope[];
+  expiresAt?: string;
+};
+
+export type CreateExtensionDeviceInput = {
+  id: string;
+  name: string;
+  platform: string;
+  tokenPreview: string;
+  tokenHash: string;
   expiresAt?: string;
 };
 
@@ -160,6 +175,14 @@ export interface ApiTokenRepository extends RepositoryInfo {
   getApiTokenAuthRecord(tokenId: string): Promise<ApiTokenAuthRecord | null>;
   revokeApiToken(userId: string, tokenId: string): Promise<boolean>;
   touchApiToken(tokenId: string, usedAt: string): Promise<void>;
+}
+
+export interface ExtensionDeviceRepository extends RepositoryInfo {
+  createExtensionDevice(userId: string, input: CreateExtensionDeviceInput): Promise<ExtensionDevice>;
+  listExtensionDevices(userId: string): Promise<ExtensionDevice[]>;
+  getExtensionDeviceAuthRecord(deviceId: string): Promise<ExtensionDeviceAuthRecord | null>;
+  revokeExtensionDevice(userId: string, deviceId: string): Promise<boolean>;
+  touchExtensionDevice(deviceId: string, usedAt: string): Promise<void>;
 }
 
 export interface CaptureRepository extends RepositoryInfo {
@@ -243,6 +266,7 @@ export interface ObjectAccessRepository extends RepositoryInfo {
 export type BookmarkRepository =
   & AuthRepository
   & ApiTokenRepository
+  & ExtensionDeviceRepository
   & CaptureRepository
   & PrivateModeRepository
   & PrivateCaptureRepository

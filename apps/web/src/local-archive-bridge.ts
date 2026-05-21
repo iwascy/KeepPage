@@ -1,18 +1,31 @@
 import type { Bookmark } from "@keeppage/domain";
 
-type BridgeRequest = {
-  source: "keeppage-web";
-  target: "keeppage-extension";
-  requestId: string;
-  type: "enqueue-local-archive";
-  payload: {
-    items: Array<{
-      url: string;
-      title?: string;
-      bookmarkId?: string;
-    }>;
-  };
-};
+type BridgeRequest =
+  | {
+      source: "keeppage-web";
+      target: "keeppage-extension";
+      requestId: string;
+      type: "enqueue-local-archive";
+      payload: {
+        items: Array<{
+          url: string;
+          title?: string;
+          bookmarkId?: string;
+        }>;
+      };
+    }
+  | {
+      source: "keeppage-web";
+      target: "keeppage-extension";
+      requestId: string;
+      type: "extension-connect-code";
+      payload: {
+        code: string;
+        apiBaseUrl: string;
+        connectNonce: string;
+        expiresAt: string;
+      };
+    };
 
 type BridgeResponse = {
   source: "keeppage-extension";
@@ -72,6 +85,29 @@ export async function enqueueBookmarksToLocalExtension(bookmarks: Bookmark[]) {
     skippedCount: response.payload?.skippedCount ?? 0,
     queueSize: response.payload?.queueSize ?? 0,
   };
+}
+
+export async function sendExtensionConnectCodeToLocalExtension(input: {
+  code: string;
+  apiBaseUrl: string;
+  connectNonce: string;
+  expiresAt: string;
+}) {
+  const response = await sendBridgeRequest({
+    source: "keeppage-web",
+    target: "keeppage-extension",
+    requestId: `keeppage-${crypto.randomUUID()}`,
+    type: "extension-connect-code",
+    payload: input,
+  });
+
+  if (!response.ok) {
+    throw new LocalArchiveBridgeError(
+      response.error || "无法把授权发送到本地插件。",
+    );
+  }
+
+  return response.payload;
 }
 
 async function sendBridgeRequest(request: BridgeRequest): Promise<BridgeResponse> {

@@ -5,6 +5,7 @@ import { isHttpError } from "./lib/http-error";
 import { createRepository } from "./repositories";
 import { registerRoutes } from "./routes";
 import { ApiTokenService } from "./services/api-tokens/api-token-service";
+import { ExtensionDeviceService } from "./services/auth/extension-device-service";
 import { AuthService } from "./services/auth/auth-service";
 import { PrivateModeService } from "./services/auth/private-mode-service";
 import { BookmarkService } from "./services/bookmarks/bookmark-service";
@@ -41,8 +42,12 @@ export function buildServer(config: ApiConfig) {
   const apiTokenService = new ApiTokenService({
     repository,
   });
+  const extensionDeviceService = new ExtensionDeviceService({
+    repository,
+  });
   const authService = new AuthService({
     apiTokenService,
+    extensionDeviceService,
     config,
     repository,
   });
@@ -134,6 +139,7 @@ export function buildServer(config: ApiConfig) {
       authService,
       privateModeService,
       apiTokenService,
+      extensionDeviceService,
       repository,
       bookmarkService,
       iconRefreshService,

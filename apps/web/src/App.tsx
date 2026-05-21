@@ -73,6 +73,16 @@ const ApiTokensPanel = lazy(async () => {
   return { default: module.ApiTokensPanel };
 });
 
+const ExtensionDevicesPanel = lazy(async () => {
+  const module = await import("./features/extension-devices");
+  return { default: module.ExtensionDevicesPanel };
+});
+
+const ExtensionConnectPage = lazy(async () => {
+  const module = await import("./features/extension-connect");
+  return { default: module.ExtensionConnectPage };
+});
+
 type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
 type DetailLoadState = "idle" | "loading" | "ready" | "not-found" | "error";
@@ -86,7 +96,9 @@ type ViewRoute =
   | { page: "imports-new" }
   | { page: "imports-list" }
   | { page: "imports-detail"; taskId: string }
-  | { page: "settings-api-tokens" };
+  | { page: "settings-api-tokens" }
+  | { page: "settings-extension-devices" }
+  | { page: "extension-connect" };
 
 type SessionState =
   | { status: "booting"; token: null; user: null; error: string | null }
@@ -234,6 +246,12 @@ function parseRoute(hash: string): ViewRoute {
   if (path === "/settings/api-tokens") {
     return { page: "settings-api-tokens" };
   }
+  if (path === "/settings/extension-devices") {
+    return { page: "settings-extension-devices" };
+  }
+  if (path === "/extension/connect") {
+    return { page: "extension-connect" };
+  }
   if (path.startsWith("/imports/")) {
     const taskId = decodeURIComponent(path.slice("/imports/".length));
     if (!taskId) {
@@ -303,6 +321,10 @@ function goToImportList() {
 
 function goToApiTokens() {
   window.location.hash = "#/settings/api-tokens";
+}
+
+function goToExtensionDevices() {
+  window.location.hash = "#/settings/extension-devices";
 }
 
 function goToPrivateMode() {
@@ -413,6 +435,7 @@ function AppShell({
   onCreateTag,
   onOpenPrivateMode,
   onOpenApiTokens,
+  onOpenExtensionDevices,
   onOpenImportNew,
   onOpenImportHistory,
   onLogout,
@@ -443,6 +466,7 @@ function AppShell({
   onCreateTag: () => void;
   onOpenPrivateMode: () => void;
   onOpenApiTokens: () => void;
+  onOpenExtensionDevices: () => void;
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
   onLogout: () => void;
@@ -688,6 +712,19 @@ function AppShell({
               >
                 <Icon name="vpn_key" />
                 <span>API 密钥</span>
+              </button>
+              <button
+                className={routePage === "settings-extension-devices" || routePage === "extension-connect"
+                  ? "home-settings-item is-active"
+                  : "home-settings-item"}
+                type="button"
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  onOpenExtensionDevices();
+                }}
+              >
+                <Icon name="link" />
+                <span>插件设备</span>
               </button>
               <button
                 className="home-settings-item"
@@ -3565,7 +3602,9 @@ export function App({
         error: null,
       });
       setAuthPassword("");
-      goToList();
+      if (route.page !== "extension-connect") {
+        goToList();
+      }
     } catch (error) {
       clearStoredToken();
       setAuthError(toErrorMessage(error));
@@ -3623,6 +3662,7 @@ export function App({
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
         onOpenPrivateMode={goToPrivateMode}
         onOpenApiTokens={goToApiTokens}
+        onOpenExtensionDevices={goToExtensionDevices}
         onOpenImportNew={goToImportNew}
         onOpenImportHistory={goToImportList}
         onLogout={() => logout()}
@@ -3632,7 +3672,16 @@ export function App({
         onTagContextMenu={openTagContextMenu}
         logoutLabel={logoutLabel}
       >
-        {route.page === "list" ? (
+        {route.page === "extension-connect" ? (
+          <Suspense fallback={<section className="loading preview-empty">正在连接插件...</section>}>
+            <ExtensionConnectPage
+              token={session.token}
+              dataSource={appDataSource}
+              onApiError={handleProtectedApiError}
+              onDone={goToList}
+            />
+          </Suspense>
+        ) : route.page === "list" ? (
           <BookmarksListRoute
             selectionMode={selectionMode}
             selectedIds={selectedIds}
@@ -3809,6 +3858,15 @@ export function App({
             <ApiTokensPanel
               token={session.token}
               userId={session.user.id}
+              dataSource={appDataSource}
+              onApiError={handleProtectedApiError}
+              onBack={goToList}
+            />
+          </Suspense>
+        ) : route.page === "settings-extension-devices" ? (
+          <Suspense fallback={<section className="loading preview-empty">正在加载插件设备...</section>}>
+            <ExtensionDevicesPanel
+              token={session.token}
               dataSource={appDataSource}
               onApiError={handleProtectedApiError}
               onBack={goToList}

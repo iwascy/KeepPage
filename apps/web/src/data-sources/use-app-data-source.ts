@@ -17,12 +17,14 @@ import type {
 import {
   createApiToken,
   createArchiveObjectUrl,
+  createExtensionConnectCode,
   createFolder,
   createTag,
   deleteBookmark,
   deleteFolder,
   deleteTag,
   fetchApiTokens,
+  fetchExtensionDevices,
   fetchBookmarkDetail,
   fetchBookmarkFolderCounts,
   fetchBookmarks,
@@ -37,6 +39,7 @@ import {
   loginAccount,
   registerAccount,
   revokeApiToken,
+  revokeExtensionDevice,
   setupPrivateMode,
   unlockPrivateMode,
   updateBookmarkMetadata,
@@ -48,6 +51,7 @@ import {
   type BookmarkResult,
   type BookmarkViewerVersion,
   type WorkspaceBootstrapResult,
+  type ExtensionDeviceItem,
 } from "../api";
 import {
   createDemoFolder,
@@ -165,6 +169,12 @@ export type AppDataSource = {
     token: string,
   ): Promise<ApiTokenCreateResponse>;
   revokeApiToken(tokenId: string, token: string): Promise<void>;
+  createExtensionConnectCode(
+    input: Parameters<typeof createExtensionConnectCode>[0],
+    token: string,
+  ): Promise<Awaited<ReturnType<typeof createExtensionConnectCode>>>;
+  fetchExtensionDevices(token: string): Promise<ExtensionDeviceItem[]>;
+  revokeExtensionDevice(deviceId: string, token: string): Promise<void>;
   enqueueLocalArchive(bookmarks: Bookmark[]): Promise<Awaited<ReturnType<typeof enqueueBookmarksToLocalExtension>>>;
 };
 
@@ -413,6 +423,18 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
               : item
           )));
         },
+        async createExtensionConnectCode() {
+          return {
+            code: `demo-${crypto.randomUUID()}`,
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          };
+        },
+        async fetchExtensionDevices() {
+          return [];
+        },
+        async revokeExtensionDevice() {
+          return;
+        },
         async enqueueLocalArchive() {
           throw new Error("Mock 模式暂不支持本地插件批量存档。");
         },
@@ -492,6 +514,11 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
       createApiToken,
       async revokeApiToken(tokenId, token) {
         await revokeApiToken(tokenId, token);
+      },
+      createExtensionConnectCode,
+      fetchExtensionDevices,
+      async revokeExtensionDevice(deviceId, token) {
+        await revokeExtensionDevice(deviceId, token);
       },
       enqueueLocalArchive: enqueueBookmarksToLocalExtension,
     };

@@ -21,7 +21,9 @@ export async function registerFolderRoutes(
   responseCache: UserResponseCache,
 ) {
   app.get("/folders", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowExtensionDevice: true,
+    });
     return responseCache.sendJson(request, reply, {
       scope: "folders",
       userId: user.id,

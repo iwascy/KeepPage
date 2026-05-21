@@ -1924,6 +1924,22 @@ button {
   line-height: 1.6;
 }
 
+.extension-device-feedback {
+  padding: 1rem 1.15rem;
+}
+
+.extension-device-feedback.is-success {
+  background:
+    linear-gradient(180deg, rgba(240, 253, 244, 0.82), rgba(248, 250, 252, 0.72)),
+    rgba(255, 255, 255, 0.64);
+}
+
+.extension-device-feedback.is-error {
+  background:
+    linear-gradient(180deg, rgba(254, 242, 242, 0.82), rgba(248, 250, 252, 0.72)),
+    rgba(255, 255, 255, 0.64);
+}
+
 .api-token-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2103,6 +2119,127 @@ button {
   color: #7d8791;
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+.extension-connect-page {
+  min-height: min(760px, calc(100vh - 3rem));
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.extension-connect-shell {
+  width: min(620px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 2rem;
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at right top, rgba(227, 235, 244, 0.88), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 250, 252, 0.72));
+  box-shadow:
+    0 26px 60px rgba(45, 51, 56, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+.extension-connect-mark {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: #1f2937;
+  color: white;
+  box-shadow: 0 16px 30px rgba(31, 41, 55, 0.18);
+}
+
+.extension-connect-mark .app-icon {
+  width: 25px;
+  height: 25px;
+}
+
+.extension-connect-copy,
+.extension-connect-device {
+  display: flex;
+  flex-direction: column;
+}
+
+.extension-connect-copy {
+  gap: 0.55rem;
+}
+
+.extension-connect-copy p {
+  margin: 0;
+  color: #5f6871;
+  line-height: 1.65;
+}
+
+.extension-connect-copy p:first-child {
+  color: #717b86;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.extension-connect-copy h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  line-height: 1;
+  font-weight: 800;
+}
+
+.extension-connect-device {
+  gap: 0.22rem;
+  padding: 1rem 1.1rem;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.extension-connect-device span,
+.extension-connect-device small {
+  color: #6b747e;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.extension-connect-device strong {
+  color: #23272f;
+  font-size: 1rem;
+}
+
+.extension-connect-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.settings-banner {
+  padding: 0.85rem 1rem;
+  border-radius: 20px;
+  color: #42515f;
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  line-height: 1.55;
+}
+
+.settings-saved,
+.settings-ok {
+  color: #166534;
+  background: rgba(240, 253, 244, 0.74);
+}
+
+.settings-error {
+  color: #991b1b;
+  background: rgba(254, 242, 242, 0.8);
+}
+
+.settings-loading,
+.settings-creating,
+.settings-sending {
+  color: #475569;
+  background: rgba(241, 245, 249, 0.82);
 }
 
 .api-token-list-skeleton .api-token-card:hover {

@@ -21,7 +21,9 @@ export async function registerTagRoutes(
   responseCache: UserResponseCache,
 ) {
   app.get("/tags", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowExtensionDevice: true,
+    });
     return responseCache.sendJson(request, reply, {
       scope: "tags",
       userId: user.id,

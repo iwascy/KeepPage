@@ -35,7 +35,9 @@ export async function registerBookmarkRoutes(
   responseCache: UserResponseCache,
 ) {
   app.get("/bookmarks", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowExtensionDevice: true,
+    });
     const query = searchQuerySchema.parse(request.query);
     return responseCache.sendJson(request, reply, {
       scope: "bookmarks",
@@ -45,7 +47,9 @@ export async function registerBookmarkRoutes(
   });
 
   app.get("/bookmarks/sidebar-stats", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowExtensionDevice: true,
+    });
     return responseCache.sendJson(request, reply, {
       scope: "bookmark-sidebar-stats",
       userId: user.id,
@@ -54,13 +58,17 @@ export async function registerBookmarkRoutes(
   });
 
   app.get("/bookmarks/status", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowExtensionDevice: true,
+    });
     const query = statusQuerySchema.parse(request.query);
     return reply.send(await bookmarkService.getBookmarkStatus(user.id, query.url));
   });
 
   app.get<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowExtensionDevice: true,
+    });
     const params = bookmarkParamsSchema.parse(request.params);
     return reply.send(await bookmarkService.getBookmarkDetail(user.id, params.bookmarkId));
   });
@@ -74,7 +82,9 @@ export async function registerBookmarkRoutes(
   });
 
   app.patch<{ Params: { bookmarkId: string } }>("/bookmarks/:bookmarkId/metadata", async (request, reply) => {
-    const user = await authService.requireUser(request);
+    const user = await authService.requireUser(request, {
+      allowExtensionDevice: true,
+    });
     const params = bookmarkParamsSchema.parse(request.params);
     const body = bookmarkMetadataUpdateRequestSchema.parse(request.body);
     const bookmark = await bookmarkService.updateBookmarkMetadata(user.id, params.bookmarkId, body);

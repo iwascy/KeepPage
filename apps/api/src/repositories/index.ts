@@ -27,6 +27,7 @@ export type {
   BookmarkRepository,
   BookmarkWriteRepository,
   CaptureRepository,
+  ExtensionDeviceRepository,
   ImportRepository,
   IngestRepository,
   ObjectAccessRepository,

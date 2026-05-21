@@ -4,6 +4,7 @@ import {
   bookmarkIconSchema,
   bookmarkIconCandidateSchema,
   type ApiToken,
+  type ExtensionDevice,
   bookmarkSchema,
   bookmarkSearchResponseSchema,
   bookmarkSidebarStatsResponseSchema,
@@ -39,6 +40,7 @@ import {
   bookmarkTags,
   bookmarkVersions,
   captureUploads,
+  devices,
   folders,
   importItems,
   importTasks,
@@ -72,7 +74,9 @@ import type {
   BookmarkIconRefreshTarget,
   BookmarkIconUpsertInput,
   CreateApiTokenInput,
+  CreateExtensionDeviceInput,
   CreateImportTaskInput,
+  ExtensionDeviceAuthRecord,
   CompleteCaptureResult,
   IngestBookmarkResult,
   ImportBookmarkMatch,
@@ -295,6 +299,135 @@ export class PostgresRepositoryCore {
         lastUsedAt: new Date(usedAt),
       })
       .where(eq(apiTokens.id, tokenId));
+  }
+
+  async createExtensionDevice(userId: string, input: CreateExtensionDeviceInput): Promise<ExtensionDevice> {
+    const rows = await this.db
+      .insert(devices)
+      .values({
+        id: input.id,
+        userId,
+        label: input.name,
+        platform: input.platform,
+        tokenPreview: input.tokenPreview,
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+      })
+      .returning({
+        id: devices.id,
+        label: devices.label,
+        platform: devices.platform,
+        tokenPreview: devices.tokenPreview,
+        tokenHash: devices.tokenHash,
+        lastUsedAt: devices.lastUsedAt,
+        expiresAt: devices.expiresAt,
+        revokedAt: devices.revokedAt,
+        createdAt: devices.createdAt,
+      });
+
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Failed to create extension device.");
+    }
+    return this.mapExtensionDeviceRow(row);
+  }
+
+  async listExtensionDevices(userId: string): Promise<ExtensionDevice[]> {
+    const rows = await this.db
+      .select({
+        id: devices.id,
+        label: devices.label,
+        platform: devices.platform,
+        tokenPreview: devices.tokenPreview,
+        lastUsedAt: devices.lastUsedAt,
+        expiresAt: devices.expiresAt,
+        revokedAt: devices.revokedAt,
+        createdAt: devices.createdAt,
+      })
+      .from(devices)
+      .where(eq(devices.userId, userId))
+      .orderBy(desc(devices.createdAt));
+
+    return rows
+      .filter((row) => row.tokenPreview)
+      .map((row) => this.mapExtensionDeviceRow(row));
+  }
+
+  async getExtensionDeviceAuthRecord(deviceId: string): Promise<ExtensionDeviceAuthRecord | null> {
+    const rows = await this.db
+      .select({
+        id: devices.id,
+        userId: devices.userId,
+        label: devices.label,
+        platform: devices.platform,
+        tokenPreview: devices.tokenPreview,
+        tokenHash: devices.tokenHash,
+        lastUsedAt: devices.lastUsedAt,
+        expiresAt: devices.expiresAt,
+        revokedAt: devices.revokedAt,
+        createdAt: devices.createdAt,
+      })
+      .from(devices)
+      .where(eq(devices.id, deviceId))
+      .limit(1);
+
+    const row = rows[0];
+    if (!row?.tokenHash || !row.tokenPreview) {
+      return null;
+    }
+
+    return {
+      ...this.mapExtensionDeviceRow(row),
+      userId: row.userId,
+      tokenHash: row.tokenHash,
+    };
+  }
+
+  async revokeExtensionDevice(userId: string, deviceId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({
+        id: devices.id,
+        revokedAt: devices.revokedAt,
+      })
+      .from(devices)
+      .where(
+        and(
+          eq(devices.id, deviceId),
+          eq(devices.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) {
+      return false;
+    }
+    if (row.revokedAt) {
+      return true;
+    }
+
+    await this.db
+      .update(devices)
+      .set({
+        revokedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(devices.id, deviceId),
+          eq(devices.userId, userId),
+        ),
+      );
+
+    return true;
+  }
+
+  async touchExtensionDevice(deviceId: string, usedAt: string): Promise<void> {
+    await this.db
+      .update(devices)
+      .set({
+        lastUsedAt: new Date(usedAt),
+      })
+      .where(eq(devices.id, deviceId));
   }
 
   async getPrivateModeConfig(userId: string): Promise<PrivateModeConfigRecord | null> {
@@ -3049,6 +3182,33 @@ export class PostgresRepositoryCore {
       revokedAt: row.revokedAt?.toISOString(),
       createdAt: row.createdAt.toISOString(),
     } satisfies ApiToken;
+  }
+
+  private mapExtensionDeviceRow(
+    row: {
+      id: string;
+      label: string;
+      platform: string;
+      tokenPreview: string | null;
+      lastUsedAt: Date | null;
+      expiresAt: Date | null;
+      revokedAt: Date | null;
+      createdAt: Date;
+    },
+  ) {
+    if (!row.tokenPreview) {
+      throw new Error("Extension device token preview is missing.");
+    }
+    return {
+      id: row.id,
+      name: row.label,
+      platform: row.platform,
+      tokenPreview: row.tokenPreview,
+      lastUsedAt: row.lastUsedAt?.toISOString(),
+      expiresAt: row.expiresAt?.toISOString(),
+      revokedAt: row.revokedAt?.toISOString(),
+      createdAt: row.createdAt.toISOString(),
+    } satisfies ExtensionDevice;
   }
 
   private mapBookmarkRow(

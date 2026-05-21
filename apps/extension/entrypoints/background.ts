@@ -28,6 +28,8 @@ import {
 import {
   recoverUnauthorizedSession,
   openExtensionAuthPage,
+  openWorkspaceUi,
+  redeemExtensionConnectCode,
   openSidePanelForWindow,
   validateStoredAuthSession,
 } from "../src/lib/auth-flow";
@@ -211,6 +213,22 @@ export default defineBackground(() => {
           acceptedCount: result.acceptedCount,
           skippedCount: result.skippedCount,
           queueSize: result.queueSize,
+        });
+        return;
+      }
+      if (message.type === MESSAGE_TYPE.RedeemExtensionConnectCode) {
+        const session = await redeemExtensionConnectCode({
+          apiBaseUrl: message.apiBaseUrl,
+          code: message.code,
+          connectNonce: message.connectNonce,
+        });
+        const currentWindow = await chrome.windows.getCurrent().catch(() => null);
+        if (currentWindow?.id != null) {
+          void openWorkspaceUi(currentWindow.id);
+        }
+        sendResponse({
+          ok: true,
+          user: session.user,
         });
         return;
       }
