@@ -5,7 +5,6 @@ import type {
   CaptureTask,
   PrivateAutoLock,
   PrivateVaultSummary,
-  QualityGrade,
   SaveMode,
 } from "@keeppage/domain";
 import {
@@ -24,6 +23,15 @@ import {
   openSidePanelForCurrentWindow,
   validateStoredAuthSession,
 } from "../../src/lib/auth-flow";
+import {
+  PROFILE_META,
+  captureProfileLabel,
+  captureScopeLabel,
+  captureStatusLabel,
+  privateModeLabel,
+  privateSyncStateLabel,
+  qualityGradeLabel,
+} from "../../src/lib/ui-shared/capture-status";
 
 type AsyncState = "idle" | "capturing" | "error";
 type SettingsState = "idle" | "saving" | "saved" | "error";
@@ -33,27 +41,6 @@ type AuthState = "idle" | "submitting" | "ok" | "error";
 
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
 const LOCKED_CAPTURE_PROFILE: CaptureProfile = "complete";
-const PROFILE_META: Record<CaptureProfile, {
-  label: string;
-  description: string;
-}> = {
-  standard: {
-    label: "标准保真",
-    description: "默认方案，平衡质量与体积。",
-  },
-  complete: {
-    label: "完整保留",
-    description: "尽量少裁剪，适合复杂页面。",
-  },
-  dynamic: {
-    label: "动态增强",
-    description: "更适合延迟内容和 SPA。",
-  },
-  lightweight: {
-    label: "轻量快照",
-    description: "更快更小，优先搜索和快速归档。",
-  },
-};
 const SAVE_MODE_OPTIONS: Array<{ value: SaveMode; label: string }> = [
   {
     value: "standard",
@@ -73,79 +60,6 @@ const AUTO_LOCK_OPTIONS: Array<{ value: PrivateAutoLock; label: string }> = [
 
 const AUTH_PAGE_VIEW = new URLSearchParams(window.location.search).get("view") === "auth";
 const AUTH_PAGE_REASON = new URLSearchParams(window.location.search).get("reason");
-
-function captureStatusLabel(status: CaptureTask["status"]) {
-  switch (status) {
-    case "queued":
-      return "排队中";
-    case "capturing":
-      return "抓取中";
-    case "validating":
-      return "校验中";
-    case "local_ready":
-      return "本地就绪";
-    case "upload_pending":
-      return "等待同步";
-    case "uploading":
-      return "同步中";
-    case "uploaded":
-      return "已上传";
-    case "indexed":
-      return "建索引中";
-    case "synced":
-      return "已入库";
-    case "failed":
-      return "失败";
-  }
-}
-
-function captureProfileLabel(profile: CaptureProfile) {
-  return PROFILE_META[profile]?.label ?? profile;
-}
-
-function captureScopeLabel(scope: CaptureTask["source"]["captureScope"]) {
-  return scope === "selection" ? "选中区域" : "整页";
-}
-
-function privateSyncStateLabel(syncState?: CaptureTask["syncState"]) {
-  switch (syncState) {
-    case "local-only":
-      return "仅本机";
-    case "sync-disabled":
-      return "未启用同步";
-    case "sync-pending":
-      return "等待同步";
-    case "sync-failed":
-      return "同步失败";
-    default:
-      return null;
-  }
-}
-
-function qualityGradeLabel(grade?: QualityGrade) {
-  switch (grade) {
-    case "high":
-      return "高";
-    case "medium":
-      return "中";
-    case "low":
-      return "低";
-    default:
-      return "待评估";
-  }
-}
-
-function privateModeLabel(mode?: CaptureTask["privateMode"]) {
-  switch (mode) {
-    case "password-gated":
-      return "密码进入";
-    case "encrypted-sync":
-      return "旧版加密同步";
-    case "local-only":
-    default:
-      return "本地私密";
-  }
-}
 
 export function App() {
   const [tasks, setTasks] = useState<CaptureTask[]>([]);

@@ -15,6 +15,13 @@ import {
   openExtensionAuthPage,
   openSidePanelForCurrentWindow,
 } from "../../src/lib/auth-flow";
+import {
+  getTaskProgressValue,
+  getTaskStepDescription,
+  getTaskStepLabel,
+  isSuccessStatus,
+  looksLikeAuthError,
+} from "../../src/lib/ui-shared/capture-status";
 
 const TASK_MATCH_GRACE_MS = 10_000;
 const FOLDER_SUGGESTION_LIMIT = 6;
@@ -627,10 +634,6 @@ function shouldTrackTask(
   return createdAt >= context.startedAt - TASK_MATCH_GRACE_MS;
 }
 
-function isSuccessStatus(status: CaptureTask["status"]) {
-  return status === "uploaded" || status === "indexed" || status === "synced";
-}
-
 function getStatusDescription(
   task: CaptureTask | null,
   captureState: "saving" | "success" | "error",
@@ -646,99 +649,6 @@ function getStatusDescription(
     return "页面已保存到 KeepPage，现在可以继续整理收藏夹和 tag。";
   }
   return getTaskStepDescription(task.status);
-}
-
-function getTaskStepLabel(status: CaptureTask["status"]) {
-  switch (status) {
-    case "queued":
-      return "已入队";
-    case "capturing":
-      return "抓取中";
-    case "validating":
-      return "整理中";
-    case "local_ready":
-      return "本地归档完成";
-    case "upload_pending":
-      return "等待同步";
-    case "uploading":
-      return "同步中";
-    case "uploaded":
-      return "已上传";
-    case "indexed":
-      return "已索引";
-    case "synced":
-      return "已完成";
-    case "failed":
-      return "失败";
-    default:
-      return "处理中";
-  }
-}
-
-function getTaskStepDescription(status: CaptureTask["status"]) {
-  switch (status) {
-    case "queued":
-      return "任务已创建，马上开始保存。";
-    case "capturing":
-      return "正在抓取页面内容和当前渲染结果。";
-    case "validating":
-      return "正在整理归档内容并生成质量信息。";
-    case "local_ready":
-      return "本地归档已完成，正在准备同步。";
-    case "upload_pending":
-      return "归档已就绪，正在排队同步到 KeepPage。";
-    case "uploading":
-      return "正在把归档上传到 KeepPage。";
-    case "uploaded":
-      return "归档已上传，正在完成最后确认。";
-    case "indexed":
-      return "归档已完成索引。";
-    case "synced":
-      return "页面已经成功保存到 KeepPage。";
-    case "failed":
-      return "保存过程失败。";
-    default:
-      return "正在处理当前页面。";
-  }
-}
-
-function getTaskProgressValue(
-  task: CaptureTask | null,
-  captureState: "saving" | "success" | "error",
-): number {
-  if (captureState === "success") {
-    return 100;
-  }
-  if (captureState === "error") {
-    return task ? getTaskProgressValue(task, "saving") : 0;
-  }
-  if (!task) {
-    return 8;
-  }
-  switch (task.status) {
-    case "queued":
-      return 16;
-    case "capturing":
-      return 32;
-    case "validating":
-      return 54;
-    case "local_ready":
-      return 70;
-    case "upload_pending":
-      return 78;
-    case "uploading":
-      return 88;
-    case "uploaded":
-      return 95;
-    case "indexed":
-      return 98;
-    case "synced":
-      return 100;
-    case "failed":
-      return 0;
-    default:
-      return 24;
-  }
 }
 
 function parseTagNames(input: string) {
@@ -757,13 +667,6 @@ function getSingleDraftTagName(input: string) {
     return "";
   }
   return input.trim();
-}
-
-function looksLikeAuthError(message?: string | null) {
-  if (!message) {
-    return false;
-  }
-  return message.includes("登录") || message.includes("未登录") || message.includes("账号");
 }
 
 function normalizeFolderPath(input: string) {
