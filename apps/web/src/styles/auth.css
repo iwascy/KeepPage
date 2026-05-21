@@ -1,0 +1,80 @@
+/* ── Auth ── */
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.auth-card {
+  width: min(440px, 100%);
+  border-radius: 34px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 2.2rem 2rem;
+  box-shadow: var(--shadow);
+}
+
+.auth-card h1 {
+  margin: 0 0 1.5rem;
+  font-size: 1.5rem;
+  letter-spacing: -0.03em;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.auth-switch {
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.22rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius-button);
+  background: rgba(239, 242, 245, 0.96);
+}
+
+.auth-switch-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-button);
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.auth-switch-btn.is-active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  color: white;
+  box-shadow: 0 12px 22px rgba(74, 74, 74, 0.18);
+}
+
+.auth-error {
+  margin: 0;
+  border-radius: var(--radius-input);
+  background: rgba(147, 42, 42, 0.08);
+  color: var(--low);
+  padding: 0.72rem 0.85rem;
+  font-size: 0.84rem;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 0.35rem;
+  height: 3rem;
+  font-size: 0.92rem;
+}
+
+.auth-loading {
+  width: min(440px, 100%);
+  min-height: 180px;
+}

@@ -43,9 +43,13 @@ import * as authRepository from "./memory/auth";
 import * as bookmarksRepository from "./memory/bookmarks";
 import { InMemoryRepositoryCore, type InMemoryBookmarkRepositoryOptions } from "./memory/core";
 import * as capturesRepository from "./memory/captures";
+import * as extensionDevicesRepository from "./memory/extension-devices";
 import * as iconsRepository from "./memory/icons";
 import * as importsRepository from "./memory/imports";
 import * as objectsRepository from "./memory/objects";
+import * as privateBookmarksRepository from "./memory/private-bookmarks";
+import * as privateCapturesRepository from "./memory/private-captures";
+import * as privateModeRepository from "./memory/private-mode";
 import * as taxonomyRepository from "./memory/taxonomy";
 
 export class InMemoryBookmarkRepository implements BookmarkRepository {
@@ -93,27 +97,27 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   }
 
   async createExtensionDevice(userId: string, input: CreateExtensionDeviceInput): Promise<ExtensionDevice> {
-    return this.core.createExtensionDevice(userId, input);
+    return extensionDevicesRepository.createExtensionDevice(this.core, userId, input);
   }
 
   async listExtensionDevices(userId: string): Promise<ExtensionDevice[]> {
-    return this.core.listExtensionDevices(userId);
+    return extensionDevicesRepository.listExtensionDevices(this.core, userId);
   }
 
   async getExtensionDeviceAuthRecord(deviceId: string): Promise<ExtensionDeviceAuthRecord | null> {
-    return this.core.getExtensionDeviceAuthRecord(deviceId);
+    return extensionDevicesRepository.getExtensionDeviceAuthRecord(this.core, deviceId);
   }
 
   async revokeExtensionDevice(userId: string, deviceId: string): Promise<boolean> {
-    return this.core.revokeExtensionDevice(userId, deviceId);
+    return extensionDevicesRepository.revokeExtensionDevice(this.core, userId, deviceId);
   }
 
   async touchExtensionDevice(deviceId: string, usedAt: string): Promise<void> {
-    return this.core.touchExtensionDevice(deviceId, usedAt);
+    return extensionDevicesRepository.touchExtensionDevice(this.core, deviceId, usedAt);
   }
 
   async getPrivateModeConfig(userId: string): Promise<PrivateModeConfigRecord | null> {
-    return this.core.getPrivateModeConfig(userId);
+    return privateModeRepository.getPrivateModeConfig(this.core, userId);
   }
 
   async enablePrivateMode(input: {
@@ -121,11 +125,11 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     passwordHash: string;
     passwordAlgo: string;
   }): Promise<PrivateModeConfigRecord> {
-    return this.core.enablePrivateMode(input);
+    return privateModeRepository.enablePrivateMode(this.core, input);
   }
 
   async getPrivateVaultSummary(userId: string): Promise<PrivateVaultSummary> {
-    return this.core.getPrivateVaultSummary(userId);
+    return privateModeRepository.getPrivateVaultSummary(this.core, userId);
   }
 
   async initCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
@@ -137,11 +141,11 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   }
 
   async initPrivateCapture(userId: string, input: CaptureInitRequest): Promise<InitCaptureResult> {
-    return this.core.initPrivateCapture(userId, input);
+    return privateCapturesRepository.initPrivateCapture(this.core, userId, input);
   }
 
   async completePrivateCapture(userId: string, input: CaptureCompleteRequest): Promise<CompleteCaptureResult> {
-    return this.core.completePrivateCapture(userId, input);
+    return privateCapturesRepository.completePrivateCapture(this.core, userId, input);
   }
 
   async upsertBookmarkIcon(input: BookmarkIconUpsertInput): Promise<BookmarkIcon> {
@@ -181,11 +185,11 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
   }
 
   async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse> {
-    return this.core.searchPrivateBookmarks(userId, query);
+    return privateBookmarksRepository.searchPrivateBookmarks(this.core, userId, query);
   }
 
   async getPrivateBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null> {
-    return this.core.getPrivateBookmarkDetail(userId, bookmarkId);
+    return privateBookmarksRepository.getPrivateBookmarkDetail(this.core, userId, bookmarkId);
   }
 
   async deleteBookmark(userId: string, bookmarkId: string): Promise<boolean> {

@@ -30,122 +30,24 @@ import {
   parseXiaohongshuInitialState,
   readXiaohongshuNoteRecord,
 } from "../src/lib/sites/xiaohongshu/state";
-
-type SingleFilePageData = {
-  content?: string | number[];
-};
-
-type SingleFileGlobal = {
-  singlefile?: {
-    getPageData?: (
-      options?: Record<string, unknown>,
-      initOptions?: unknown,
-      doc?: Document,
-      win?: Window,
-    ) => Promise<SingleFilePageData>;
-  };
-};
-
-type ArchiveCaptureResult =
-  | {
-      ok: true;
-      archiveHtml: string;
-      readerHtml?: string;
-      downloadableMedia: CaptureDownloadableMedia[];
-      usedSingleFile: boolean;
-    }
-  | {
-      ok: false;
-      error: string;
-    };
-
-type ToastElements = {
-  host: HTMLDivElement;
-  toast: HTMLDivElement;
-  title: HTMLParagraphElement;
-  message: HTMLParagraphElement;
-};
-
-type SelectionOverlayElements = {
-  host: HTMLDivElement;
-  frame: HTMLDivElement;
-  label: HTMLDivElement;
-  helper: HTMLDivElement;
-};
-
-type ActiveSelection = {
-  root: HTMLElement;
-  descriptor: string;
-  textPreview: string;
-};
-
-type KeepPageBridgeRequest =
-  | {
-      source: "keeppage-web";
-      target: "keeppage-extension";
-      requestId: string;
-      type: "enqueue-local-archive";
-      payload: {
-        items: Array<{
-          url: string;
-          title?: string;
-          bookmarkId?: string;
-        }>;
-      };
-    }
-  | {
-      source: "keeppage-web";
-      target: "keeppage-extension";
-      requestId: string;
-      type: "extension-connect-code";
-      payload: {
-        code: string;
-        apiBaseUrl: string;
-        connectNonce: string;
-        expiresAt?: string;
-      };
-    };
-
-type KeepPageBridgeResponse = {
-  source: "keeppage-extension";
-  target: "keeppage-web";
-  requestId: string;
-  ok: boolean;
-  payload?: unknown;
-  error?: string;
-};
-
-type SelectionSession = {
-  profile: CaptureProfile;
-  saveMode: SaveMode;
-  hoveredElement: HTMLElement | null;
-  overlay: SelectionOverlayElements;
-  detach: () => void;
-};
-
-const TOAST_HOST_ID = "keeppage-in-page-toast";
-const SELECTION_OVERLAY_HOST_ID = "keeppage-selection-overlay";
-const SELECTION_MARKER_ATTR = "data-keeppage-selection-root";
-const MIN_COVER_IMAGE_WIDTH = 240;
-const MIN_COVER_IMAGE_HEIGHT = 135;
-const MIN_COVER_IMAGE_AREA = 48_000;
-const PREFERRED_SELECTION_TAGS = new Set([
-  "ARTICLE",
-  "ASIDE",
-  "BLOCKQUOTE",
-  "DIV",
-  "FIGURE",
-  "IMG",
-  "LI",
-  "MAIN",
-  "P",
-  "PRE",
-  "SECTION",
-  "TABLE",
-  "UL",
-  "OL",
-  "VIDEO",
-]);
+import {
+  MIN_COVER_IMAGE_AREA,
+  MIN_COVER_IMAGE_HEIGHT,
+  MIN_COVER_IMAGE_WIDTH,
+  PREFERRED_SELECTION_TAGS,
+  SELECTION_MARKER_ATTR,
+  SELECTION_OVERLAY_HOST_ID,
+  TOAST_HOST_ID,
+  type ActiveSelection,
+  type ArchiveCaptureResult,
+  type KeepPageBridgeRequest,
+  type KeepPageBridgeResponse,
+  type SelectionOverlayElements,
+  type SelectionSession,
+  type SingleFileGlobal,
+  type SingleFilePageData,
+  type ToastElements,
+} from "../src/lib/content/types";
 
 let toastElements: ToastElements | null = null;
 let toastDismissTimer: number | null = null;

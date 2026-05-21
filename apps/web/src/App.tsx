@@ -24,8 +24,40 @@ import type {
 import {
   ApiError,
   type BookmarkDetailResult,
-  type BookmarkViewerVersion,
 } from "./api";
+import {
+  type ArchivePreviewState,
+  type ArchiveViewMode,
+  resolvePreviewSelection,
+} from "./app/archive-preview";
+import {
+  buildAppUrl,
+  clampContextMenuPosition,
+  copyTextToClipboard,
+} from "./app/browser-utils";
+import {
+  buildDetailHash,
+  buildPrivateDetailHash,
+  goToApiTokens,
+  goToExtensionDevices,
+  goToImportList,
+  goToImportNew,
+  goToList,
+  goToPrivateMode,
+  openBookmark,
+  openImportTask,
+  openPrivateBookmark,
+  parseRoute,
+  type ViewRoute,
+} from "./app/routes";
+import {
+  clearStoredToken,
+  getStoredToken,
+  setStoredToken,
+  type SessionState,
+  toErrorMessage,
+} from "./app/session";
+import { displayUserName, userInitials } from "./app/user-format";
 import type { ImportPanelAdapter } from "./features/imports";
 import { BookmarksListRoute } from "./features/bookmarks/list";
 import { DefaultSiteIcon } from "./features/bookmarks/shared/DefaultSiteIcon";
@@ -87,29 +119,6 @@ type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
 type DetailLoadState = "idle" | "loading" | "ready" | "not-found" | "error";
 type AuthMode = "login" | "register";
-type ArchiveViewMode = "reader" | "original";
-type ViewRoute =
-  | { page: "list" }
-  | { page: "detail"; bookmarkId: string; versionId?: string }
-  | { page: "private-mode" }
-  | { page: "private-detail"; bookmarkId: string; versionId?: string }
-  | { page: "imports-new" }
-  | { page: "imports-list" }
-  | { page: "imports-detail"; taskId: string }
-  | { page: "settings-api-tokens" }
-  | { page: "settings-extension-devices" }
-  | { page: "extension-connect" };
-
-type SessionState =
-  | { status: "booting"; token: null; user: null; error: string | null }
-  | { status: "anonymous"; token: null; user: null; error: string | null }
-  | { status: "authenticated"; token: string; user: AuthUser; error: null };
-
-type ArchivePreviewState =
-  | { status: "idle"; url?: undefined; error?: undefined }
-  | { status: "loading"; url?: undefined; error?: undefined }
-  | { status: "ready"; url: string; error?: undefined }
-  | { status: "error"; url?: undefined; error: string };
 
 type InlineFeedback = {
   kind: "success" | "error";
@@ -148,200 +157,7 @@ type ContextMenuGroup = {
   items: ContextMenuItem[];
 };
 
-const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 const BOOKMARKS_PAGE_SIZE = 24;
-
-function resolvePreviewSelection(
-  version: BookmarkViewerVersion | null,
-  preferredMode: ArchiveViewMode,
-): {
-  mode: ArchiveViewMode;
-  objectKey: string;
-  sizeBytes?: number;
-} | null {
-  if (!version) {
-    return null;
-  }
-
-  const candidates: ArchiveViewMode[] = preferredMode === "reader"
-    ? ["reader", "original"]
-    : ["original", "reader"];
-
-  for (const mode of candidates) {
-    if (mode === "reader" && version.readerHtmlObjectKey && version.readerArchiveAvailable) {
-      return {
-        mode,
-        objectKey: version.readerHtmlObjectKey,
-        sizeBytes: version.readerArchiveSizeBytes,
-      };
-    }
-    if (mode === "original" && version.archiveAvailable) {
-      return {
-        mode,
-        objectKey: version.htmlObjectKey,
-        sizeBytes: version.archiveSizeBytes,
-      };
-    }
-  }
-
-  return null;
-}
-
-async function copyTextToClipboard(value: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  textarea.style.pointerEvents = "none";
-  document.body.append(textarea);
-  textarea.select();
-  const successful = document.execCommand("copy");
-  textarea.remove();
-  if (!successful) {
-    throw new Error("当前环境不支持复制到剪贴板。");
-  }
-}
-
-function buildAppUrl(hash: string) {
-  return new URL(hash, window.location.href).toString();
-}
-
-function clampContextMenuPosition(x: number, y: number, width: number, height: number) {
-  const horizontalGap = 20;
-  const verticalGap = 20;
-  const left = Math.min(
-    Math.max(horizontalGap, x),
-    Math.max(horizontalGap, window.innerWidth - width - horizontalGap),
-  );
-  const top = Math.min(
-    Math.max(verticalGap, y),
-    Math.max(verticalGap, window.innerHeight - height - verticalGap),
-  );
-  return { left, top };
-}
-
-function parseRoute(hash: string): ViewRoute {
-  const normalized = hash.startsWith("#") ? hash.slice(1) : hash;
-  if (!normalized) {
-    return { page: "list" };
-  }
-
-  const [pathPart, queryString = ""] = normalized.split("?");
-  const path = pathPart.replace(/\/+$/, "");
-  if (path === "/imports/new") {
-    return { page: "imports-new" };
-  }
-  if (path === "/imports") {
-    return { page: "imports-list" };
-  }
-  if (path === "/settings/private-mode") {
-    return { page: "private-mode" };
-  }
-  if (path === "/settings/api-tokens") {
-    return { page: "settings-api-tokens" };
-  }
-  if (path === "/settings/extension-devices") {
-    return { page: "settings-extension-devices" };
-  }
-  if (path === "/extension/connect") {
-    return { page: "extension-connect" };
-  }
-  if (path.startsWith("/imports/")) {
-    const taskId = decodeURIComponent(path.slice("/imports/".length));
-    if (!taskId) {
-      return { page: "imports-list" };
-    }
-    return {
-      page: "imports-detail",
-      taskId,
-    };
-  }
-  if (!path.startsWith("/bookmarks/")) {
-    if (path.startsWith("/private/bookmarks/")) {
-      const bookmarkId = decodeURIComponent(path.slice("/private/bookmarks/".length));
-      if (!bookmarkId) {
-        return { page: "private-mode" };
-      }
-      const versionId = new URLSearchParams(queryString).get("version") ?? undefined;
-      return {
-        page: "private-detail",
-        bookmarkId,
-        versionId,
-      };
-    }
-    return { page: "list" };
-  }
-
-  const bookmarkId = decodeURIComponent(path.slice("/bookmarks/".length));
-  if (!bookmarkId) {
-    return { page: "list" };
-  }
-
-  const versionId = new URLSearchParams(queryString).get("version") ?? undefined;
-  return {
-    page: "detail",
-    bookmarkId,
-    versionId,
-  };
-}
-
-function buildDetailHash(bookmarkId: string, versionId?: string) {
-  const params = new URLSearchParams();
-  if (versionId) {
-    params.set("version", versionId);
-  }
-  return `#/bookmarks/${encodeURIComponent(bookmarkId)}${params.toString() ? `?${params.toString()}` : ""}`;
-}
-
-function buildPrivateDetailHash(bookmarkId: string, versionId?: string) {
-  const params = new URLSearchParams();
-  if (versionId) {
-    params.set("version", versionId);
-  }
-  return `#/private/bookmarks/${encodeURIComponent(bookmarkId)}${params.toString() ? `?${params.toString()}` : ""}`;
-}
-
-function goToList() {
-  window.location.hash = "#/";
-}
-
-function goToImportNew() {
-  window.location.hash = "#/imports/new";
-}
-
-function goToImportList() {
-  window.location.hash = "#/imports";
-}
-
-function goToApiTokens() {
-  window.location.hash = "#/settings/api-tokens";
-}
-
-function goToExtensionDevices() {
-  window.location.hash = "#/settings/extension-devices";
-}
-
-function goToPrivateMode() {
-  window.location.hash = "#/settings/private-mode";
-}
-
-function openImportTask(taskId: string) {
-  window.location.hash = `#/imports/${encodeURIComponent(taskId)}`;
-}
-
-function openBookmark(bookmarkId: string, versionId?: string) {
-  window.location.hash = buildDetailHash(bookmarkId, versionId);
-}
-
-function openPrivateBookmark(bookmarkId: string, versionId?: string) {
-  window.location.hash = buildPrivateDetailHash(bookmarkId, versionId);
-}
 
 function isManagerDialogOpen(state: ManagerDialogState) {
   return state.kind !== "closed";
@@ -373,45 +189,6 @@ function BookmarkDeleteSiteIcon({ bookmark }: { bookmark: Bookmark }) {
   ) : (
     <DefaultSiteIcon className="bookmark-delete-card-favicon is-default-site-icon" />
   );
-}
-
-function getStoredToken() {
-  const stored = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
-  return stored || null;
-}
-
-function setStoredToken(token: string) {
-  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-}
-
-function clearStoredToken() {
-  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-}
-
-function toErrorMessage(error: unknown) {
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return "请求失败，请稍后重试。";
-}
-
-function displayUserName(user: AuthUser) {
-  return user.name?.trim() || user.email;
-}
-
-function userInitials(user: AuthUser) {
-  const source = user.name?.trim() || user.email.split("@")[0] || user.email;
-  const segments = source
-    .split(/[\s._-]+/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  if (segments.length >= 2) {
-    return `${segments[0]?.[0] ?? ""}${segments[1]?.[0] ?? ""}`.toUpperCase();
-  }
-  return source.slice(0, 2).toUpperCase();
 }
 
 function AppShell({
