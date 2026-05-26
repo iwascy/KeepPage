@@ -41,6 +41,7 @@ type AuthState = "idle" | "submitting" | "ok" | "error";
 
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
 const LOCKED_CAPTURE_PROFILE: CaptureProfile = "complete";
+const SIDE_PANEL_SAVE_MODE_INTENT_KEY = "sidePanelSaveModeIntent";
 const SAVE_MODE_OPTIONS: Array<{ value: SaveMode; label: string }> = [
   {
     value: "standard",
@@ -397,7 +398,10 @@ export function App() {
     const nextIncognitoPrivateDefault = result.incognitoPrivateDefault !== false;
     setIncognitoPrivateDefault(nextIncognitoPrivateDefault);
     setDebugMode(result.debugMode === true);
-    const detectedInitialSaveMode = await resolveInitialSaveMode(
+    const saveModeIntent = await chrome.storage.session.get(SIDE_PANEL_SAVE_MODE_INTENT_KEY);
+    await chrome.storage.session.remove(SIDE_PANEL_SAVE_MODE_INTENT_KEY);
+    const requestedSaveMode = parseSaveModeIntent(saveModeIntent[SIDE_PANEL_SAVE_MODE_INTENT_KEY]);
+    const detectedInitialSaveMode = requestedSaveMode ?? await resolveInitialSaveMode(
       typeof result.saveModePreference === "string" ? result.saveModePreference : undefined,
       nextIncognitoPrivateDefault,
     );
@@ -1125,6 +1129,10 @@ export function App() {
 function normalizeApiBaseUrl(input: string) {
   const normalized = input.trim();
   return (normalized || DEFAULT_API_BASE_URL).replace(/\/$/, "");
+}
+
+function parseSaveModeIntent(input: unknown): SaveMode | null {
+  return input === "standard" || input === "private" ? input : null;
 }
 
 async function resolveInitialSaveMode(

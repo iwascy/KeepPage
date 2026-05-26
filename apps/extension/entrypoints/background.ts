@@ -44,6 +44,7 @@ const singleFileTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 const logger = createLogger("background");
 const BOOKMARKED_BADGE_COLOR = "#16a34a";
 const BOOKMARKED_BADGE_TEXT = "✓";
+const SIDE_PANEL_SAVE_MODE_INTENT_KEY = "sidePanelSaveModeIntent";
 
 export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
@@ -81,6 +82,9 @@ export default defineBackground(() => {
       return;
     }
     const saveMode = info.menuItemId === "keeppage-save-page-private" ? "private" : "standard";
+    await chrome.storage.session.set({
+      [SIDE_PANEL_SAVE_MODE_INTENT_KEY]: saveMode,
+    });
     logger.info("Context menu capture requested.", {
       tabId: tab.id,
       url: tab.url,

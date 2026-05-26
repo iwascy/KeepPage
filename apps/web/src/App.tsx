@@ -2021,6 +2021,8 @@ export function App({
         folderItemCounts={sidebarFolderCounts}
         folders={folders}
         tags={tags}
+        privateModeSummary={privateSummary}
+        privateModeUnlocked={Boolean(privateToken)}
         routePage={route.page}
         bookmarkView={bookmarkView}
         selectedFolderId={selectedFolderId}

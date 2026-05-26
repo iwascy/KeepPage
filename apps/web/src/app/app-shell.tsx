@@ -11,6 +11,7 @@ import type {
   Bookmark,
   BookmarkListView,
   Folder,
+  PrivateVaultSummary,
   Tag,
 } from "@keeppage/domain";
 import { Icon } from "../components/Icon";
@@ -23,6 +24,8 @@ export function AppShell({
   folderItemCounts,
   folders,
   tags,
+  privateModeSummary,
+  privateModeUnlocked,
   routePage,
   bookmarkView,
   selectedFolderId,
@@ -54,6 +57,8 @@ export function AppShell({
   folderItemCounts: Record<string, number>;
   folders: Folder[];
   tags: Tag[];
+  privateModeSummary: PrivateVaultSummary | null;
+  privateModeUnlocked: boolean;
   routePage: ViewRoute["page"];
   bookmarkView: BookmarkListView;
   selectedFolderId: string;
@@ -203,6 +208,13 @@ export function AppShell({
         : bookmarkView === "recent"
           ? "Recent Updates"
           : "KeepPage Archive";
+  const privateModeStateLabel = !privateModeSummary
+    ? "读取中"
+    : !privateModeSummary.enabled
+      ? "未启用"
+      : privateModeUnlocked
+        ? "已进入"
+        : "已锁定";
 
   useEffect(() => {
     if (!mobileSearchOpen) {
@@ -304,6 +316,7 @@ export function AppShell({
               >
                 <Icon name="lock" />
                 <span>私密模式</span>
+                <small className="home-settings-status">{privateModeStateLabel}</small>
               </button>
               <button
                 className={routePage === "settings-api-tokens" ? "home-settings-item is-active" : "home-settings-item"}

@@ -650,6 +650,18 @@
   color: #111418;
 }
 
+.home-settings-status {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #71717a;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 .home-settings-item.is-danger {
   color: #8c4040;
 }
