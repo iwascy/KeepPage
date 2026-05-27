@@ -91,6 +91,10 @@
   gap: 0.9rem;
 }
 
+.private-mode-form-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .private-mode-form label {
   display: grid;
   gap: 0.45rem;
@@ -112,6 +116,18 @@
   outline: none;
   border-color: var(--accent-deep);
   box-shadow: 0 0 0 3px rgba(79, 105, 86, 0.12);
+}
+
+.private-mode-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.private-mode-action-row span {
+  color: var(--accent-deep);
+  font-size: 0.9rem;
 }
 
 .private-mode-empty {
@@ -166,6 +182,10 @@
   }
 
   .private-mode-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .private-mode-form-three {
     grid-template-columns: 1fr;
   }
 }

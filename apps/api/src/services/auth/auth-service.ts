@@ -96,6 +96,20 @@ export class AuthService {
     return this.createSession(existing.user);
   }
 
+  async verifyLoginPassword(userId: string, password: string): Promise<boolean> {
+    const user = await this.repository.getUserById(userId);
+    if (!user) {
+      return false;
+    }
+
+    const existing = await this.repository.findUserByEmail(user.email);
+    if (!existing || existing.user.id !== userId || !existing.passwordHash) {
+      return false;
+    }
+
+    return verifyPassword(password, existing.passwordHash);
+  }
+
   async requireUser(request: FastifyRequest, options: RequireUserOptions = {}): Promise<AuthUser> {
     const token = readBearerToken(request);
     if (!token) {

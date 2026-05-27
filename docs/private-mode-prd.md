@@ -301,6 +301,7 @@ KeepPage 私密模式 V1 采用以下方案：
 
 - 提供私密模式启用接口。
 - 提供私密密码校验接口。
+- 提供通过账号登录密码验证后修改私密密码的接口。
 - 提供私密模式锁定 / 退出接口。
 - 服务端只保存密码哈希及必要元数据。
 
@@ -310,6 +311,7 @@ KeepPage 私密模式 V1 采用以下方案：
 
 - `POST /private-mode/setup`
 - `POST /private-mode/unlock`
+- `POST /private-mode/password`
 - `POST /private-mode/lock`
 - `GET /private/bookmarks`
 - `GET /private/bookmarks/:bookmarkId`

@@ -49,7 +49,7 @@ export async function registerUploadRoutes(
       const user = await authService.requireUser(request);
       const query = objectQuerySchema.parse(request.query);
       if (isPrivateObjectKey(query.key)) {
-        privateModeService.requireUnlocked(request, user.id);
+        await privateModeService.requireUnlocked(request, user.id);
       }
       const result = await uploadService.getObject(user.id, query.key);
       if (result.publicUrl) {
@@ -68,7 +68,7 @@ export async function registerUploadRoutes(
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = uploadService.decodeObjectKey(params.encodedObjectKey);
       if (isPrivateObjectKey(objectKey)) {
-        privateModeService.requireUnlocked(request, user.id);
+        await privateModeService.requireUnlocked(request, user.id);
       }
       const result = await uploadService.getObject(user.id, objectKey);
       if (result.publicUrl) {
@@ -91,7 +91,7 @@ export async function registerUploadRoutes(
       const params = uploadParamsSchema.parse(request.params);
       const objectKey = uploadService.decodeObjectKey(params.encodedObjectKey);
       if (isPrivateObjectKey(objectKey)) {
-        privateModeService.requireUnlocked(request, user.id);
+        await privateModeService.requireUnlocked(request, user.id);
       }
       await uploadService.uploadObject({
         userId: user.id,
@@ -114,7 +114,7 @@ export async function registerUploadRoutes(
       const params = uploadChunkParamsSchema.parse(request.params);
       const objectKey = uploadService.decodeObjectKey(params.encodedObjectKey);
       if (isPrivateObjectKey(objectKey)) {
-        privateModeService.requireUnlocked(request, user.id);
+        await privateModeService.requireUnlocked(request, user.id);
       }
       const result = await uploadService.uploadChunk({
         userId: user.id,

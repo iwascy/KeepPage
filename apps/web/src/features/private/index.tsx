@@ -29,12 +29,20 @@ export function PrivateModePage({
   setupPassword,
   setupConfirm,
   unlockPassword,
+  passwordChangeLogin,
+  passwordChangeNew,
+  passwordChangeConfirm,
+  passwordChangeMessage,
   busy,
   onSetupPasswordChange,
   onSetupConfirmChange,
   onUnlockPasswordChange,
+  onPasswordChangeLoginChange,
+  onPasswordChangeNewChange,
+  onPasswordChangeConfirmChange,
   onSetup,
   onUnlock,
+  onChangePassword,
   onLock,
   onOpenBookmark,
 }: {
@@ -46,12 +54,20 @@ export function PrivateModePage({
   setupPassword: string;
   setupConfirm: string;
   unlockPassword: string;
+  passwordChangeLogin: string;
+  passwordChangeNew: string;
+  passwordChangeConfirm: string;
+  passwordChangeMessage: string | null;
   busy: boolean;
   onSetupPasswordChange: (value: string) => void;
   onSetupConfirmChange: (value: string) => void;
   onUnlockPasswordChange: (value: string) => void;
+  onPasswordChangeLoginChange: (value: string) => void;
+  onPasswordChangeNewChange: (value: string) => void;
+  onPasswordChangeConfirmChange: (value: string) => void;
   onSetup: () => void;
   onUnlock: () => void;
+  onChangePassword: () => void;
   onLock: () => void;
   onOpenBookmark: (bookmarkId: string) => void;
 }) {
@@ -203,6 +219,53 @@ export function PrivateModePage({
           )}
         </section>
       )}
+
+      {enabled ? (
+        <section className="private-mode-card">
+          <h2>修改私密密码</h2>
+          <p>输入当前账号的登录密码完成验证，然后设置新的私密密码。</p>
+          <div className="private-mode-form private-mode-form-three">
+            <label>
+              <span>登录密码</span>
+              <input
+                type="password"
+                value={passwordChangeLogin}
+                onChange={(event) => onPasswordChangeLoginChange(event.target.value)}
+                placeholder="当前账号密码"
+                autoComplete="current-password"
+              />
+            </label>
+            <label>
+              <span>新的私密密码</span>
+              <input
+                type="password"
+                value={passwordChangeNew}
+                onChange={(event) => onPasswordChangeNewChange(event.target.value)}
+                placeholder="至少 8 位"
+                autoComplete="new-password"
+              />
+            </label>
+            <label>
+              <span>确认新密码</span>
+              <input
+                type="password"
+                value={passwordChangeConfirm}
+                onChange={(event) => onPasswordChangeConfirmChange(event.target.value)}
+                placeholder="再次输入"
+                autoComplete="new-password"
+              />
+            </label>
+          </div>
+          <div className="private-mode-action-row">
+            <button className="secondary-button" type="button" onClick={onChangePassword} disabled={busy}>
+              {busy ? "更新中..." : "更新私密密码"}
+            </button>
+            {passwordChangeMessage ? (
+              <span>{passwordChangeMessage}</span>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {error ? (
         <p className="status-banner is-error">{error}</p>

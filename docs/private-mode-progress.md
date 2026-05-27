@@ -113,13 +113,14 @@ Web 工作台已从最小提示推进到可用私密工作区：
 - `GET /private-mode/status`
 - `POST /private-mode/setup`
 - `POST /private-mode/unlock`
+- `POST /private-mode/password`
 - `POST /private-mode/lock`
 - `POST /private/captures/init`
 - `POST /private/captures/complete`
 - `GET /private/bookmarks`
 - `GET /private/bookmarks/:bookmarkId`
 
-私密对象统一使用 `private-captures/` 前缀，读取和写入都会校验登录账号与私密 token。
+私密对象统一使用 `private-captures/` 前缀，读取和写入都会校验登录账号与私密 token。私密密码可通过登录密码验证后重置，更新后会重新签发私密 token。
 
 对应文件：
 

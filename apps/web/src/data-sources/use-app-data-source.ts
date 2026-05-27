@@ -20,6 +20,7 @@ import {
   createExtensionConnectCode,
   createFolder,
   createTag,
+  changePrivateModePassword,
   deleteBookmark,
   deleteFolder,
   deleteTag,
@@ -144,6 +145,10 @@ export type AppDataSource = {
   fetchPrivateModeStatus(token: string, privateToken?: string): Promise<PrivateVaultSummary>;
   setupPrivateMode(password: string, token: string): Promise<PrivateModeUnlockResponse>;
   unlockPrivateMode(password: string, token: string): Promise<PrivateModeUnlockResponse>;
+  changePrivateModePassword(
+    input: { loginPassword: string; newPassword: string },
+    token: string,
+  ): Promise<PrivateModeUnlockResponse>;
   lockPrivateMode(token: string): Promise<PrivateVaultSummary>;
   searchPrivateBookmarks(query: BookmarkQuery, token: string, privateToken: string): Promise<BookmarkResult>;
   fetchPrivateBookmarkDetail(
@@ -298,6 +303,9 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
           throw new Error("Mock 模式暂不支持私密模式。");
         },
         async unlockPrivateMode() {
+          throw new Error("Mock 模式暂不支持私密模式。");
+        },
+        async changePrivateModePassword() {
           throw new Error("Mock 模式暂不支持私密模式。");
         },
         async lockPrivateMode() {
@@ -493,6 +501,7 @@ export function useAppDataSource(kind: AppDataSourceKind): AppDataSource {
       fetchPrivateModeStatus,
       setupPrivateMode,
       unlockPrivateMode,
+      changePrivateModePassword,
       lockPrivateMode,
       searchPrivateBookmarks: fetchPrivateBookmarks,
       fetchPrivateBookmarkDetail,

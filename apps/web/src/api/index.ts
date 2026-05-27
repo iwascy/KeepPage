@@ -15,6 +15,7 @@ import {
   folderSchema,
   privateBookmarkDetailResponseSchema,
   privateBookmarkSearchResponseSchema,
+  privateModePasswordChangeRequestSchema,
   privateModeSetupRequestSchema,
   privateModeUnlockRequestSchema,
   privateModeUnlockResponseSchema,
@@ -622,6 +623,18 @@ export async function setupPrivateMode(password: string, token: string): Promise
 export async function unlockPrivateMode(password: string, token: string): Promise<PrivateModeUnlockResponse> {
   const payload = privateModeUnlockRequestSchema.parse({ password });
   return requestJson("/private-mode/unlock", privateModeUnlockResponseSchema, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export async function changePrivateModePassword(
+  input: { loginPassword: string; newPassword: string },
+  token: string,
+): Promise<PrivateModeUnlockResponse> {
+  const payload = privateModePasswordChangeRequestSchema.parse(input);
+  return requestJson("/private-mode/password", privateModeUnlockResponseSchema, {
     method: "POST",
     token,
     body: payload,

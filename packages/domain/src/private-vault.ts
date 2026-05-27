@@ -41,6 +41,11 @@ export const privateModeUnlockRequestSchema = z.object({
   password: z.string().min(1).max(128),
 });
 
+export const privateModePasswordChangeRequestSchema = z.object({
+  loginPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(8).max(128),
+});
+
 export const privateModeUnlockResponseSchema = z.object({
   summary: privateVaultSummarySchema,
   privateToken: z.string().min(1),
@@ -53,4 +58,5 @@ export type PrivateVaultSummary = z.infer<typeof privateVaultSummarySchema>;
 export type PrivateCaptureTaskShell = z.infer<typeof privateCaptureTaskShellSchema>;
 export type PrivateModeSetupRequest = z.infer<typeof privateModeSetupRequestSchema>;
 export type PrivateModeUnlockRequest = z.infer<typeof privateModeUnlockRequestSchema>;
+export type PrivateModePasswordChangeRequest = z.infer<typeof privateModePasswordChangeRequestSchema>;
 export type PrivateModeUnlockResponse = z.infer<typeof privateModeUnlockResponseSchema>;

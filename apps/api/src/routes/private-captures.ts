@@ -34,7 +34,7 @@ export async function registerPrivateCaptureRoutes(
       allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
-    privateModeService.requireUnlocked(request, user.id);
+    await privateModeService.requireUnlocked(request, user.id);
     const payload = captureInitRequestSchema.parse(request.body);
     const result = await repository.initPrivateCapture(user.id, payload);
     const publicBaseUrl = resolvePublicBaseUrl(request, config);
@@ -51,7 +51,7 @@ export async function registerPrivateCaptureRoutes(
       allowExtensionDevice: true,
       requiredApiScope: "bookmark:create",
     });
-    privateModeService.requireUnlocked(request, user.id);
+    await privateModeService.requireUnlocked(request, user.id);
     const payload = captureCompleteRequestSchema.parse(request.body);
     const result = await repository.completePrivateCapture(user.id, payload);
     responseCache.invalidateUser(user.id);

@@ -274,6 +274,10 @@ export function App({
   const [privateSetupPassword, setPrivateSetupPassword] = useState("");
   const [privateSetupConfirm, setPrivateSetupConfirm] = useState("");
   const [privateUnlockPassword, setPrivateUnlockPassword] = useState("");
+  const [privatePasswordChangeLogin, setPrivatePasswordChangeLogin] = useState("");
+  const [privatePasswordChangeNew, setPrivatePasswordChangeNew] = useState("");
+  const [privatePasswordChangeConfirm, setPrivatePasswordChangeConfirm] = useState("");
+  const [privatePasswordChangeMessage, setPrivatePasswordChangeMessage] = useState<string | null>(null);
   const [privateBusy, setPrivateBusy] = useState(false);
   const [privateDetail, setPrivateDetail] = useState<BookmarkDetailResult | null>(null);
   const [privateDetailLoadState, setPrivateDetailLoadState] = useState<DetailLoadState>("idle");
@@ -1286,6 +1290,7 @@ export function App({
       setPrivateSetupPassword("");
       setPrivateSetupConfirm("");
       setPrivateUnlockPassword("");
+      setPrivatePasswordChangeMessage(null);
       await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
       if (handleProtectedApiError(error)) {
@@ -1313,6 +1318,7 @@ export function App({
       setPrivateSummary(result.summary);
       setPrivateToken(result.privateToken);
       setPrivateUnlockPassword("");
+      setPrivatePasswordChangeMessage(null);
       await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
       if (handleProtectedApiError(error)) {
@@ -1341,9 +1347,57 @@ export function App({
       setPrivateDetailLoadState("idle");
       setPrivateDetailError(null);
       setPrivateUnlockPassword("");
+      setPrivatePasswordChangeLogin("");
+      setPrivatePasswordChangeNew("");
+      setPrivatePasswordChangeConfirm("");
+      setPrivatePasswordChangeMessage(null);
       if (route.page === "private-detail") {
         goToPrivateMode();
       }
+    } catch (error) {
+      if (handleProtectedApiError(error)) {
+        return;
+      }
+      setPrivateError(toErrorMessage(error));
+    } finally {
+      setPrivateBusy(false);
+    }
+  }
+
+  async function handleChangePrivatePassword() {
+    if (!authToken) {
+      return;
+    }
+    const nextPassword = privatePasswordChangeNew.trim();
+    if (!privatePasswordChangeLogin) {
+      setPrivateError("请输入当前账号登录密码。");
+      return;
+    }
+    if (nextPassword.length < 8) {
+      setPrivateError("新的私密密码至少需要 8 位。");
+      return;
+    }
+    if (nextPassword !== privatePasswordChangeConfirm) {
+      setPrivateError("两次输入的新私密密码不一致。");
+      return;
+    }
+
+    setPrivateBusy(true);
+    setPrivateError(null);
+    setPrivatePasswordChangeMessage(null);
+    try {
+      const result = await appDataSource.changePrivateModePassword({
+        loginPassword: privatePasswordChangeLogin,
+        newPassword: nextPassword,
+      }, authToken);
+      setPrivateSummary(result.summary);
+      setPrivateToken(result.privateToken);
+      setPrivatePasswordChangeLogin("");
+      setPrivatePasswordChangeNew("");
+      setPrivatePasswordChangeConfirm("");
+      setPrivateUnlockPassword("");
+      setPrivatePasswordChangeMessage("私密密码已更新。");
+      await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
       if (handleProtectedApiError(error)) {
         return;
@@ -2108,12 +2162,29 @@ export function App({
               setupPassword={privateSetupPassword}
               setupConfirm={privateSetupConfirm}
               unlockPassword={privateUnlockPassword}
+              passwordChangeLogin={privatePasswordChangeLogin}
+              passwordChangeNew={privatePasswordChangeNew}
+              passwordChangeConfirm={privatePasswordChangeConfirm}
+              passwordChangeMessage={privatePasswordChangeMessage}
               busy={privateBusy}
               onSetupPasswordChange={setPrivateSetupPassword}
               onSetupConfirmChange={setPrivateSetupConfirm}
               onUnlockPasswordChange={setPrivateUnlockPassword}
+              onPasswordChangeLoginChange={(value) => {
+                setPrivatePasswordChangeLogin(value);
+                setPrivatePasswordChangeMessage(null);
+              }}
+              onPasswordChangeNewChange={(value) => {
+                setPrivatePasswordChangeNew(value);
+                setPrivatePasswordChangeMessage(null);
+              }}
+              onPasswordChangeConfirmChange={(value) => {
+                setPrivatePasswordChangeConfirm(value);
+                setPrivatePasswordChangeMessage(null);
+              }}
               onSetup={() => void handleSetupPrivateMode()}
               onUnlock={() => void handleUnlockPrivateMode()}
+              onChangePassword={() => void handleChangePrivatePassword()}
               onLock={() => void handleLockPrivateMode()}
               onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
             />
@@ -2154,12 +2225,29 @@ export function App({
                 setupPassword={privateSetupPassword}
                 setupConfirm={privateSetupConfirm}
                 unlockPassword={privateUnlockPassword}
+                passwordChangeLogin={privatePasswordChangeLogin}
+                passwordChangeNew={privatePasswordChangeNew}
+                passwordChangeConfirm={privatePasswordChangeConfirm}
+                passwordChangeMessage={privatePasswordChangeMessage}
                 busy={privateBusy}
                 onSetupPasswordChange={setPrivateSetupPassword}
                 onSetupConfirmChange={setPrivateSetupConfirm}
                 onUnlockPasswordChange={setPrivateUnlockPassword}
+                onPasswordChangeLoginChange={(value) => {
+                  setPrivatePasswordChangeLogin(value);
+                  setPrivatePasswordChangeMessage(null);
+                }}
+                onPasswordChangeNewChange={(value) => {
+                  setPrivatePasswordChangeNew(value);
+                  setPrivatePasswordChangeMessage(null);
+                }}
+                onPasswordChangeConfirmChange={(value) => {
+                  setPrivatePasswordChangeConfirm(value);
+                  setPrivatePasswordChangeMessage(null);
+                }}
                 onSetup={() => void handleSetupPrivateMode()}
                 onUnlock={() => void handleUnlockPrivateMode()}
+                onChangePassword={() => void handleChangePrivatePassword()}
                 onLock={() => void handleLockPrivateMode()}
                 onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
               />

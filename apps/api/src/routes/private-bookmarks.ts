@@ -33,7 +33,7 @@ export async function registerPrivateBookmarkRoutes(
 ) {
   app.get("/private/bookmarks", async (request, reply) => {
     const user = await authService.requireUser(request);
-    privateModeService.requireUnlocked(request, user.id);
+    await privateModeService.requireUnlocked(request, user.id);
     const query = searchQuerySchema.parse(request.query);
     return responseCache.sendJson(request, reply, {
       scope: "private-bookmarks",
@@ -46,7 +46,7 @@ export async function registerPrivateBookmarkRoutes(
 
   app.get<{ Params: { bookmarkId: string } }>("/private/bookmarks/:bookmarkId", async (request, reply) => {
     const user = await authService.requireUser(request);
-    privateModeService.requireUnlocked(request, user.id);
+    await privateModeService.requireUnlocked(request, user.id);
     const params = bookmarkParamsSchema.parse(request.params);
     return reply.send(privateBookmarkDetailResponseSchema.parse(
       await bookmarkService.getPrivateBookmarkDetail(user.id, params.bookmarkId),

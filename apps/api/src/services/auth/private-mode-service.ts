@@ -7,6 +7,7 @@ import {
 import { promisify } from "node:util";
 import type { FastifyRequest } from "fastify";
 import {
+  privateModePasswordChangeRequestSchema,
   privateModeSetupRequestSchema,
   privateModeUnlockRequestSchema,
   privateModeUnlockResponseSchema,
@@ -23,6 +24,7 @@ export const PRIVATE_MODE_TOKEN_HEADER = "x-keeppage-private-token";
 type PrivateTokenPayload = {
   sub: string;
   kind: "private-mode";
+  passwordUpdatedAt: string;
   iat: number;
   exp: number;
 };
@@ -45,7 +47,7 @@ export class PrivateModeService {
     const summary = await this.repository.getPrivateVaultSummary(userId);
     return privateVaultSummarySchema.parse({
       ...summary,
-      unlocked: privateToken ? this.isPrivateTokenValid(privateToken, userId) : false,
+      unlocked: privateToken ? await this.isPrivateTokenValid(privateToken, userId) : false,
     });
   }
 
@@ -74,16 +76,36 @@ export class PrivateModeService {
     return this.createUnlockResponse(userId);
   }
 
-  requireUnlocked(request: FastifyRequest, userId: string) {
+  async changePassword(userId: string, input: unknown) {
+    const payload = privateModePasswordChangeRequestSchema.pick({ newPassword: true }).parse(input);
+    const config = await this.repository.getPrivateModeConfig(userId);
+    if (!config) {
+      throw new HttpError(404, "PrivateModeNotEnabled", "请先启用私密模式。");
+    }
+
+    const passwordHash = await hashPassword(payload.newPassword);
+    await this.repository.enablePrivateMode({
+      userId,
+      passwordHash,
+      passwordAlgo: "scrypt",
+    });
+    return this.createUnlockResponse(userId);
+  }
+
+  async requireUnlocked(request: FastifyRequest, userId: string) {
     const privateToken = readPrivateToken(request);
-    if (!privateToken || !this.isPrivateTokenValid(privateToken, userId)) {
+    if (!privateToken || !await this.isPrivateTokenValid(privateToken, userId)) {
       throw new HttpError(401, "PrivateModeLocked", "请先输入私密模式密码。");
     }
     return privateToken;
   }
 
   private async createUnlockResponse(userId: string) {
-    const privateToken = this.createPrivateToken(userId);
+    const config = await this.repository.getPrivateModeConfig(userId);
+    if (!config) {
+      throw new HttpError(404, "PrivateModeNotEnabled", "请先启用私密模式。");
+    }
+    const privateToken = this.createPrivateToken(userId, config.passwordUpdatedAt);
     const summary = await this.getStatus(userId, privateToken);
     return privateModeUnlockResponseSchema.parse({
       summary,
@@ -91,11 +113,12 @@ export class PrivateModeService {
     });
   }
 
-  private createPrivateToken(userId: string) {
+  private createPrivateToken(userId: string, passwordUpdatedAt: string) {
     const now = Date.now();
     const payload: PrivateTokenPayload = {
       sub: userId,
       kind: "private-mode",
+      passwordUpdatedAt,
       iat: Math.floor(now / 1000),
       exp: Math.floor((now + PRIVATE_TOKEN_TTL_MS) / 1000),
     };
@@ -104,10 +127,14 @@ export class PrivateModeService {
     return `${encodedPayload}.${signature}`;
   }
 
-  private isPrivateTokenValid(token: string, userId: string) {
+  private async isPrivateTokenValid(token: string, userId: string) {
     try {
       const payload = verifyPrivateToken(token, this.tokenSecret);
-      return payload.sub === userId && payload.kind === "private-mode" && payload.exp * 1000 > Date.now();
+      if (payload.sub !== userId || payload.kind !== "private-mode" || payload.exp * 1000 <= Date.now()) {
+        return false;
+      }
+      const config = await this.repository.getPrivateModeConfig(userId);
+      return Boolean(config && payload.passwordUpdatedAt === config.passwordUpdatedAt);
     } catch {
       return false;
     }
