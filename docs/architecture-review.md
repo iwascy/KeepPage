@@ -446,11 +446,11 @@ packages/domain/src/
 
 ### R1：整理非核心目录
 
-状态：已完成。已为 `demo`、`expert-ui`、`stitch-keeppage-ui`、`output`、`docs/mockups` 增加 README，明确这些目录是 demo、实验、设计参考或生成产物，不属于生产运行时代码。
+状态：已完成。2026-07-09 已移除根目录历史 mockup / preview HTML、旧 `demo/` 目录与无引用的早期 mockup 资产；`expert-ui`、`stitch-keeppage-ui`、`output`、`docs/mockups` 保留为设计参考或生成产物目录，不属于生产运行时代码。
 
 范围：
 
-- 根目录 mockup / preview HTML。
+- 根目录不再保留 mockup / preview HTML。
 - `expert-ui`
 - `stitch-keeppage-ui`
 - `output`
@@ -459,8 +459,8 @@ packages/domain/src/
 完成定义：
 
 - `apps/` 只放真实运行时应用。
-- 临时资产、实验页面、设计稿进入 `docs/mockups` 或未来的 `experiments`。
-- README 或 docs 中说明这些目录的用途，避免 AI 把实验资产当正式代码。
+- 临时资产、实验页面、设计稿进入 `docs/mockups` 或未来的 `experiments`，不要回到仓库根目录。
+- README 或 docs 中说明保留目录的用途，避免 AI 把实验资产当正式代码。
 
 ## 六、建议顺序
 
