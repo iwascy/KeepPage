@@ -15,6 +15,7 @@ import type {
   Tag,
 } from "@keeppage/domain";
 import { Icon } from "../components/Icon";
+import type { ListUiVersion } from "./list-ui-preference";
 import type { ViewRoute } from "./routes";
 import { displayUserName, userInitials } from "./user-format";
 
@@ -45,6 +46,8 @@ export function AppShell({
   onOpenExtensionDevices,
   onOpenImportNew,
   onOpenImportHistory,
+  listUiVersion,
+  onListUiVersionChange,
   onLogout,
   contextMenuFolderId,
   onFolderContextMenu,
@@ -79,6 +82,8 @@ export function AppShell({
   onOpenExtensionDevices: () => void;
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
+  listUiVersion: ListUiVersion;
+  onListUiVersionChange: (version: ListUiVersion) => void;
   onLogout: () => void;
   contextMenuFolderId: string | null;
   onFolderContextMenu: (folder: Folder, event: ReactMouseEvent<HTMLElement>) => void;
@@ -379,6 +384,33 @@ export function AppShell({
                 <Icon name="history" />
                 <span>导入历史</span>
               </button>
+              <div className="home-settings-divider" aria-hidden="true" />
+              <div className="home-settings-ui-switch" role="group" aria-label="列表界面版本">
+                <p className="home-settings-ui-switch-label">列表界面</p>
+                <p className="home-settings-ui-switch-desc">
+                  新版：品牌磁贴 + 有图用真封面。旧版：横向站点图标卡片。偏好保存在本机。
+                </p>
+                <div className="home-settings-ui-switch-row">
+                  <button
+                    className={listUiVersion === "brand" ? "home-settings-ui-option is-active" : "home-settings-ui-option"}
+                    type="button"
+                    aria-pressed={listUiVersion === "brand"}
+                    onClick={() => onListUiVersionChange("brand")}
+                  >
+                    <Icon name="grid_view" />
+                    新版
+                  </button>
+                  <button
+                    className={listUiVersion === "classic" ? "home-settings-ui-option is-active" : "home-settings-ui-option"}
+                    type="button"
+                    aria-pressed={listUiVersion === "classic"}
+                    onClick={() => onListUiVersionChange("classic")}
+                  >
+                    <Icon name="view_list" />
+                    旧版
+                  </button>
+                </div>
+              </div>
               <div className="home-settings-divider" aria-hidden="true" />
               <button
                 className="home-settings-item is-danger"

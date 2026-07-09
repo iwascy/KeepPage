@@ -148,6 +148,11 @@
     gap: 0.85rem;
   }
 
+  .home-grid.is-brand {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+
   .home-bookmark-card {
     min-height: 150px;
   }

@@ -272,11 +272,18 @@
 
 /* Bookmark card in selection mode */
 
-.home-bookmark-card.is-selection-mode {
+.home-bookmark-card.is-selection-mode,
+.brand-bookmark-card.is-selection-mode {
   cursor: pointer;
 }
 
 .home-bookmark-card.is-selected {
+  box-shadow:
+    0 0 0 2px var(--accent-deep),
+    0 16px 36px -16px rgba(16, 24, 40, 0.18);
+}
+
+.brand-bookmark-card.is-selected {
   box-shadow:
     0 0 0 2px var(--accent-deep),
     0 16px 36px -16px rgba(16, 24, 40, 0.18);

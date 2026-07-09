@@ -16,9 +16,11 @@ import type {
 import {
   formatCompactRelativeWhen,
 } from "../../../lib/date-format";
+import type { ListUiVersion } from "../../../app/list-ui-preference";
 import { Icon } from "../../../components/Icon";
 import { DefaultSiteIcon } from "../shared/DefaultSiteIcon";
 import { useBookmarkSiteIcon } from "../shared/site-icon";
+import { BrandBookmarkCard, BrandBookmarkSkeleton } from "./brand-card";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -191,6 +193,7 @@ function HomePage({
   items,
   totalItems,
   bookmarkView,
+  listUiVersion,
   loadState,
   listError,
   loadMoreError,
@@ -203,6 +206,7 @@ function HomePage({
   contextMenuBookmarkId,
   onBookmarkContextMenu,
   onOpenBookmarkContextMenuAt,
+  onOpenArchive,
   selectionMode,
   selectedIds,
   onToggleSelect,
@@ -210,6 +214,7 @@ function HomePage({
   items: Bookmark[];
   totalItems: number;
   bookmarkView: BookmarkListView;
+  listUiVersion: ListUiVersion;
   loadState: LoadState;
   listError: string | null;
   loadMoreError: string | null;
@@ -222,10 +227,12 @@ function HomePage({
   contextMenuBookmarkId: string | null;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   onOpenBookmarkContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
+  onOpenArchive: (bookmark: Bookmark) => void;
   selectionMode: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
+  const isBrandUi = listUiVersion === "brand";
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const showLoading = loadState === "loading";
@@ -251,34 +258,35 @@ function HomePage({
   }, [canLoadMore, onLoadMore, items.length]);
 
   const emptyTitle = hasActiveFilters
-    ? "当前筛选下没有匹配的归档"
+    ? "当前筛选下没有匹配的书签"
     : bookmarkView === "favorites"
-      ? "还没有收藏的归档"
+      ? "还没有星标书签"
       : bookmarkView === "recent"
-        ? "最近 7 天还没有归档更新"
-        : "还没有归档记录";
+        ? "最近 7 天还没有书签更新"
+        : "还没有书签记录";
   const emptyDescription = hasActiveFilters
     ? "换个关键词，或者切换收藏夹和标签试试。"
     : bookmarkView === "favorites"
-      ? "把常看的页面加入收藏后，会显示在这里。"
+      ? "把常看的页面加入星标后，会显示在这里。"
       : bookmarkView === "recent"
-        ? "最近新归档或编辑过的页面会优先显示在这里。"
-        : "扩展同步的网页归档会优先显示在这里。";
+        ? "最近新增或编辑过的书签会优先显示在这里。"
+        : "扩展同步或导入的书签会显示在这里。";
   const mobileHeroKicker = hasActiveFilters
-    ? "FILTERED ARCHIVE"
+    ? "FILTERED LIST"
     : bookmarkView === "favorites"
       ? "STARRED PICKS"
       : bookmarkView === "recent"
         ? "RECENT UPDATES"
-        : "TODAY'S COLLECTIONS";
+        : "BOOKMARK LIBRARY";
   const mobileHeroTitle = hasActiveFilters
     ? "筛选结果"
     : bookmarkView === "favorites"
-      ? "星标归档"
+      ? "星标收藏"
       : bookmarkView === "recent"
-        ? "最近更新"
-        : "归档总览";
-  const mobileHeroCount = `${Math.max(totalItems, items.length)} 条${bookmarkView === "recent" ? "更新" : "归档"}`;
+        ? "最近添加"
+        : "全部书签";
+  const mobileHeroCount = `${Math.max(totalItems, items.length)} 条${bookmarkView === "recent" ? "更新" : "书签"}`;
+  const gridClassName = isBrandUi ? "home-grid is-brand" : "home-grid";
 
   return (
     <>
@@ -288,7 +296,7 @@ function HomePage({
         </p>
       ) : null}
 
-      <section className="home-mobile-hero" aria-label="移动端归档概览">
+      <section className="home-mobile-hero" aria-label="移动端书签概览">
         <div className="home-mobile-hero-copy">
           <p className="home-mobile-hero-kicker">{mobileHeroKicker}</p>
           <div className="home-mobile-hero-title-row">
@@ -299,19 +307,21 @@ function HomePage({
       </section>
 
       {showLoading && items.length > 0 ? (
-        <p className="home-loading-note">正在刷新归档列表...</p>
+        <p className="home-loading-note">正在刷新书签列表...</p>
       ) : null}
 
       {showLoading && items.length === 0 ? (
-        <section className="home-grid">
+        <section className={gridClassName}>
           {Array.from({ length: 8 }).map((_, index) => (
-            <HomeBookmarkSkeleton key={index} />
+            isBrandUi
+              ? <BrandBookmarkSkeleton key={index} />
+              : <HomeBookmarkSkeleton key={index} />
           ))}
         </section>
       ) : showError ? (
         <section className="home-empty-panel">
-          <h2>归档列表加载失败</h2>
-          <p>{listError ?? "暂时无法读取当前账号的归档列表。"}</p>
+          <h2>书签列表加载失败</h2>
+          <p>{listError ?? "暂时无法读取当前账号的书签列表。"}</p>
         </section>
       ) : showEmpty ? (
         <section className="home-empty-panel">
@@ -320,23 +330,40 @@ function HomePage({
         </section>
       ) : (
         <>
-          <section className="home-grid">
+          <section className={gridClassName}>
             {items.map((bookmark) => (
-              <HomeBookmarkCard
-                key={bookmark.id}
-                bookmark={bookmark}
-                onToggleFavorite={onToggleFavorite}
-                onContextMenu={onBookmarkContextMenu}
-                onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
-                isContextOpen={contextMenuBookmarkId === bookmark.id}
-                selectionMode={selectionMode}
-                isSelected={selectedIds.has(bookmark.id)}
-                onToggleSelect={onToggleSelect}
-              />
+              isBrandUi ? (
+                <BrandBookmarkCard
+                  key={bookmark.id}
+                  bookmark={bookmark}
+                  onToggleFavorite={onToggleFavorite}
+                  onContextMenu={onBookmarkContextMenu}
+                  onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
+                  onOpenArchive={onOpenArchive}
+                  isContextOpen={contextMenuBookmarkId === bookmark.id}
+                  selectionMode={selectionMode}
+                  isSelected={selectedIds.has(bookmark.id)}
+                  onToggleSelect={onToggleSelect}
+                />
+              ) : (
+                <HomeBookmarkCard
+                  key={bookmark.id}
+                  bookmark={bookmark}
+                  onToggleFavorite={onToggleFavorite}
+                  onContextMenu={onBookmarkContextMenu}
+                  onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
+                  isContextOpen={contextMenuBookmarkId === bookmark.id}
+                  selectionMode={selectionMode}
+                  isSelected={selectedIds.has(bookmark.id)}
+                  onToggleSelect={onToggleSelect}
+                />
+              )
             ))}
             {loadingMore
               ? Array.from({ length: 4 }).map((_, index) => (
-                  <HomeBookmarkSkeleton key={`load-more-skeleton-${index}`} />
+                  isBrandUi
+                    ? <BrandBookmarkSkeleton key={`load-more-skeleton-${index}`} />
+                    : <HomeBookmarkSkeleton key={`load-more-skeleton-${index}`} />
                 ))
               : null}
           </section>
@@ -695,6 +722,7 @@ export function BookmarksListRoute({
   items,
   totalItems,
   bookmarkView,
+  listUiVersion,
   loadState,
   listError,
   loadMoreError,
@@ -720,6 +748,7 @@ export function BookmarksListRoute({
   onLoadMore,
   onBookmarkContextMenu,
   onOpenBookmarkContextMenuAt,
+  onOpenArchive,
   onToggleSelect,
 }: {
   selectionMode: boolean;
@@ -728,6 +757,7 @@ export function BookmarksListRoute({
   items: Bookmark[];
   totalItems: number;
   bookmarkView: BookmarkListView;
+  listUiVersion: ListUiVersion;
   loadState: LoadState;
   listError: string | null;
   loadMoreError: string | null;
@@ -753,6 +783,7 @@ export function BookmarksListRoute({
   onLoadMore: () => void;
   onBookmarkContextMenu: (bookmark: Bookmark, event: ReactMouseEvent<HTMLElement>) => void;
   onOpenBookmarkContextMenuAt: (bookmark: Bookmark, x: number, y: number) => void;
+  onOpenArchive: (bookmark: Bookmark) => void;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
   return (
@@ -781,6 +812,7 @@ export function BookmarksListRoute({
         items={items}
         totalItems={totalItems}
         bookmarkView={bookmarkView}
+        listUiVersion={listUiVersion}
         loadState={loadState}
         listError={listError}
         loadMoreError={loadMoreError}
@@ -793,6 +825,7 @@ export function BookmarksListRoute({
         contextMenuBookmarkId={contextMenuBookmarkId}
         onBookmarkContextMenu={onBookmarkContextMenu}
         onOpenBookmarkContextMenuAt={onOpenBookmarkContextMenuAt}
+        onOpenArchive={onOpenArchive}
         selectionMode={selectionMode}
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
