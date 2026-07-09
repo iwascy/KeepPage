@@ -8,6 +8,7 @@ import { ApiTokenService } from "./services/api-tokens/api-token-service";
 import { ExtensionDeviceService } from "./services/auth/extension-device-service";
 import { AuthService } from "./services/auth/auth-service";
 import { PrivateModeService } from "./services/auth/private-mode-service";
+import { BookmarkBackupService } from "./services/backups/bookmark-backup-service";
 import { BookmarkService } from "./services/bookmarks/bookmark-service";
 import { IconRefreshService } from "./services/icons/icon-refresh-service";
 import { ImportService } from "./services/imports/import-service";
@@ -31,6 +32,12 @@ export function buildServer(config: ApiConfig) {
     done(null, body);
   });
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => {
+    done(null, body);
+  });
+  app.addContentTypeParser("application/gzip", { parseAs: "buffer" }, (_request, body, done) => {
+    done(null, body);
+  });
+  app.addContentTypeParser("application/x-keeppage-package", { parseAs: "buffer" }, (_request, body, done) => {
     done(null, body);
   });
   if (config.DEBUG_MODE) {
@@ -57,6 +64,10 @@ export function buildServer(config: ApiConfig) {
     repository,
   });
   const bookmarkService = new BookmarkService({
+    repository,
+    objectStorage,
+  });
+  const backupService = new BookmarkBackupService({
     repository,
     objectStorage,
   });
@@ -153,6 +164,7 @@ export function buildServer(config: ApiConfig) {
       extensionDeviceService,
       repository,
       bookmarkService,
+      backupService,
       iconRefreshService,
       importService,
       uploadService,

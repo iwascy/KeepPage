@@ -4,6 +4,7 @@ import type { BookmarkRepository } from "../repositories";
 import type { ApiTokenService } from "../services/api-tokens/api-token-service";
 import type { ExtensionDeviceService } from "../services/auth/extension-device-service";
 import type { AuthService } from "../services/auth/auth-service";
+import type { BookmarkBackupService } from "../services/backups/bookmark-backup-service";
 import type { PrivateModeService } from "../services/auth/private-mode-service";
 import type { BookmarkService } from "../services/bookmarks/bookmark-service";
 import type { IconRefreshService } from "../services/icons/icon-refresh-service";
@@ -12,6 +13,7 @@ import type { UploadService } from "../services/uploads/upload-service";
 import type { ShareService } from "../services/shares/share-service";
 import { registerApiTokenRoutes } from "./api-tokens";
 import { registerAuthRoutes } from "./auth";
+import { registerBackupRoutes } from "./backups";
 import { registerBookmarkRoutes } from "./bookmarks";
 import { registerCaptureRoutes } from "./captures";
 import { registerFolderRoutes } from "./folders";
@@ -39,6 +41,7 @@ export async function registerRoutes(
   extensionDeviceService: ExtensionDeviceService,
   repository: BookmarkRepository,
   bookmarkService: BookmarkService,
+  backupService: BookmarkBackupService,
   iconRefreshService: IconRefreshService,
   importService: ImportService,
   uploadService: UploadService,
@@ -54,6 +57,7 @@ export async function registerRoutes(
   await registerPrivateCaptureRoutes(app, config, authService, privateModeService, repository, iconRefreshService, responseCache);
   await registerIconRoutes(app, authService, iconRefreshService);
   await registerIngestRoutes(app, apiTokenService, repository, responseCache);
+  await registerBackupRoutes(app, authService, backupService, responseCache);
   await registerUploadRoutes(app, authService, privateModeService, uploadService);
   await registerWorkspaceRoutes(app, authService, repository, bookmarkService, responseCache);
   await registerBookmarkRoutes(app, authService, bookmarkService, responseCache);

@@ -53,6 +53,7 @@ import type {
   InitCaptureResult,
   PrivateModeConfigRecord,
   PreparedImportItem,
+  RestoredBookmarkVersionInput,
   UpdateShareRecordInput,
   UserAuthRecord,
 } from "../bookmark-repository";
@@ -922,6 +923,55 @@ export class InMemoryRepositoryCore {
       bookmark,
       versions,
     };
+  }
+
+  async addRestoredBookmarkVersion(
+    userId: string,
+    bookmarkId: string,
+    input: RestoredBookmarkVersionInput,
+  ): Promise<BookmarkVersion> {
+    const state = this.ensureUserState(userId);
+    const bookmark = state.bookmarks.get(bookmarkId);
+    if (!bookmark) {
+      throw new HttpError(404, "BookmarkNotFound", "Bookmark not found.");
+    }
+
+    const versions = state.versionsByBookmark.get(bookmarkId) ?? [];
+    const versionNo = Math.max(0, ...versions.map((version) => version.versionNo)) + 1;
+    const version: BookmarkVersion = {
+      id: createVersionId(),
+      bookmarkId,
+      versionNo,
+      htmlObjectKey: input.htmlObjectKey,
+      readerHtmlObjectKey: input.readerHtmlObjectKey,
+      htmlSha256: input.htmlSha256,
+      textSha256: input.textSha256,
+      textSimhash: input.textSimhash,
+      mediaFiles: this.attachPublicUrlsToMediaFiles(input.mediaFiles),
+      captureProfile: input.captureProfile,
+      quality: input.quality,
+      createdAt: input.createdAt ?? new Date().toISOString(),
+    };
+
+    const nextVersions = [...versions, version].sort((left, right) => right.versionNo - left.versionNo);
+    state.versionsByBookmark.set(bookmarkId, nextVersions);
+    state.versionsByObjectKey.set(version.htmlObjectKey, version);
+    if (version.readerHtmlObjectKey) {
+      state.versionsByObjectKey.set(version.readerHtmlObjectKey, version);
+    }
+    for (const mediaFile of version.mediaFiles ?? []) {
+      state.versionsByObjectKey.set(mediaFile.objectKey, version);
+    }
+
+    bookmark.latestVersionId = version.id;
+    bookmark.versionCount = nextVersions.length;
+    bookmark.latestQuality = version.quality;
+    bookmark.coverImageUrl = version.mediaFiles?.find((mediaFile) =>
+      mediaFile.publicUrl && (mediaFile.kind === "image" || mediaFile.kind === "video_cover")
+    )?.publicUrl ?? bookmark.coverImageUrl;
+    bookmark.updatedAt = new Date().toISOString();
+    state.bookmarks.set(bookmark.id, bookmark);
+    return version;
   }
 
   async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery) {

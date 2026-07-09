@@ -92,6 +92,7 @@ import type {
   ImportBookmarkMatch,
   InitCaptureResult,
   PrivateModeConfigRecord,
+  RestoredBookmarkVersionInput,
   UpdateShareRecordInput,
   UserAuthRecord,
 } from "../bookmark-repository";
@@ -1771,6 +1772,87 @@ export class PostgresRepositoryCore {
       bookmark,
       versions,
     };
+  }
+
+  async addRestoredBookmarkVersion(
+    userId: string,
+    bookmarkId: string,
+    input: RestoredBookmarkVersionInput,
+  ): Promise<BookmarkVersion> {
+    const now = new Date();
+    const createdAt = input.createdAt ? new Date(input.createdAt) : now;
+    const rows = await this.db.transaction(async (tx) => {
+      const bookmarkRows = await tx
+        .select({
+          id: bookmarks.id,
+        })
+        .from(bookmarks)
+        .where(and(eq(bookmarks.id, bookmarkId), eq(bookmarks.userId, userId)))
+        .limit(1);
+      if (!bookmarkRows[0]) {
+        throw new HttpError(404, "BookmarkNotFound", "Bookmark not found.");
+      }
+
+      const maxVersionRows = await tx
+        .select({
+          maxVersionNo: sql<number | null>`max(${bookmarkVersions.versionNo})`,
+        })
+        .from(bookmarkVersions)
+        .where(eq(bookmarkVersions.bookmarkId, bookmarkId));
+      const versionNo = Number(maxVersionRows[0]?.maxVersionNo ?? 0) + 1;
+      const versionId = crypto.randomUUID();
+      const sourceMetaJson = {
+        mediaFiles: input.mediaFiles ?? [],
+      };
+
+      const insertedRows = await tx
+        .insert(bookmarkVersions)
+        .values({
+          id: versionId,
+          bookmarkId,
+          versionNo,
+          htmlObjectKey: input.htmlObjectKey,
+          readerHtmlObjectKey: input.readerHtmlObjectKey ?? null,
+          htmlSha256: input.htmlSha256,
+          textSha256: input.textSha256 ?? null,
+          textSimhash: input.textSimhash ?? null,
+          captureProfile: input.captureProfile,
+          captureOptionsJson: {},
+          qualityScore: input.quality.score,
+          qualityGrade: input.quality.grade,
+          qualityReasonsJson: input.quality.reasons,
+          qualityReportJson: input.quality,
+          sourceMetaJson,
+          extractedText: null,
+          createdByDeviceId: null,
+          createdAt,
+        })
+        .returning({
+          id: bookmarkVersions.id,
+        });
+
+      await tx
+        .update(bookmarks)
+        .set({
+          latestVersionId: versionId,
+          updatedAt: now,
+        })
+        .where(and(eq(bookmarks.id, bookmarkId), eq(bookmarks.userId, userId)));
+
+      return insertedRows;
+    });
+
+    const versionId = rows[0]?.id;
+    if (!versionId) {
+      throw new Error("Failed to restore bookmark version.");
+    }
+
+    const versions = await this.loadVersionsByBookmarkId(bookmarkId, userId);
+    const restored = versions.find((version) => version.id === versionId);
+    if (!restored) {
+      throw new Error("Restored bookmark version not found.");
+    }
+    return restored;
   }
 
   async deleteBookmark(userId: string, bookmarkId: string) {

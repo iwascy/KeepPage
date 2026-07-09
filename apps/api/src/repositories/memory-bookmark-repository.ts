@@ -4,6 +4,7 @@ import type {
   Bookmark,
   BookmarkIcon,
   BookmarkMetadataUpdateRequest,
+  BookmarkVersion,
   PrivateVaultSummary,
   BookmarkSearchResponse,
   BookmarkSidebarStatsResponse,
@@ -40,6 +41,7 @@ import type {
   IngestBookmarkResult,
   InitCaptureResult,
   PrivateModeConfigRecord,
+  RestoredBookmarkVersionInput,
   UpdateShareRecordInput,
   UserAuthRecord,
 } from "./bookmark-repository";
@@ -188,6 +190,14 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
 
   async getBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null> {
     return bookmarksRepository.getBookmarkDetail(this.core, userId, bookmarkId);
+  }
+
+  async addRestoredBookmarkVersion(
+    userId: string,
+    bookmarkId: string,
+    input: RestoredBookmarkVersionInput,
+  ): Promise<BookmarkVersion> {
+    return this.core.addRestoredBookmarkVersion(userId, bookmarkId, input);
   }
 
   async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse> {

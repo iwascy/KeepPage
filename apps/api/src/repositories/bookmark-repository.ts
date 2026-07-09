@@ -172,6 +172,18 @@ export type UpdateShareRecordInput = {
   bookmarkIds?: string[];
 };
 
+export type RestoredBookmarkVersionInput = {
+  htmlObjectKey: string;
+  readerHtmlObjectKey?: string;
+  htmlSha256: string;
+  textSha256?: string;
+  textSimhash?: string;
+  mediaFiles?: BookmarkVersion["mediaFiles"];
+  captureProfile: BookmarkVersion["captureProfile"];
+  quality: BookmarkVersion["quality"];
+  createdAt?: string;
+};
+
 export interface RepositoryInfo {
   readonly kind: "memory" | "postgres";
 }
@@ -291,6 +303,14 @@ export interface ShareRepository extends RepositoryInfo {
   getPublicShareByToken(token: string): Promise<PublicShareResponse | null>;
 }
 
+export interface BookmarkBackupRepository extends RepositoryInfo {
+  addRestoredBookmarkVersion(
+    userId: string,
+    bookmarkId: string,
+    input: RestoredBookmarkVersionInput,
+  ): Promise<BookmarkVersion>;
+}
+
 export type BookmarkRepository =
   & AuthRepository
   & ApiTokenRepository
@@ -306,4 +326,5 @@ export type BookmarkRepository =
   & TaxonomyRepository
   & ImportRepository
   & ObjectAccessRepository
-  & ShareRepository;
+  & ShareRepository
+  & BookmarkBackupRepository;
