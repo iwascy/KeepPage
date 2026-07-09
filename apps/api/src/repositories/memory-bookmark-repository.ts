@@ -84,6 +84,10 @@ export class InMemoryBookmarkRepository implements BookmarkRepository {
     return authRepository.getUserById(this.core, userId);
   }
 
+  async listUsersForBackup(): Promise<AuthUser[]> {
+    return authRepository.listUsersForBackup(this.core);
+  }
+
   async createApiToken(userId: string, input: CreateApiTokenInput): Promise<ApiToken> {
     return apiTokensRepository.createApiToken(this.core, userId, input);
   }

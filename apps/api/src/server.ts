@@ -9,6 +9,7 @@ import { ExtensionDeviceService } from "./services/auth/extension-device-service
 import { AuthService } from "./services/auth/auth-service";
 import { PrivateModeService } from "./services/auth/private-mode-service";
 import { BookmarkBackupService } from "./services/backups/bookmark-backup-service";
+import { R2BookmarkBackupScheduler } from "./services/backups/r2-bookmark-backup-scheduler";
 import { BookmarkService } from "./services/bookmarks/bookmark-service";
 import { IconRefreshService } from "./services/icons/icon-refresh-service";
 import { ImportService } from "./services/imports/import-service";
@@ -70,6 +71,12 @@ export function buildServer(config: ApiConfig) {
   const backupService = new BookmarkBackupService({
     repository,
     objectStorage,
+  });
+  const r2BookmarkBackupScheduler = new R2BookmarkBackupScheduler({
+    config,
+    repository,
+    backupService,
+    logger: app.log,
   });
   const uploadService = new UploadService({
     config,
@@ -171,6 +178,13 @@ export function buildServer(config: ApiConfig) {
       shareService,
       responseCache,
     );
+  });
+
+  app.addHook("onReady", async () => {
+    r2BookmarkBackupScheduler.start();
+  });
+  app.addHook("onClose", async () => {
+    r2BookmarkBackupScheduler.stop();
   });
 
   return app;

@@ -19,3 +19,7 @@ export function findUserByEmail(
 export function getUserById(core: InMemoryRepositoryCore, userId: string): Promise<AuthUser | null> {
   return core.getUserById(userId);
 }
+
+export function listUsersForBackup(core: InMemoryRepositoryCore): Promise<AuthUser[]> {
+  return core.listUsersForBackup();
+}

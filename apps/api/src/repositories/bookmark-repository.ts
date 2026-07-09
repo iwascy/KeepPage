@@ -196,6 +196,7 @@ export interface AuthRepository extends RepositoryInfo {
   }): Promise<AuthUser>;
   findUserByEmail(email: string): Promise<UserAuthRecord | null>;
   getUserById(userId: string): Promise<AuthUser | null>;
+  listUsersForBackup(): Promise<AuthUser[]>;
 }
 
 export interface ApiTokenRepository extends RepositoryInfo {

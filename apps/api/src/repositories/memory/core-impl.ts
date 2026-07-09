@@ -166,6 +166,12 @@ export class InMemoryRepositoryCore {
     return this.usersById.get(userId)?.user ?? null;
   }
 
+  async listUsersForBackup(): Promise<AuthUser[]> {
+    return [...this.usersById.values()]
+      .map((record) => record.user)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
   async createApiToken(userId: string, input: CreateApiTokenInput): Promise<ApiToken> {
     const scopes = deduplicateScopes(input.scopes);
     const token: StoredApiToken = {

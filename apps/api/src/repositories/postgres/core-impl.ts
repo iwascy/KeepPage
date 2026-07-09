@@ -187,6 +187,20 @@ export class PostgresRepositoryCore {
     return row ? this.mapUserRow(row) : null;
   }
 
+  async listUsersForBackup(): Promise<AuthUser[]> {
+    const rows = await this.db
+      .select({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .orderBy(asc(users.createdAt));
+
+    return rows.map((row) => this.mapUserRow(row));
+  }
+
   async createApiToken(userId: string, input: CreateApiTokenInput): Promise<ApiToken> {
     const rows = await this.db
       .insert(apiTokens)

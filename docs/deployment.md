@@ -135,6 +135,10 @@ export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 | `R2_SECRET_ACCESS_KEY` | R2 必填 | R2 API Token 的 Secret Access Key |
 | `R2_PUBLIC_BASE_URL` | R2 建议 | 公开 bucket/custom domain，用于封面和媒体 CDN URL |
 | `R2_REGION` | 可选 | 默认 `auto` |
+| `BACKUP_R2_ENABLED` | 可选 | 设为 `true` 后每天自动生成普通书签备份包并上传到 `R2_BUCKET` |
+| `BACKUP_R2_PREFIX` | 可选 | 自动备份写入的 R2 key 前缀，默认 `keeppage-backups/bookmarks` |
+| `BACKUP_R2_TIME` | 可选 | 每天本地时区运行时间，格式 `HH:mm`，默认 `03:30` |
+| `BACKUP_R2_RUN_ON_STARTUP` | 可选 | 设为 `true` 后 API 启动 1 秒后额外跑一次备份 |
 | `UPLOAD_BODY_LIMIT_MB` | 视情况 | 根据归档大小调整 |
 | `DEBUG_MODE` | 可选 | 临时排障时可设为 `true`，会输出更详细请求日志 |
 | `LOG_LEVEL` | 建议 | 推荐 `info` 或 `warn` |

@@ -198,6 +198,10 @@ npm run start -w @keeppage/api
 | `R2_ACCESS_KEY_ID` | 空 | R2 Access Key ID |
 | `R2_SECRET_ACCESS_KEY` | 空 | R2 Secret Access Key |
 | `R2_PUBLIC_BASE_URL` | 空 | 公开 R2/CDN 域名，用于封面和媒体 URL |
+| `BACKUP_R2_ENABLED` | `false` | 是否启用每天自动上传普通书签备份包到 `R2_BUCKET` |
+| `BACKUP_R2_PREFIX` | `keeppage-backups/bookmarks` | 自动备份写入的 R2 key 前缀 |
+| `BACKUP_R2_TIME` | `03:30` | 每天本地时区运行时间，格式 `HH:mm` |
+| `BACKUP_R2_RUN_ON_STARTUP` | `false` | API 启动后是否额外立即跑一次备份 |
 | `UPLOAD_BODY_LIMIT_MB` | `32` | 上传体积限制，单位 MB |
 | `DEBUG_MODE` | `false` | 开启后自动启用更详细的 API 调试日志 |
 | `LOG_LEVEL` | `info` | Fastify 日志级别 |
