@@ -9,6 +9,7 @@ import type { BookmarkService } from "../services/bookmarks/bookmark-service";
 import type { IconRefreshService } from "../services/icons/icon-refresh-service";
 import type { ImportService } from "../services/imports/import-service";
 import type { UploadService } from "../services/uploads/upload-service";
+import type { ShareService } from "../services/shares/share-service";
 import { registerApiTokenRoutes } from "./api-tokens";
 import { registerAuthRoutes } from "./auth";
 import { registerBookmarkRoutes } from "./bookmarks";
@@ -22,6 +23,8 @@ import { registerPrivateBookmarkRoutes } from "./private-bookmarks";
 import { registerPrivateCaptureRoutes } from "./private-captures";
 import { registerPrivateModeRoutes } from "./private-mode";
 import { registerExtensionDeviceRoutes } from "./extension-devices";
+import { registerPublicShareRoutes } from "./public-shares";
+import { registerShareRoutes } from "./shares";
 import { registerTagRoutes } from "./tags";
 import { registerUploadRoutes } from "./uploads";
 import { registerWorkspaceRoutes } from "./workspace";
@@ -39,6 +42,7 @@ export async function registerRoutes(
   iconRefreshService: IconRefreshService,
   importService: ImportService,
   uploadService: UploadService,
+  shareService: ShareService,
   responseCache: UserResponseCache,
 ) {
   await registerAuthRoutes(app, authService);
@@ -57,4 +61,6 @@ export async function registerRoutes(
   await registerFolderRoutes(app, authService, repository, responseCache);
   await registerTagRoutes(app, authService, repository, responseCache);
   await registerImportRoutes(app, authService, importService, responseCache);
+  await registerShareRoutes(app, authService, shareService);
+  await registerPublicShareRoutes(app, shareService);
 }

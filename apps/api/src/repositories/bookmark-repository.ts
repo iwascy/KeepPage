@@ -24,6 +24,9 @@ import type {
   ImportTask,
   ImportTaskDetailResponse,
   PrivateVaultSummary,
+  PublicShareResponse,
+  Share,
+  ShareDetail,
   Tag,
   TagCreateRequest,
   TagUpdateRequest,
@@ -155,6 +158,20 @@ export type BookmarkIconRefreshTarget = {
   candidates: BookmarkIconCandidate[];
 };
 
+export type CreateShareRecordInput = {
+  id: string;
+  publicToken: string;
+  title: string;
+  description: string;
+  bookmarkIds: string[];
+};
+
+export type UpdateShareRecordInput = {
+  title?: string;
+  description?: string;
+  bookmarkIds?: string[];
+};
+
 export interface RepositoryInfo {
   readonly kind: "memory" | "postgres";
 }
@@ -263,6 +280,17 @@ export interface ObjectAccessRepository extends RepositoryInfo {
   userCanWriteObject(userId: string, objectKey: string): Promise<boolean>;
 }
 
+export interface ShareRepository extends RepositoryInfo {
+  countActiveShares(userId: string): Promise<number>;
+  findMissingOwnedBookmarkIds(userId: string, bookmarkIds: string[]): Promise<string[]>;
+  createShare(userId: string, input: CreateShareRecordInput): Promise<Share>;
+  listShares(userId: string): Promise<Share[]>;
+  getShareDetail(userId: string, shareId: string): Promise<ShareDetail | null>;
+  updateShare(userId: string, shareId: string, input: UpdateShareRecordInput): Promise<ShareDetail | null>;
+  revokeShare(userId: string, shareId: string): Promise<Share | null>;
+  getPublicShareByToken(token: string): Promise<PublicShareResponse | null>;
+}
+
 export type BookmarkRepository =
   & AuthRepository
   & ApiTokenRepository
@@ -277,4 +305,5 @@ export type BookmarkRepository =
   & BookmarkIconRepository
   & TaxonomyRepository
   & ImportRepository
-  & ObjectAccessRepository;
+  & ObjectAccessRepository
+  & ShareRepository;

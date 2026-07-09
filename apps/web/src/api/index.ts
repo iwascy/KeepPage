@@ -48,6 +48,19 @@ import {
   type ExtensionConnectInitRequest,
   type ExtensionConnectInitResponse,
   type ExtensionDevice,
+  publicShareResponseSchema,
+  shareCreateRequestSchema,
+  shareCreateResponseSchema,
+  shareDetailResponseSchema,
+  shareListResponseSchema,
+  shareRevokeResponseSchema,
+  shareUpdateRequestSchema,
+  shareUpdateResponseSchema,
+  type PublicShareResponse,
+  type Share,
+  type ShareCreateRequest,
+  type ShareDetail,
+  type ShareUpdateRequest,
   workspaceBootstrapResponseSchema,
   type WorkspaceBootstrapResponse,
 } from "@keeppage/domain";
@@ -544,6 +557,67 @@ export async function revokeApiToken(tokenId: string, token: string) {
     method: "DELETE",
     token,
   });
+}
+
+export async function fetchShares(token: string): Promise<Share[]> {
+  const payload = await requestJson("/shares", shareListResponseSchema, { token });
+  return payload.items;
+}
+
+export async function fetchShareDetail(shareId: string, token: string): Promise<ShareDetail> {
+  const payload = await requestJson(
+    `/shares/${encodeURIComponent(shareId)}`,
+    shareDetailResponseSchema,
+    { token },
+  );
+  return payload.share;
+}
+
+export async function createShare(input: ShareCreateRequest, token: string): Promise<Share> {
+  const body = shareCreateRequestSchema.parse(input);
+  const payload = await requestJson("/shares", shareCreateResponseSchema, {
+    method: "POST",
+    token,
+    body,
+  });
+  return payload.share;
+}
+
+export async function updateShare(
+  shareId: string,
+  input: ShareUpdateRequest,
+  token: string,
+): Promise<ShareDetail> {
+  const body = shareUpdateRequestSchema.parse(input);
+  const payload = await requestJson(
+    `/shares/${encodeURIComponent(shareId)}`,
+    shareUpdateResponseSchema,
+    {
+      method: "PATCH",
+      token,
+      body,
+    },
+  );
+  return payload.share;
+}
+
+export async function revokeShare(shareId: string, token: string): Promise<Share> {
+  const payload = await requestJson(
+    `/shares/${encodeURIComponent(shareId)}/revoke`,
+    shareRevokeResponseSchema,
+    {
+      method: "POST",
+      token,
+    },
+  );
+  return payload.share;
+}
+
+export async function fetchPublicShare(publicToken: string): Promise<PublicShareResponse> {
+  return requestJson(
+    `/public/shares/${encodeURIComponent(publicToken)}`,
+    publicShareResponseSchema,
+  );
 }
 
 export async function createExtensionConnectCode(

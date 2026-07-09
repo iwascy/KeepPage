@@ -8,6 +8,7 @@ export type ViewRoute =
   | { page: "imports-detail"; taskId: string }
   | { page: "settings-api-tokens" }
   | { page: "settings-extension-devices" }
+  | { page: "settings-shares" }
   | { page: "extension-connect" };
 
 export function parseRoute(hash: string): ViewRoute {
@@ -29,6 +30,9 @@ export function parseRoute(hash: string): ViewRoute {
   }
   if (path === "/settings/api-tokens") {
     return { page: "settings-api-tokens" };
+  }
+  if (path === "/settings/shares") {
+    return { page: "settings-shares" };
   }
   if (path === "/settings/extension-devices") {
     return { page: "settings-extension-devices" };
@@ -107,8 +111,25 @@ export function goToApiTokens() {
   window.location.hash = "#/settings/api-tokens";
 }
 
+export function goToShares() {
+  window.location.hash = "#/settings/shares";
+}
+
 export function goToExtensionDevices() {
   window.location.hash = "#/settings/extension-devices";
+}
+
+/** Parse pathname public share token, e.g. `/s/abc123`. */
+export function parsePublicShareToken(pathname: string): string | null {
+  const match = pathname.match(/^\/s\/([^/]+)\/?$/);
+  if (!match?.[1]) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
 }
 
 export function goToPrivateMode() {

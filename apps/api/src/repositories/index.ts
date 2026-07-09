@@ -34,5 +34,6 @@ export type {
   PrivateBookmarkReadRepository,
   PrivateCaptureRepository,
   PrivateModeRepository,
+  ShareRepository,
   TaxonomyRepository,
 } from "./bookmark-repository";

@@ -27,6 +27,8 @@ const configSchema = z.object({
   API_HOST: z.string().default("127.0.0.1"),
   API_PORT: z.coerce.number().int().positive().default(8787),
   API_PUBLIC_BASE_URL: z.string().optional(),
+  /** Web app origin used to build share public URLs, e.g. https://app.example.com */
+  WEB_PUBLIC_BASE_URL: z.string().optional(),
   STORAGE_DRIVER: z.enum(["memory", "postgres"]).default("memory"),
   OBJECT_STORAGE_DRIVER: z.enum(["localfs", "r2"]).default("localfs"),
   OBJECT_STORAGE_ROOT: z.string().default(defaultObjectStorageRoot),

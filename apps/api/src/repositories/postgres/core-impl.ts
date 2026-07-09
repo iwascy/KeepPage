@@ -29,6 +29,12 @@ import {
   type ImportTask,
   type ImportTaskDetailResponse,
   type ImportTaskItem,
+  buildOwnerDisplayName,
+  SHARE_MAX_ACTIVE_PER_USER,
+  type PublicShareResponse,
+  type Share,
+  type ShareDetail,
+  type ShareOwnerItem,
   type Tag,
   type TagCreateRequest,
   type TagUpdateRequest,
@@ -48,12 +54,15 @@ import {
   privateBookmarkVersions,
   privateCaptureUploads,
   privateModeConfigs,
+  shareItems,
+  shares,
   tags,
   users,
 } from "@keeppage/db";
 import * as dbSchema from "@keeppage/db";
 import {
   and,
+  asc,
   count,
   desc,
   eq,
@@ -76,12 +85,14 @@ import type {
   CreateApiTokenInput,
   CreateExtensionDeviceInput,
   CreateImportTaskInput,
+  CreateShareRecordInput,
   ExtensionDeviceAuthRecord,
   CompleteCaptureResult,
   IngestBookmarkResult,
   ImportBookmarkMatch,
   InitCaptureResult,
   PrivateModeConfigRecord,
+  UpdateShareRecordInput,
   UserAuthRecord,
 } from "../bookmark-repository";
 import {
@@ -3487,6 +3498,446 @@ export class PostgresRepositoryCore {
     return deduplicatedIds;
   }
 
+  async countActiveShares(userId: string): Promise<number> {
+    const rows = await this.db
+      .select({ value: count() })
+      .from(shares)
+      .where(and(eq(shares.userId, userId), eq(shares.status, "active")));
+    return Number(rows[0]?.value ?? 0);
+  }
+
+  async findMissingOwnedBookmarkIds(userId: string, bookmarkIds: string[]): Promise<string[]> {
+    const uniqueIds = dedupePreserveOrder(bookmarkIds);
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .select({ id: bookmarks.id })
+      .from(bookmarks)
+      .where(and(eq(bookmarks.userId, userId), inArray(bookmarks.id, uniqueIds)));
+    const found = new Set(rows.map((row) => row.id));
+    return uniqueIds.filter((id) => !found.has(id));
+  }
+
+  async createShare(userId: string, input: CreateShareRecordInput): Promise<Share> {
+    const uniqueIds = dedupePreserveOrder(input.bookmarkIds);
+    const now = new Date();
+
+    try {
+      await this.db.transaction(async (tx) => {
+        // Serialize create-share per user so active-cap checks are atomic.
+        await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, userId))
+          .for("update");
+
+        const activeRows = await tx
+          .select({ value: count() })
+          .from(shares)
+          .where(and(eq(shares.userId, userId), eq(shares.status, "active")));
+        const activeCount = Number(activeRows[0]?.value ?? 0);
+        if (activeCount >= SHARE_MAX_ACTIVE_PER_USER) {
+          throw new HttpError(
+            400,
+            "ShareActiveLimitExceeded",
+            `每个账号最多保留 ${SHARE_MAX_ACTIVE_PER_USER} 个活跃分享，请先撤销旧分享。`,
+          );
+        }
+
+        if (uniqueIds.length > 0) {
+          const owned = await tx
+            .select({ id: bookmarks.id })
+            .from(bookmarks)
+            .where(and(eq(bookmarks.userId, userId), inArray(bookmarks.id, uniqueIds)));
+          if (owned.length !== uniqueIds.length) {
+            const found = new Set(owned.map((row) => row.id));
+            throw new HttpError(
+              400,
+              "ShareBookmarkInvalid",
+              "部分书签不存在、不属于当前账号，或无法分享（例如私密书签）。",
+              { missingIds: uniqueIds.filter((id) => !found.has(id)) },
+            );
+          }
+        }
+
+        await tx.insert(shares).values({
+          id: input.id,
+          userId,
+          publicToken: input.publicToken,
+          title: input.title,
+          description: input.description,
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        if (uniqueIds.length > 0) {
+          await tx.insert(shareItems).values(
+            uniqueIds.map((bookmarkId, position) => ({
+              shareId: input.id,
+              bookmarkId,
+              position,
+              createdAt: now,
+            })),
+          );
+        }
+      });
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw error;
+      }
+      if (isForeignKeyViolation(error)) {
+        throw new HttpError(
+          400,
+          "ShareBookmarkInvalid",
+          "部分书签不存在、不属于当前账号，或无法分享（例如私密书签）。",
+        );
+      }
+      throw error;
+    }
+
+    const detail = await this.getShareDetail(userId, input.id);
+    if (!detail) {
+      throw new Error("Failed to create share.");
+    }
+    return this.toShareSummaryFromDetail(detail);
+  }
+
+  async listShares(userId: string): Promise<Share[]> {
+    const rows = await this.db
+      .select({
+        id: shares.id,
+        title: shares.title,
+        description: shares.description,
+        status: shares.status,
+        publicToken: shares.publicToken,
+        createdAt: shares.createdAt,
+        updatedAt: shares.updatedAt,
+        revokedAt: shares.revokedAt,
+      })
+      .from(shares)
+      .where(eq(shares.userId, userId))
+      .orderBy(desc(shares.updatedAt));
+
+    const itemCounts = await this.loadShareItemCounts(rows.map((row) => row.id));
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      publicToken: row.publicToken,
+      publicUrl: "",
+      itemCount: itemCounts.get(row.id) ?? 0,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      revokedAt: row.revokedAt?.toISOString(),
+    }));
+  }
+
+  async getShareDetail(userId: string, shareId: string): Promise<ShareDetail | null> {
+    const rows = await this.db
+      .select({
+        id: shares.id,
+        title: shares.title,
+        description: shares.description,
+        status: shares.status,
+        publicToken: shares.publicToken,
+        createdAt: shares.createdAt,
+        updatedAt: shares.updatedAt,
+        revokedAt: shares.revokedAt,
+      })
+      .from(shares)
+      .where(and(eq(shares.id, shareId), eq(shares.userId, userId)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    const itemRows = await this.db
+      .select({
+        bookmarkId: shareItems.bookmarkId,
+        position: shareItems.position,
+        title: bookmarks.title,
+        domain: bookmarks.domain,
+        sourceUrl: bookmarks.sourceUrl,
+      })
+      .from(shareItems)
+      .innerJoin(bookmarks, eq(bookmarks.id, shareItems.bookmarkId))
+      .where(eq(shareItems.shareId, shareId))
+      .orderBy(asc(shareItems.position));
+
+    const items: ShareOwnerItem[] = itemRows.map((item, index) => ({
+      bookmarkId: item.bookmarkId,
+      position: index,
+      title: item.title,
+      domain: item.domain,
+      sourceUrl: item.sourceUrl,
+    }));
+
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      publicToken: row.publicToken,
+      publicUrl: "",
+      itemCount: items.length,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      revokedAt: row.revokedAt?.toISOString(),
+      items,
+    };
+  }
+
+  async updateShare(
+    userId: string,
+    shareId: string,
+    input: UpdateShareRecordInput,
+  ): Promise<ShareDetail | null> {
+    const existing = await this.getShareDetail(userId, shareId);
+    if (!existing) {
+      return null;
+    }
+    if (existing.status !== "active") {
+      throw new HttpError(400, "ShareRevoked", "已撤销的分享不可编辑。");
+    }
+
+    const now = new Date();
+    try {
+      await this.db.transaction(async (tx) => {
+        await tx
+          .update(shares)
+          .set({
+            title: input.title ?? existing.title,
+            description: input.description ?? existing.description,
+            updatedAt: now,
+          })
+          .where(and(eq(shares.id, shareId), eq(shares.userId, userId)));
+
+        if (input.bookmarkIds !== undefined) {
+          const uniqueIds = dedupePreserveOrder(input.bookmarkIds);
+          if (uniqueIds.length > 0) {
+            const owned = await tx
+              .select({ id: bookmarks.id })
+              .from(bookmarks)
+              .where(and(eq(bookmarks.userId, userId), inArray(bookmarks.id, uniqueIds)));
+            if (owned.length !== uniqueIds.length) {
+              const found = new Set(owned.map((row) => row.id));
+              throw new HttpError(
+                400,
+                "ShareBookmarkInvalid",
+                "部分书签不存在、不属于当前账号，或无法分享（例如私密书签）。",
+                { missingIds: uniqueIds.filter((id) => !found.has(id)) },
+              );
+            }
+          }
+          await tx.delete(shareItems).where(eq(shareItems.shareId, shareId));
+          if (uniqueIds.length > 0) {
+            await tx.insert(shareItems).values(
+              uniqueIds.map((bookmarkId, position) => ({
+                shareId,
+                bookmarkId,
+                position,
+                createdAt: now,
+              })),
+            );
+          }
+        }
+      });
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw error;
+      }
+      if (isForeignKeyViolation(error)) {
+        throw new HttpError(
+          400,
+          "ShareBookmarkInvalid",
+          "部分书签不存在、不属于当前账号，或无法分享（例如私密书签）。",
+        );
+      }
+      throw error;
+    }
+
+    return this.getShareDetail(userId, shareId);
+  }
+
+  async revokeShare(userId: string, shareId: string): Promise<Share | null> {
+    const now = new Date();
+    const rows = await this.db
+      .update(shares)
+      .set({
+        status: "revoked",
+        revokedAt: now,
+        updatedAt: now,
+      })
+      .where(and(eq(shares.id, shareId), eq(shares.userId, userId)))
+      .returning({
+        id: shares.id,
+        title: shares.title,
+        description: shares.description,
+        status: shares.status,
+        publicToken: shares.publicToken,
+        createdAt: shares.createdAt,
+        updatedAt: shares.updatedAt,
+        revokedAt: shares.revokedAt,
+      });
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    const itemCounts = await this.loadShareItemCounts([row.id]);
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      publicToken: row.publicToken,
+      publicUrl: "",
+      itemCount: itemCounts.get(row.id) ?? 0,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      revokedAt: row.revokedAt?.toISOString(),
+    };
+  }
+
+  async getPublicShareByToken(token: string): Promise<PublicShareResponse | null> {
+    const shareRows = await this.db
+      .select({
+        id: shares.id,
+        userId: shares.userId,
+        title: shares.title,
+        description: shares.description,
+        status: shares.status,
+        updatedAt: shares.updatedAt,
+        ownerName: users.name,
+        ownerEmail: users.email,
+      })
+      .from(shares)
+      .innerJoin(users, eq(users.id, shares.userId))
+      .where(and(eq(shares.publicToken, token), eq(shares.status, "active")))
+      .limit(1);
+    const share = shareRows[0];
+    if (!share) {
+      return null;
+    }
+
+    const itemRows = await this.db
+      .select({
+        title: bookmarks.title,
+        sourceUrl: bookmarks.sourceUrl,
+        domain: bookmarks.domain,
+        note: bookmarks.note,
+        updatedAt: bookmarks.updatedAt,
+        latestVersionId: bookmarks.latestVersionId,
+        position: shareItems.position,
+        bookmarkId: bookmarks.id,
+      })
+      .from(shareItems)
+      .innerJoin(bookmarks, and(
+        eq(bookmarks.id, shareItems.bookmarkId),
+        eq(bookmarks.userId, share.userId),
+      ))
+      .where(eq(shareItems.shareId, share.id))
+      .orderBy(asc(shareItems.position));
+
+    const bookmarkIds = itemRows.map((row) => row.bookmarkId);
+    const tagsByBookmark = bookmarkIds.length > 0
+      ? await this.loadTagsByBookmarkId(bookmarkIds)
+      : new Map();
+
+    const hostnames = [...new Set(
+      itemRows.map((row) => row.domain.toLowerCase().replace(/^www\./, "")).filter(Boolean),
+    )];
+    const faviconByHostname = await this.loadBookmarkIconUrlsByHostnames(hostnames);
+
+    const items = itemRows.map((row) => {
+      const hostname = row.domain.toLowerCase().replace(/^www\./, "");
+      const tags = (tagsByBookmark.get(row.bookmarkId) ?? []).map((tag: { name: string; color?: string }) => ({
+        name: tag.name,
+        color: tag.color,
+      }));
+      return {
+        title: row.title,
+        sourceUrl: row.sourceUrl,
+        domain: row.domain,
+        faviconUrl: faviconByHostname.get(hostname),
+        note: row.note ?? "",
+        tags,
+        updatedAt: row.updatedAt.toISOString(),
+        hasArchive: Boolean(row.latestVersionId),
+      };
+    });
+
+    return {
+      title: share.title,
+      description: share.description,
+      ownerDisplayName: buildOwnerDisplayName({
+        name: share.ownerName,
+        email: share.ownerEmail,
+      }),
+      itemCount: items.length,
+      updatedAt: share.updatedAt.toISOString(),
+      items,
+    };
+  }
+
+  private async loadBookmarkIconUrlsByHostnames(hostnames: string[]) {
+    const result = new Map<string, string>();
+    if (hostnames.length === 0) {
+      return result;
+    }
+    const rows = await this.db
+      .select({
+        hostname: bookmarkIcons.hostname,
+        iconUrl: bookmarkIcons.iconUrl,
+      })
+      .from(bookmarkIcons)
+      .where(inArray(bookmarkIcons.hostname, hostnames));
+    for (const row of rows) {
+      if (row.iconUrl) {
+        result.set(row.hostname, row.iconUrl);
+      }
+    }
+    return result;
+  }
+
+  private async loadShareItemCounts(shareIds: string[]) {
+    const result = new Map<string, number>();
+    if (shareIds.length === 0) {
+      return result;
+    }
+    const rows = await this.db
+      .select({
+        shareId: shareItems.shareId,
+        value: count(),
+      })
+      .from(shareItems)
+      .innerJoin(bookmarks, eq(bookmarks.id, shareItems.bookmarkId))
+      .where(inArray(shareItems.shareId, shareIds))
+      .groupBy(shareItems.shareId);
+    for (const row of rows) {
+      result.set(row.shareId, Number(row.value));
+    }
+    return result;
+  }
+
+  private toShareSummaryFromDetail(detail: ShareDetail): Share {
+    return {
+      id: detail.id,
+      title: detail.title,
+      description: detail.description,
+      status: detail.status,
+      publicToken: detail.publicToken,
+      publicUrl: detail.publicUrl,
+      itemCount: detail.itemCount,
+      createdAt: detail.createdAt,
+      updatedAt: detail.updatedAt,
+      revokedAt: detail.revokedAt,
+    };
+  }
+
   private createObjectKey(userId: string) {
     const day = new Date().toISOString().slice(0, 10);
     return `captures/${userId}/${day}/${crypto.randomUUID()}.html`;
@@ -3521,6 +3972,28 @@ export class PostgresRepositoryCore {
     }
     return readerObjectKey;
   }
+}
+
+function dedupePreserveOrder(ids: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    result.push(id);
+  }
+  return result;
+}
+
+function isForeignKeyViolation(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const code = "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+  // Postgres foreign_key_violation
+  return code === "23503";
 }
 
 function normalizeHostname(input: string) {

@@ -16,6 +16,9 @@ import type {
   IngestBookmarkRequest,
   ImportTask,
   ImportTaskDetailResponse,
+  PublicShareResponse,
+  Share,
+  ShareDetail,
   Tag,
   TagCreateRequest,
   TagUpdateRequest,
@@ -31,11 +34,13 @@ import type {
   CreateApiTokenInput,
   CreateExtensionDeviceInput,
   CreateImportTaskInput,
+  CreateShareRecordInput,
   ExtensionDeviceAuthRecord,
   ImportBookmarkMatch,
   IngestBookmarkResult,
   InitCaptureResult,
   PrivateModeConfigRecord,
+  UpdateShareRecordInput,
   UserAuthRecord,
 } from "./bookmark-repository";
 import * as apiTokensRepository from "./postgres/api-tokens";
@@ -50,6 +55,7 @@ import * as objectsRepository from "./postgres/objects";
 import * as privateBookmarksRepository from "./postgres/private-bookmarks";
 import * as privateCapturesRepository from "./postgres/private-captures";
 import * as privateModeRepository from "./postgres/private-mode";
+import * as sharesRepository from "./postgres/shares";
 import * as taxonomyRepository from "./postgres/taxonomy";
 
 export class PostgresBookmarkRepository implements BookmarkRepository {
@@ -258,5 +264,41 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
   async userCanWriteObject(userId: string, objectKey: string): Promise<boolean> {
     return objectsRepository.userCanWriteObject(this.core, userId, objectKey);
+  }
+
+  async countActiveShares(userId: string): Promise<number> {
+    return sharesRepository.countActiveShares(this.core, userId);
+  }
+
+  async findMissingOwnedBookmarkIds(userId: string, bookmarkIds: string[]): Promise<string[]> {
+    return sharesRepository.findMissingOwnedBookmarkIds(this.core, userId, bookmarkIds);
+  }
+
+  async createShare(userId: string, input: CreateShareRecordInput): Promise<Share> {
+    return sharesRepository.createShare(this.core, userId, input);
+  }
+
+  async listShares(userId: string): Promise<Share[]> {
+    return sharesRepository.listShares(this.core, userId);
+  }
+
+  async getShareDetail(userId: string, shareId: string): Promise<ShareDetail | null> {
+    return sharesRepository.getShareDetail(this.core, userId, shareId);
+  }
+
+  async updateShare(
+    userId: string,
+    shareId: string,
+    input: UpdateShareRecordInput,
+  ): Promise<ShareDetail | null> {
+    return sharesRepository.updateShare(this.core, userId, shareId, input);
+  }
+
+  async revokeShare(userId: string, shareId: string): Promise<Share | null> {
+    return sharesRepository.revokeShare(this.core, userId, shareId);
+  }
+
+  async getPublicShareByToken(token: string): Promise<PublicShareResponse | null> {
+    return sharesRepository.getPublicShareByToken(this.core, token);
   }
 }

@@ -7,6 +7,7 @@ import {
   importSourceValues,
   importTaskStatusValues,
   qualityGradeValues,
+  shareStatusValues,
 } from "@keeppage/domain";
 import {
   type AnyPgColumn,
@@ -32,6 +33,7 @@ export const importTaskStatusEnum = pgEnum("import_task_status", importTaskStatu
 export const importItemStatusEnum = pgEnum("import_item_status", importItemStatusValues);
 export const importDedupeResultEnum = pgEnum("import_dedupe_result", importDedupeResultValues);
 export const bookmarkIconSourceTypeEnum = pgEnum("bookmark_icon_source_type", bookmarkIconSourceTypeValues);
+export const shareStatusEnum = pgEnum("share_status", shareStatusValues);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -429,5 +431,46 @@ export const importItems = pgTable(
     importItemsTaskPositionIdx: uniqueIndex("import_items_task_position_idx").on(table.taskId, table.position),
     importItemsUserTaskIdx: index("import_items_user_task_idx").on(table.userId, table.taskId),
     importItemsBookmarkIdx: index("import_items_bookmark_idx").on(table.bookmarkId),
+  }),
+);
+
+export const shares = pgTable(
+  "shares",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    publicToken: varchar("public_token", { length: 64 }).notNull(),
+    title: varchar("title", { length: 80 }).notNull(),
+    description: text("description").default("").notNull(),
+    status: shareStatusEnum("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => ({
+    sharesPublicTokenIdx: uniqueIndex("shares_public_token_idx").on(table.publicToken),
+    sharesUserUpdatedIdx: index("shares_user_updated_idx").on(table.userId, table.updatedAt),
+    sharesStatusTokenIdx: index("shares_status_token_idx").on(table.status, table.publicToken),
+  }),
+);
+
+export const shareItems = pgTable(
+  "share_items",
+  {
+    shareId: uuid("share_id")
+      .notNull()
+      .references(() => shares.id, { onDelete: "cascade" }),
+    bookmarkId: uuid("bookmark_id")
+      .notNull()
+      .references(() => bookmarks.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.shareId, table.bookmarkId] }),
+    shareItemsPositionIdx: index("share_items_share_position_idx").on(table.shareId, table.position),
+    shareItemsBookmarkIdx: index("share_items_bookmark_idx").on(table.bookmarkId),
   }),
 );

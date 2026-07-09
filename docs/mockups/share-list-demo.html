@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分享列表 · KeepPage</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+      colors: {
+        primary: '#5e5e5e',
+        'on-primary': '#ffffff',
+        surface: '#fafafa',
+        'surface-container-lowest': '#ffffff',
+        'surface-container-low': '#f4f4f5',
+        'on-surface': '#18181b',
+        'on-surface-variant': '#71717a',
+        'surface-tint': '#a1a1aa',
+        'inverse-surface': '#27272a',
+      }
+    }
+  }
+}
+</script>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+
+  body {
+    background:
+      radial-gradient(ellipse 80% 50% at 10% -10%, rgba(216, 211, 244, 0.45), transparent 55%),
+      radial-gradient(ellipse 60% 40% at 90% 5%, rgba(212, 235, 225, 0.4), transparent 50%),
+      radial-gradient(ellipse 50% 35% at 50% 100%, rgba(253, 232, 216, 0.35), transparent 55%),
+      #fafafa;
+  }
+
+  .cover-peach { background: linear-gradient(145deg, #fde8d8 0%, #f5d0b8 100%); }
+  .cover-mist  { background: linear-gradient(145deg, #d8d3f4 0%, #c4bddf 100%); }
+  .cover-sand  { background: linear-gradient(145deg, #f5efe6 0%, #e8dcc8 100%); }
+  .cover-sky   { background: linear-gradient(145deg, #d4ebe1 0%, #b8d9cc 100%); }
+  .cover-rose  { background: linear-gradient(145deg, #f5dce4 0%, #e8c0ce 100%); }
+  .cover-slate { background: linear-gradient(145deg, #e2e8f0 0%, #cbd5e1 100%); }
+
+  .card-enter {
+    animation: cardIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .toast {
+    animation: toastIn 0.3s ease both, toastOut 0.3s ease 2s forwards;
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes toastOut {
+    to { opacity: 0; transform: translateY(8px); }
+  }
+</style>
+</head>
+
+<body class="font-sans text-on-surface min-h-screen">
+
+<!-- 顶栏：公开页，无登录要求 -->
+<header class="sticky top-0 z-30 h-16 sm:h-20
+  bg-white/60 backdrop-blur-xl shadow-[0_20px_40px_rgba(45,51,56,0.06)]
+  border-b border-white/40">
+  <div class="max-w-5xl mx-auto h-full px-5 sm:px-8 flex items-center justify-between gap-4">
+    <a href="#" class="flex items-center gap-2.5 transition-all active:scale-95">
+      <span class="w-9 h-9 rounded-xl bg-zinc-800 text-white flex items-center justify-center shadow-lg shadow-zinc-800/20">
+        <span class="material-symbols-outlined text-[20px]">bookmark</span>
+      </span>
+      <div class="leading-tight">
+        <div class="text-base sm:text-lg font-extrabold tracking-tight">KeepPage</div>
+        <div class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant hidden sm:block">Shared Collection</div>
+      </div>
+    </a>
+
+    <div class="flex items-center gap-2">
+      <button id="btn-copy-link" type="button"
+        class="inline-flex items-center gap-2 h-10 px-3.5 sm:px-4 rounded-2xl
+          bg-zinc-800 text-white text-sm font-semibold
+          shadow-lg shadow-zinc-800/20
+          transition-all hover:bg-zinc-700 active:scale-95">
+        <span class="material-symbols-outlined text-[18px]">link</span>
+        <span class="hidden sm:inline">复制链接</span>
+      </button>
+      <button type="button"
+        class="inline-flex items-center justify-center w-10 h-10 rounded-full
+          bg-white/70 text-on-surface-variant
+          transition-all hover:bg-white hover:text-on-surface active:scale-90
+          shadow-sm border border-white/50"
+        title="仅演示：公开页无需登录"
+        aria-label="公开访问">
+        <span class="material-symbols-outlined text-[20px]">public</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-5 sm:px-8 pt-10 sm:pt-14 pb-20">
+
+  <!-- 分享集合信息卡 -->
+  <section class="relative mb-10 sm:mb-12
+    bg-surface-container-lowest/80 backdrop-blur-[40px]
+    rounded-3xl border border-white/40
+    shadow-[0_20px_40px_rgba(45,51,56,0.08)]
+    p-6 sm:p-10 overflow-hidden">
+
+    <!-- 装饰光斑 -->
+    <div class="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full bg-[#D8D3F4]/40 blur-3xl"></div>
+    <div class="pointer-events-none absolute -bottom-20 -left-10 w-56 h-56 rounded-full bg-[#D4EBE1]/35 blur-3xl"></div>
+
+    <div class="relative">
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <span class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold
+          px-2.5 py-1 rounded-full bg-zinc-100 text-on-surface-variant">
+          <span class="material-symbols-outlined text-[14px]">share</span>
+          Public Share
+        </span>
+        <span class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold
+          px-2.5 py-1 rounded-full" style="background:#D4EBE1">
+          <span class="material-symbols-outlined text-[14px]">lock_open</span>
+          无需登录
+        </span>
+        <span class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">
+          只读
+        </span>
+      </div>
+
+      <h1 id="share-title" class="text-3xl sm:text-5xl font-extrabold tracking-tight text-on-surface mb-3">
+        设计与产品灵感合集
+      </h1>
+      <p id="share-desc" class="text-base sm:text-lg text-on-surface-variant max-w-2xl leading-relaxed mb-8">
+        近期收藏的设计系统、交互案例与产品拆解。分享给你看的这些，都是我精选过的。
+      </p>
+
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-4">
+        <!-- 分享者 -->
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-900
+            text-white font-bold flex items-center justify-center text-sm shadow-md">
+            C
+          </div>
+          <div>
+            <div class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">Shared by</div>
+            <div id="share-owner" class="font-semibold text-on-surface">Cyan</div>
+          </div>
+        </div>
+
+        <div class="hidden sm:block w-px h-10 bg-zinc-200"></div>
+
+        <!-- 统计 -->
+        <div class="flex flex-wrap gap-5 sm:gap-6">
+          <div>
+            <div class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">Items</div>
+            <div class="font-semibold tabular-nums"><span id="item-count">8</span> 条</div>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">Updated</div>
+            <div id="share-updated" class="font-semibold">2 天前</div>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">Views</div>
+            <div class="font-semibold tabular-nums">128</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 工具条 -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <p class="text-[10px] uppercase tracking-widest font-bold text-on-surface-variant">
+      Shared Bookmarks
+    </p>
+    <div class="flex items-center gap-2">
+      <button id="view-grid" type="button"
+        class="view-btn is-active inline-flex items-center justify-center w-9 h-9 rounded-xl
+          transition-all active:scale-90"
+        aria-label="网格视图" title="网格">
+        <span class="material-symbols-outlined text-[20px]">grid_view</span>
+      </button>
+      <button id="view-list" type="button"
+        class="view-btn inline-flex items-center justify-center w-9 h-9 rounded-xl
+          transition-all active:scale-90"
+        aria-label="列表视图" title="列表">
+        <span class="material-symbols-outlined text-[20px]">view_list</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 卡片网格 / 列表 -->
+  <div id="bookmark-grid"
+    class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+    <!-- JS 渲染 -->
+  </div>
+
+  <!-- 空状态（默认隐藏） -->
+  <div id="empty-state" class="hidden text-center py-20">
+    <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-zinc-100 flex items-center justify-center">
+      <span class="material-symbols-outlined text-3xl text-on-surface-variant">inbox</span>
+    </div>
+    <p class="font-semibold text-on-surface mb-1">这份分享里还没有内容</p>
+    <p class="text-sm text-on-surface-variant">分享者尚未添加任何书签。</p>
+  </div>
+
+  <!-- 页脚 -->
+  <footer class="mt-16 pt-8 border-t border-zinc-200/80 text-center">
+    <p class="text-sm text-on-surface-variant mb-3">
+      此页面为公开分享 · 浏览无需账号
+    </p>
+    <a href="#"
+      class="inline-flex items-center gap-2 text-sm font-semibold text-on-surface
+        px-4 py-2.5 rounded-2xl bg-white/70 border border-white/50 shadow-sm
+        transition-all hover:bg-white hover:shadow-md active:scale-95">
+      <span class="material-symbols-outlined text-[18px]">rocket_launch</span>
+      用 KeepPage 整理你的网页
+    </a>
+    <p class="mt-6 text-[10px] uppercase tracking-widest font-bold text-zinc-400">
+      Demo · Mock Data · KeepPage Share
+    </p>
+  </footer>
+</main>
+
+<!-- Toast -->
+<div id="toast-root" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none"></div>
+
+<script>
+/** —— Mock 分享数据 —— */
+const SHARE = {
+  id: "share_demo_01",
+  title: "设计与产品灵感合集",
+  description: "近期收藏的设计系统、交互案例与产品拆解。分享给你看的这些，都是我精选过的。",
+  owner: { name: "Cyan", initial: "C" },
+  updatedAtLabel: "2 天前",
+  views: 128,
+  public: true,
+  items: [
+    {
+      id: "b1",
+      title: "Linear 的设计系统与信息架构",
+      domain: "linear.app",
+      sourceUrl: "https://linear.app/",
+      note: "极简导航 + 高密度信息，值得反复看。",
+      cover: "mist",
+      tags: ["Design System", "SaaS"],
+      savedAtLabel: "3 天前",
+      hasArchive: true,
+    },
+    {
+      id: "b2",
+      title: "Apple Human Interface Guidelines",
+      domain: "developer.apple.com",
+      sourceUrl: "https://developer.apple.com/design/human-interface-guidelines/",
+      note: "平台规范的「元文档」，做跨端时对照用。",
+      cover: "slate",
+      tags: ["HIG", "Mobile"],
+      savedAtLabel: "1 周前",
+      hasArchive: true,
+    },
+    {
+      id: "b3",
+      title: "Stripe 支付页的微交互拆解",
+      domain: "stripe.com",
+      sourceUrl: "https://stripe.com/",
+      note: "表单校验反馈与加载态处理非常克制。",
+      cover: "sky",
+      tags: ["UX", "Fintech"],
+      savedAtLabel: "5 天前",
+      hasArchive: false,
+    },
+    {
+      id: "b4",
+      title: "Raycast 扩展市场：工具发现体验",
+      domain: "raycast.com",
+      sourceUrl: "https://www.raycast.com/",
+      note: "搜索优先的产品心智，列表密度做得很好。",
+      cover: "peach",
+      tags: ["Productivity"],
+      savedAtLabel: "2 周前",
+      hasArchive: true,
+    },
+    {
+      id: "b5",
+      title: "Figma 社区：卡片式内容流",
+      domain: "figma.com",
+      sourceUrl: "https://www.figma.com/community",
+      note: "封面图 + 轻量元信息的卡片范式。",
+      cover: "rose",
+      tags: ["Community", "Design"],
+      savedAtLabel: "4 天前",
+      hasArchive: false,
+    },
+    {
+      id: "b6",
+      title: "Notion 模板市场的转化路径",
+      domain: "notion.so",
+      sourceUrl: "https://www.notion.so/templates",
+      note: "从发现到试用的路径非常顺滑。",
+      cover: "sand",
+      tags: ["Growth", "Templates"],
+      savedAtLabel: "1 周前",
+      hasArchive: true,
+    },
+    {
+      id: "b7",
+      title: "Vercel 文档站：侧栏与锚点导航",
+      domain: "vercel.com",
+      sourceUrl: "https://vercel.com/docs",
+      note: "技术文档阅读体验的标杆之一。",
+      cover: "slate",
+      tags: ["Docs", "Dev"],
+      savedAtLabel: "6 天前",
+      hasArchive: true,
+    },
+    {
+      id: "b8",
+      title: "Arc Browser 的空间与分栏概念",
+      domain: "arc.net",
+      sourceUrl: "https://arc.net/",
+      note: "把「工作区」当成一等公民的产品叙事。",
+      cover: "mist",
+      tags: ["Browser", "Concept"],
+      savedAtLabel: "昨天",
+      hasArchive: false,
+    },
+  ],
+};
+
+const TAG_COLORS = {
+  "Design System": "#D8D3F4",
+  SaaS: "#E2E8F0",
+  HIG: "#D4EBE1",
+  Mobile: "#FDE8D8",
+  UX: "#F5DCE4",
+  Fintech: "#D4EBE1",
+  Productivity: "#F5EFE6",
+  Community: "#D8D3F4",
+  Design: "#FDE8D8",
+  Growth: "#D4EBE1",
+  Templates: "#E2E8F0",
+  Docs: "#D8D3F4",
+  Dev: "#E2E8F0",
+  Browser: "#F5DCE4",
+  Concept: "#F5EFE6",
+};
+
+const favicon = (domain) =>
+  `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`;
+
+function showToast(message) {
+  const root = document.getElementById("toast-root");
+  root.innerHTML = `
+    <div class="toast pointer-events-auto flex items-center gap-2
+      px-4 py-3 rounded-2xl bg-zinc-900 text-white text-sm font-medium
+      shadow-xl shadow-zinc-900/25">
+      <span class="material-symbols-outlined text-[18px]">check_circle</span>
+      ${message}
+    </div>`;
+  setTimeout(() => { root.innerHTML = ""; }, 2400);
+}
+
+function cardHtml(item, index, mode) {
+  const tags = (item.tags || [])
+    .slice(0, 2)
+    .map(
+      (t) =>
+        `<span class="text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full"
+          style="background:${TAG_COLORS[t] || "#E2E8F0"}">${t}</span>`
+    )
+    .join("");
+
+  const delay = `style="animation-delay:${index * 40}ms"`;
+
+  if (mode === "list") {
+    return `
+      <a href="${item.sourceUrl}" target="_blank" rel="noopener noreferrer"
+        class="card-enter group flex items-center gap-4 p-4 rounded-2xl
+          bg-surface-container-lowest border border-white/50 shadow-sm
+          transition-all hover:shadow-xl hover:-translate-y-0.5 active:scale-[0.99]"
+        ${delay}>
+        <div class="cover-${item.cover} w-14 h-14 shrink-0 rounded-xl flex items-center justify-center
+          overflow-hidden shadow-inner">
+          <img src="${favicon(item.domain)}" alt="" width="28" height="28"
+            class="rounded-md bg-white/80 p-0.5 shadow-sm"
+            onerror="this.style.display='none'">
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 text-[11px] text-on-surface-variant mb-0.5">
+            <span class="font-medium truncate">${item.domain.replace(/^www\\./i, "")}</span>
+            <span class="opacity-40">·</span>
+            <span class="shrink-0">${item.savedAtLabel}</span>
+            ${item.hasArchive
+              ? `<span class="inline-flex items-center gap-0.5 shrink-0 text-[10px] font-bold uppercase tracking-wider text-emerald-700/80">
+                   <span class="material-symbols-outlined text-[14px]">inventory_2</span>归档
+                 </span>`
+              : ""}
+          </div>
+          <h2 class="font-semibold text-on-surface truncate group-hover:text-zinc-700">${item.title}</h2>
+          ${item.note ? `<p class="text-sm text-on-surface-variant truncate mt-0.5">${item.note}</p>` : ""}
+        </div>
+        <span class="material-symbols-outlined text-zinc-300 group-hover:text-zinc-500
+          transition-colors shrink-0">open_in_new</span>
+      </a>`;
+  }
+
+  return `
+    <a href="${item.sourceUrl}" target="_blank" rel="noopener noreferrer"
+      class="card-enter group flex flex-col rounded-2xl overflow-hidden
+        bg-surface-container-lowest border border-white/50 shadow-sm
+        transition-all hover:shadow-xl hover:-translate-y-0.5 active:scale-[0.99]"
+      ${delay}>
+      <div class="cover-${item.cover} relative aspect-[16/10] flex items-center justify-center overflow-hidden">
+        <img src="${favicon(item.domain)}" alt="" width="40" height="40"
+          class="rounded-xl bg-white/85 p-1.5 shadow-md
+            transition-transform duration-700 group-hover:scale-110"
+          onerror="this.outerHTML='<span class=\\'material-symbols-outlined text-3xl text-zinc-500/60\\'>public</span>'">
+        ${item.hasArchive
+          ? `<span class="absolute top-3 right-3 inline-flex items-center gap-1
+               text-[10px] uppercase tracking-widest font-bold
+               px-2 py-1 rounded-full bg-white/80 backdrop-blur-md text-zinc-700 shadow-sm">
+               <span class="material-symbols-outlined text-[14px]">inventory_2</span>
+               已归档
+             </span>`
+          : ""}
+      </div>
+      <div class="flex flex-col flex-1 p-4 sm:p-5">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <span class="text-[11px] font-medium text-on-surface-variant truncate">
+            ${item.domain.replace(/^www\\./i, "")}
+          </span>
+          <span class="text-[11px] text-on-surface-variant shrink-0">${item.savedAtLabel}</span>
+        </div>
+        <h2 class="font-semibold text-on-surface leading-snug line-clamp-2 mb-2
+          group-hover:text-zinc-700 transition-colors">
+          ${item.title}
+        </h2>
+        ${item.note
+          ? `<p class="text-sm text-on-surface-variant line-clamp-2 mb-3 flex-1">${item.note}</p>`
+          : `<div class="flex-1"></div>`}
+        <div class="flex flex-wrap gap-1.5 mt-auto pt-1">${tags}</div>
+      </div>
+    </a>`;
+}
+
+function render(mode) {
+  const grid = document.getElementById("bookmark-grid");
+  const empty = document.getElementById("empty-state");
+  const items = SHARE.items;
+
+  document.getElementById("share-title").textContent = SHARE.title;
+  document.getElementById("share-desc").textContent = SHARE.description;
+  document.getElementById("share-owner").textContent = SHARE.owner.name;
+  document.getElementById("share-updated").textContent = SHARE.updatedAtLabel;
+  document.getElementById("item-count").textContent = String(items.length);
+
+  if (!items.length) {
+    grid.innerHTML = "";
+    empty.classList.remove("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+
+  if (mode === "list") {
+    grid.className = "flex flex-col gap-3";
+  } else {
+    grid.className = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5";
+  }
+
+  grid.innerHTML = items.map((item, i) => cardHtml(item, i, mode)).join("");
+}
+
+/** 视图切换 */
+let currentView = "grid";
+function setView(mode) {
+  currentView = mode;
+  document.querySelectorAll(".view-btn").forEach((btn) => {
+    const active = btn.id === `view-${mode}`;
+    btn.classList.toggle("is-active", active);
+    btn.classList.toggle("bg-white", active);
+    btn.classList.toggle("shadow-sm", active);
+    btn.classList.toggle("text-on-surface", active);
+    btn.classList.toggle("text-on-surface-variant", !active);
+    btn.classList.toggle("hover:bg-white/70", !active);
+  });
+  render(mode);
+}
+
+document.getElementById("view-grid").addEventListener("click", () => setView("grid"));
+document.getElementById("view-list").addEventListener("click", () => setView("list"));
+
+document.getElementById("btn-copy-link").addEventListener("click", async () => {
+  const url = window.location.href;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("分享链接已复制");
+  } catch {
+    showToast("请手动复制地址栏链接");
+  }
+});
+
+// 初始化
+setView("grid");
+</script>
+</body>
+</html>

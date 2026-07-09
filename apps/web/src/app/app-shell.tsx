@@ -41,6 +41,7 @@ export function AppShell({
   onCreateTag,
   onOpenPrivateMode,
   onOpenApiTokens,
+  onOpenShares,
   onOpenExtensionDevices,
   onOpenImportNew,
   onOpenImportHistory,
@@ -74,6 +75,7 @@ export function AppShell({
   onCreateTag: () => void;
   onOpenPrivateMode: () => void;
   onOpenApiTokens: () => void;
+  onOpenShares: () => void;
   onOpenExtensionDevices: () => void;
   onOpenImportNew: () => void;
   onOpenImportHistory: () => void;
@@ -328,6 +330,17 @@ export function AppShell({
               >
                 <Icon name="vpn_key" />
                 <span>API 密钥</span>
+              </button>
+              <button
+                className={routePage === "settings-shares" ? "home-settings-item is-active" : "home-settings-item"}
+                type="button"
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  onOpenShares();
+                }}
+              >
+                <Icon name="share" />
+                <span>我的分享</span>
               </button>
               <button
                 className={routePage === "settings-extension-devices" || routePage === "extension-connect"

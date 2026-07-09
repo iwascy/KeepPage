@@ -11,6 +11,7 @@ import { PrivateModeService } from "./services/auth/private-mode-service";
 import { BookmarkService } from "./services/bookmarks/bookmark-service";
 import { IconRefreshService } from "./services/icons/icon-refresh-service";
 import { ImportService } from "./services/imports/import-service";
+import { ShareService } from "./services/shares/share-service";
 import { UploadService } from "./services/uploads/upload-service";
 import { createObjectStorage } from "./storage/object-storage";
 import { UserResponseCache } from "./routes/http-cache";
@@ -131,6 +132,16 @@ export function buildServer(config: ApiConfig) {
   const importService = new ImportService({
     repository,
   });
+  const webPublicBaseUrl = resolveWebPublicBaseUrl(config);
+  if (config.NODE_ENV === "production" && !webPublicBaseUrl) {
+    app.log.warn(
+      "WEB_PUBLIC_BASE_URL is not set; share publicUrl will be relative (/s/:token). Configure it for absolute share links from the API.",
+    );
+  }
+  const shareService = new ShareService({
+    repository,
+    webPublicBaseUrl,
+  });
 
   app.register(async (instance) => {
     await registerRoutes(
@@ -145,11 +156,24 @@ export function buildServer(config: ApiConfig) {
       iconRefreshService,
       importService,
       uploadService,
+      shareService,
       responseCache,
     );
   });
 
   return app;
+}
+
+function resolveWebPublicBaseUrl(config: ApiConfig) {
+  if (config.WEB_PUBLIC_BASE_URL?.trim()) {
+    return config.WEB_PUBLIC_BASE_URL.trim().replace(/\/$/, "");
+  }
+  if (config.NODE_ENV === "production") {
+    // Do NOT fall back to API_PUBLIC_BASE_URL — Web and API are often on different hosts.
+    // Empty base yields relative /s/:token; Web clients prefix window.location.origin on copy.
+    return "";
+  }
+  return "http://127.0.0.1:5173";
 }
 
 function registerDebugHooks(app: FastifyInstance) {

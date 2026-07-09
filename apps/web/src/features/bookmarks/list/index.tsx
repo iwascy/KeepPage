@@ -511,6 +511,7 @@ function SelectionToolbar({
   onBatchLocalArchive,
   onBatchMoveTo,
   onBatchSetTags,
+  onBatchShare,
   onBatchDelete,
   onExit,
 }: {
@@ -527,6 +528,7 @@ function SelectionToolbar({
   onBatchLocalArchive: () => void;
   onBatchMoveTo: (folderId: string | null) => void;
   onBatchSetTags: (tagIds: string[]) => void;
+  onBatchShare: () => void;
   onBatchDelete: () => void;
   onExit: () => void;
 }) {
@@ -658,6 +660,15 @@ function SelectionToolbar({
         </div>
         <button
           type="button"
+          className="selection-toolbar-btn"
+          disabled={!hasSelection || busy}
+          onClick={onBatchShare}
+          title="生成公开分享链接"
+        >
+          分享
+        </button>
+        <button
+          type="button"
           className="selection-toolbar-btn is-danger"
           disabled={!hasSelection || busy}
           onClick={onBatchDelete}
@@ -702,6 +713,7 @@ export function BookmarksListRoute({
   onBatchLocalArchive,
   onBatchMoveTo,
   onBatchSetTags,
+  onBatchShare,
   onBatchDelete,
   onExitSelection,
   onToggleFavorite,
@@ -734,6 +746,7 @@ export function BookmarksListRoute({
   onBatchLocalArchive: () => void;
   onBatchMoveTo: (folderId: string | null) => void;
   onBatchSetTags: (tagIds: string[]) => void;
+  onBatchShare: () => void;
   onBatchDelete: () => void;
   onExitSelection: () => void;
   onToggleFavorite: (bookmark: Bookmark) => void;
@@ -759,6 +772,7 @@ export function BookmarksListRoute({
           onBatchLocalArchive={onBatchLocalArchive}
           onBatchMoveTo={onBatchMoveTo}
           onBatchSetTags={onBatchSetTags}
+          onBatchShare={onBatchShare}
           onBatchDelete={onBatchDelete}
           onExit={onExitSelection}
         />

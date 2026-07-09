@@ -24,6 +24,12 @@ import {
   type ImportTaskDetailResponse,
   type ImportTaskItem,
   type PrivateVaultSummary,
+  buildOwnerDisplayName,
+  SHARE_MAX_ACTIVE_PER_USER,
+  type PublicShareResponse,
+  type Share,
+  type ShareDetail,
+  type ShareOwnerItem,
   type Tag,
   type TagCreateRequest,
   type TagUpdateRequest,
@@ -38,6 +44,7 @@ import type {
   BookmarkSearchQuery,
   CreateApiTokenInput,
   CreateExtensionDeviceInput,
+  CreateShareRecordInput,
   ExtensionDeviceAuthRecord,
   CreateImportTaskInput,
   CompleteCaptureResult,
@@ -46,6 +53,7 @@ import type {
   InitCaptureResult,
   PrivateModeConfigRecord,
   PreparedImportItem,
+  UpdateShareRecordInput,
   UserAuthRecord,
 } from "../bookmark-repository";
 import {
@@ -63,6 +71,24 @@ type StoredUser = UserAuthRecord;
 type StoredApiToken = ApiTokenAuthRecord;
 type StoredExtensionDevice = ExtensionDeviceAuthRecord;
 type StoredPrivateModeConfig = PrivateModeConfigRecord;
+
+type StoredShare = {
+  id: string;
+  userId: string;
+  publicToken: string;
+  title: string;
+  description: string;
+  status: "active" | "revoked";
+  createdAt: string;
+  updatedAt: string;
+  revokedAt?: string;
+};
+
+type StoredShareItem = {
+  bookmarkId: string;
+  position: number;
+  createdAt: string;
+};
 
 type UserBookmarkState = {
   bookmarks: Map<string, Bookmark>;
@@ -95,6 +121,12 @@ export class InMemoryRepositoryCore {
   private readonly extensionDevicesById = new Map<string, StoredExtensionDevice>();
   private readonly extensionDeviceIdsByUserId = new Map<string, Set<string>>();
   private readonly bookmarkIconsByHostname = new Map<string, BookmarkIcon>();
+  private readonly sharesById = new Map<string, StoredShare>();
+  private readonly shareIdsByUserId = new Map<string, Set<string>>();
+  private readonly shareIdByToken = new Map<string, string>();
+  private readonly shareItemsByShareId = new Map<string, StoredShareItem[]>();
+  /** Serialize createShare per user so active-cap checks stay atomic under concurrency. */
+  private readonly shareCreateTailByUserId = new Map<string, Promise<unknown>>();
   private readonly objectStorage: ObjectStorage;
 
   constructor(options: InMemoryBookmarkRepositoryOptions) {
@@ -973,7 +1005,296 @@ export class InMemoryRepositoryCore {
 
     state.versionsByBookmark.delete(bookmarkId);
     state.bookmarks.delete(bookmarkId);
+    this.removeShareItemsForBookmark(bookmarkId);
     return true;
+  }
+
+  async countActiveShares(userId: string): Promise<number> {
+    const shareIds = this.shareIdsByUserId.get(userId);
+    if (!shareIds) {
+      return 0;
+    }
+    let count = 0;
+    for (const shareId of shareIds) {
+      const share = this.sharesById.get(shareId);
+      if (share?.status === "active") {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  async findMissingOwnedBookmarkIds(userId: string, bookmarkIds: string[]): Promise<string[]> {
+    const state = this.ensureUserState(userId);
+    return bookmarkIds.filter((bookmarkId) => !state.bookmarks.has(bookmarkId));
+  }
+
+  async createShare(userId: string, input: CreateShareRecordInput): Promise<Share> {
+    return this.withShareCreateLock(userId, async () => {
+      const activeCount = await this.countActiveShares(userId);
+      if (activeCount >= SHARE_MAX_ACTIVE_PER_USER) {
+        throw new HttpError(
+          400,
+          "ShareActiveLimitExceeded",
+          `每个账号最多保留 ${SHARE_MAX_ACTIVE_PER_USER} 个活跃分享，请先撤销旧分享。`,
+        );
+      }
+
+      const uniqueIds = dedupePreserveOrder(input.bookmarkIds);
+      const missing = await this.findMissingOwnedBookmarkIds(userId, uniqueIds);
+      if (missing.length > 0) {
+        throw new HttpError(
+          400,
+          "ShareBookmarkInvalid",
+          "部分书签不存在、不属于当前账号，或无法分享（例如私密书签）。",
+          { missingIds: missing },
+        );
+      }
+
+      const now = new Date().toISOString();
+      const share: StoredShare = {
+        id: input.id,
+        userId,
+        publicToken: input.publicToken,
+        title: input.title,
+        description: input.description,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.sharesById.set(share.id, share);
+      this.shareIdByToken.set(share.publicToken, share.id);
+      const ids = this.shareIdsByUserId.get(userId) ?? new Set<string>();
+      ids.add(share.id);
+      this.shareIdsByUserId.set(userId, ids);
+      this.shareItemsByShareId.set(
+        share.id,
+        uniqueIds.map((bookmarkId, position) => ({
+          bookmarkId,
+          position,
+          createdAt: now,
+        })),
+      );
+      return this.toShareSummary(share);
+    });
+  }
+
+  private async withShareCreateLock<T>(userId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.shareCreateTailByUserId.get(userId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.catch(() => undefined).then(() => gate);
+    this.shareCreateTailByUserId.set(userId, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await task();
+    } finally {
+      release();
+      if (this.shareCreateTailByUserId.get(userId) === tail) {
+        this.shareCreateTailByUserId.delete(userId);
+      }
+    }
+  }
+
+  async listShares(userId: string): Promise<Share[]> {
+    const shareIds = this.shareIdsByUserId.get(userId);
+    if (!shareIds) {
+      return [];
+    }
+    return [...shareIds]
+      .map((shareId) => this.sharesById.get(shareId))
+      .filter((share): share is StoredShare => Boolean(share))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .map((share) => this.toShareSummary(share));
+  }
+
+  async getShareDetail(userId: string, shareId: string): Promise<ShareDetail | null> {
+    const share = this.sharesById.get(shareId);
+    if (!share || share.userId !== userId) {
+      return null;
+    }
+    return this.toShareDetail(share);
+  }
+
+  async updateShare(
+    userId: string,
+    shareId: string,
+    input: UpdateShareRecordInput,
+  ): Promise<ShareDetail | null> {
+    const share = this.sharesById.get(shareId);
+    if (!share || share.userId !== userId) {
+      return null;
+    }
+    if (share.status !== "active") {
+      throw new HttpError(400, "ShareRevoked", "已撤销的分享不可编辑。");
+    }
+
+    const now = new Date().toISOString();
+    if (input.title !== undefined) {
+      share.title = input.title;
+    }
+    if (input.description !== undefined) {
+      share.description = input.description;
+    }
+    if (input.bookmarkIds !== undefined) {
+      const uniqueIds = dedupePreserveOrder(input.bookmarkIds);
+      const missing = await this.findMissingOwnedBookmarkIds(userId, uniqueIds);
+      if (missing.length > 0) {
+        throw new HttpError(
+          400,
+          "ShareBookmarkInvalid",
+          "部分书签不存在、不属于当前账号，或无法分享（例如私密书签）。",
+          { missingIds: missing },
+        );
+      }
+      this.shareItemsByShareId.set(
+        share.id,
+        uniqueIds.map((bookmarkId, position) => ({
+          bookmarkId,
+          position,
+          createdAt: now,
+        })),
+      );
+    }
+    share.updatedAt = now;
+    this.sharesById.set(share.id, share);
+    return this.toShareDetail(share);
+  }
+
+  async revokeShare(userId: string, shareId: string): Promise<Share | null> {
+    const share = this.sharesById.get(shareId);
+    if (!share || share.userId !== userId) {
+      return null;
+    }
+    if (share.status !== "revoked") {
+      const now = new Date().toISOString();
+      share.status = "revoked";
+      share.revokedAt = now;
+      share.updatedAt = now;
+      this.sharesById.set(share.id, share);
+    }
+    return this.toShareSummary(share);
+  }
+
+  async getPublicShareByToken(token: string): Promise<PublicShareResponse | null> {
+    const shareId = this.shareIdByToken.get(token);
+    if (!shareId) {
+      return null;
+    }
+    const share = this.sharesById.get(shareId);
+    if (!share || share.status !== "active") {
+      return null;
+    }
+
+    const owner = await this.getUserById(share.userId);
+    if (!owner) {
+      return null;
+    }
+
+    const state = this.ensureUserState(share.userId);
+    const items = (this.shareItemsByShareId.get(share.id) ?? [])
+      .slice()
+      .sort((left, right) => left.position - right.position)
+      .map((item) => {
+        const bookmark = state.bookmarks.get(item.bookmarkId);
+        if (!bookmark) {
+          return null;
+        }
+        return {
+          title: bookmark.title,
+          sourceUrl: bookmark.sourceUrl,
+          domain: bookmark.domain,
+          faviconUrl: bookmark.faviconUrl,
+          note: bookmark.note ?? "",
+          tags: (bookmark.tags ?? []).map((tag) => ({
+            name: tag.name,
+            color: tag.color,
+          })),
+          updatedAt: bookmark.updatedAt,
+          hasArchive: Boolean(bookmark.latestVersionId),
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    return {
+      title: share.title,
+      description: share.description,
+      ownerDisplayName: buildOwnerDisplayName(owner),
+      itemCount: items.length,
+      updatedAt: share.updatedAt,
+      items,
+    };
+  }
+
+  private removeShareItemsForBookmark(bookmarkId: string) {
+    for (const [shareId, items] of this.shareItemsByShareId.entries()) {
+      const next = items.filter((item) => item.bookmarkId !== bookmarkId);
+      if (next.length === items.length) {
+        continue;
+      }
+      const reindexed = next
+        .sort((left, right) => left.position - right.position)
+        .map((item, position) => ({ ...item, position }));
+      this.shareItemsByShareId.set(shareId, reindexed);
+      const share = this.sharesById.get(shareId);
+      if (share) {
+        share.updatedAt = new Date().toISOString();
+        this.sharesById.set(shareId, share);
+      }
+    }
+  }
+
+  private toShareSummary(share: StoredShare): Share {
+    const liveCount = this.countLiveShareItems(share);
+    return {
+      id: share.id,
+      title: share.title,
+      description: share.description,
+      status: share.status,
+      publicToken: share.publicToken,
+      publicUrl: "",
+      itemCount: liveCount,
+      createdAt: share.createdAt,
+      updatedAt: share.updatedAt,
+      revokedAt: share.revokedAt,
+    };
+  }
+
+  private toShareDetail(share: StoredShare): ShareDetail {
+    const state = this.ensureUserState(share.userId);
+    const items: ShareOwnerItem[] = (this.shareItemsByShareId.get(share.id) ?? [])
+      .slice()
+      .sort((left, right) => left.position - right.position)
+      .map((item) => {
+        const bookmark = state.bookmarks.get(item.bookmarkId);
+        if (!bookmark) {
+          return null;
+        }
+        return {
+          bookmarkId: bookmark.id,
+          position: item.position,
+          title: bookmark.title,
+          domain: bookmark.domain,
+          sourceUrl: bookmark.sourceUrl,
+        };
+      })
+      .filter((item): item is ShareOwnerItem => Boolean(item))
+      .map((item, position) => ({ ...item, position }));
+
+    return {
+      ...this.toShareSummary(share),
+      itemCount: items.length,
+      items,
+    };
+  }
+
+  private countLiveShareItems(share: StoredShare) {
+    const state = this.ensureUserState(share.userId);
+    return (this.shareItemsByShareId.get(share.id) ?? []).filter((item) =>
+      state.bookmarks.has(item.bookmarkId)
+    ).length;
   }
 
   async updateBookmarkMetadata(
@@ -1915,6 +2236,19 @@ export class InMemoryRepositoryCore {
     }
     state.privateVersionsByObjectKey.set(readerObjectKey, version);
   }
+}
+
+function dedupePreserveOrder(ids: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const id of ids) {
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    result.push(id);
+  }
+  return result;
 }
 
 function normalizeHostname(input: string) {

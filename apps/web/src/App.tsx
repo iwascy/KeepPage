@@ -55,9 +55,11 @@ import {
   goToImportNew,
   goToList,
   goToPrivateMode,
+  goToShares,
   openBookmark,
   openImportTask,
   openPrivateBookmark,
+  parsePublicShareToken,
   parseRoute,
   type ViewRoute,
 } from "./app/routes";
@@ -121,6 +123,21 @@ const ExtensionDevicesPanel = lazy(async () => {
 const ExtensionConnectPage = lazy(async () => {
   const module = await import("./features/extension-connect");
   return { default: module.ExtensionConnectPage };
+});
+
+const SharesPanel = lazy(async () => {
+  const module = await import("./features/shares");
+  return { default: module.SharesPanel };
+});
+
+const CreateShareDialog = lazy(async () => {
+  const module = await import("./features/shares");
+  return { default: module.CreateShareDialog };
+});
+
+const PublicSharePage = lazy(async () => {
+  const module = await import("./features/shares");
+  return { default: module.PublicSharePage };
 });
 
 type QualityFilter = "all" | QualityGrade;
@@ -230,6 +247,10 @@ export function App({
 }: {
   dataSourceKind?: "live" | "demo";
 }) {
+  const publicShareToken = useMemo(
+    () => parsePublicShareToken(window.location.pathname),
+    [],
+  );
   const appDataSource = useAppDataSource(dataSourceKind);
   const isDemoMode = appDataSource.kind === "demo";
   const [route, setRoute] = useState<ViewRoute>(() => parseRoute(window.location.hash));
@@ -302,8 +323,13 @@ export function App({
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: "closed" });
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  /** Survives list filters so share create keeps full multi-select set. */
+  const [selectionCatalog, setSelectionCatalog] = useState<
+    Map<string, { id: string; title: string; domain: string; sourceUrl: string }>
+  >(() => new Map());
   const [selectionBusy, setSelectionBusy] = useState(false);
   const [batchDropdown, setBatchDropdown] = useState<"closed" | "folder" | "tag">("closed");
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [localArchiveDialog, setLocalArchiveDialog] = useState<LocalArchiveDialogState>({ step: "closed" });
   const [localArchiveBusy, setLocalArchiveBusy] = useState(false);
   const [localArchiveError, setLocalArchiveError] = useState<string | null>(null);
@@ -415,13 +441,33 @@ export function App({
     setContextMenu({ kind: "closed" });
   }
 
+  function rememberSelectionCatalog(bookmarks: Bookmark[]) {
+    setSelectionCatalog((prev) => {
+      const next = new Map(prev);
+      for (const bookmark of bookmarks) {
+        next.set(bookmark.id, {
+          id: bookmark.id,
+          title: bookmark.title,
+          domain: bookmark.domain.replace(/^www\./i, ""),
+          sourceUrl: bookmark.sourceUrl,
+        });
+      }
+      return next;
+    });
+  }
+
   function enterSelectionMode(bookmarkId?: string) {
     setSelectionMode(true);
     setBatchDropdown("closed");
     if (bookmarkId) {
       setSelectedIds(new Set([bookmarkId]));
+      const bookmark = items.find((item) => item.id === bookmarkId);
+      if (bookmark) {
+        rememberSelectionCatalog([bookmark]);
+      }
     } else {
       setSelectedIds(new Set());
+      setSelectionCatalog(new Map());
     }
     closeContextMenu();
   }
@@ -429,6 +475,7 @@ export function App({
   function exitSelectionMode() {
     setSelectionMode(false);
     setSelectedIds(new Set());
+    setSelectionCatalog(new Map());
     setBatchDropdown("closed");
   }
 
@@ -442,10 +489,29 @@ export function App({
       }
       return next;
     });
-  }, []);
+    setSelectionCatalog((prev) => {
+      const next = new Map(prev);
+      if (next.has(bookmarkId)) {
+        // Keep catalog entry even if deselected so re-selecting still has title/domain.
+        // Entries are pruned on exitSelectionMode.
+        return next;
+      }
+      const bookmark = items.find((item) => item.id === bookmarkId);
+      if (bookmark) {
+        next.set(bookmark.id, {
+          id: bookmark.id,
+          title: bookmark.title,
+          domain: bookmark.domain.replace(/^www\./i, ""),
+          sourceUrl: bookmark.sourceUrl,
+        });
+      }
+      return next;
+    });
+  }, [items]);
 
   function selectAllBookmarks() {
     setSelectedIds(new Set(items.map((b) => b.id)));
+    rememberSelectionCatalog(items);
   }
 
   function deselectAllBookmarks() {
@@ -2041,6 +2107,35 @@ export function App({
     }
   }
 
+  const selectedDraftsForShare = useMemo(() => {
+    return [...selectedIds]
+      .map((id) => {
+        const cached = selectionCatalog.get(id);
+        if (cached) {
+          return cached;
+        }
+        const live = items.find((item) => item.id === id);
+        if (!live) {
+          return null;
+        }
+        return {
+          id: live.id,
+          title: live.title,
+          domain: live.domain.replace(/^www\./i, ""),
+          sourceUrl: live.sourceUrl,
+        };
+      })
+      .filter((item): item is { id: string; title: string; domain: string; sourceUrl: string } => Boolean(item));
+  }, [items, selectedIds, selectionCatalog]);
+
+  if (publicShareToken) {
+    return (
+      <Suspense fallback={<main className="public-share-page"><div className="public-share-state"><div className="public-share-state-card"><p>正在打开分享...</p></div></div></main>}>
+        <PublicSharePage token={publicShareToken} />
+      </Suspense>
+    );
+  }
+
   if (session.status !== "authenticated") {
     return session.status === "booting" ? (
       <main className="auth-shell">
@@ -2092,6 +2187,7 @@ export function App({
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
         onOpenPrivateMode={goToPrivateMode}
         onOpenApiTokens={goToApiTokens}
+        onOpenShares={goToShares}
         onOpenExtensionDevices={goToExtensionDevices}
         onOpenImportNew={goToImportNew}
         onOpenImportHistory={goToImportList}
@@ -2143,6 +2239,13 @@ export function App({
             onBatchLocalArchive={() => void handleBatchLocalArchive(selectedIds)}
             onBatchMoveTo={(folderId) => void handleBatchMoveTo(selectedIds, folderId)}
             onBatchSetTags={(tagIds) => void handleBatchSetTags(selectedIds, tagIds)}
+            onBatchShare={() => {
+              if (selectedIds.size === 0) {
+                return;
+              }
+              rememberSelectionCatalog(items.filter((item) => selectedIds.has(item.id)));
+              setShareDialogOpen(true);
+            }}
             onBatchDelete={() => openManagerDialog({ kind: "delete-bookmarks-batch", bookmarkIds: [...selectedIds], count: selectedIds.size })}
             onExitSelection={exitSelectionMode}
             onToggleFavorite={(bookmark) => void handleToggleFavorite(bookmark, !bookmark.isFavorite)}
@@ -2327,6 +2430,14 @@ export function App({
               onBack={goToList}
             />
           </Suspense>
+        ) : route.page === "settings-shares" ? (
+          <Suspense fallback={<section className="loading preview-empty">正在加载我的分享...</section>}>
+            <SharesPanel
+              token={session.token}
+              onApiError={handleProtectedApiError}
+              onBack={goToList}
+            />
+          </Suspense>
         ) : route.page === "settings-extension-devices" ? (
           <Suspense fallback={<section className="loading preview-empty">正在加载插件设备...</section>}>
             <ExtensionDevicesPanel
@@ -2359,6 +2470,21 @@ export function App({
         onConfirm={() => void confirmLocalArchiveDialog()}
         onClose={closeLocalArchiveDialog}
       />
+      {shareDialogOpen ? (
+        <Suspense fallback={null}>
+          <CreateShareDialog
+            token={session.token}
+            selectedDrafts={selectedDraftsForShare}
+            onClose={() => setShareDialogOpen(false)}
+            onCreated={() => {
+              setSelectionMode(false);
+              setSelectedIds(new Set());
+              setSelectionCatalog(new Map());
+              setBatchDropdown("closed");
+            }}
+          />
+        </Suspense>
+      ) : null}
       {contextMenu.kind !== "closed" ? (
         <ContextMenu state={contextMenu} groups={contextMenuGroups} onClose={closeContextMenu} />
       ) : null}
