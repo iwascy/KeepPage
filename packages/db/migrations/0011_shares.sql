@@ -1,9 +1,7 @@
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'share_status') THEN
-    CREATE TYPE share_status AS ENUM ('active', 'revoked');
-  END IF;
-END $$;
+-- Note: init-postgres.ts splits statements on ";\\n".
+-- Avoid DO $$ ... $$ blocks here; duplicate type/table errors are ignored (42710/42P07).
+
+CREATE TYPE share_status AS ENUM ('active', 'revoked');
 
 CREATE TABLE IF NOT EXISTS shares (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
