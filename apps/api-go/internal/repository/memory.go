@@ -99,8 +99,8 @@ func (r *MemoryRepository) GetAPIAuthRecord(_ context.Context, tokenID string) (
 	}, nil
 }
 
-func (r *MemoryRepository) GetDeviceAuthRecord(context.Context, string) (auth.DeviceAuthRecord, error) {
-	return auth.DeviceAuthRecord{}, ErrNotFound
+func (r *MemoryRepository) GetDeviceAuthRecord(_ context.Context, deviceID string) (auth.DeviceAuthRecord, error) {
+	return r.MemoryDeviceAuthRecord(deviceID)
 }
 
 func (r *MemoryRepository) TouchAPIToken(_ context.Context, tokenID string, usedAt time.Time) error {
@@ -150,8 +150,8 @@ func (r *MemoryRepository) RevokeAPIToken(_ context.Context, userID string, toke
 	return true, nil
 }
 
-func (r *MemoryRepository) TouchDevice(context.Context, string, time.Time) error {
-	return nil
+func (r *MemoryRepository) TouchDevice(_ context.Context, deviceID string, usedAt time.Time) error {
+	return r.TouchMemoryDevice(deviceID, usedAt)
 }
 
 func (r *MemoryRepository) SearchBookmarks(_ context.Context, userID string, query domain.BookmarkSearchQuery) (domain.BookmarkSearchResponse, error) {

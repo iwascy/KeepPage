@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/keeppage/keeppage/apps/api-go/internal/access"
 	"github.com/keeppage/keeppage/apps/api-go/internal/auth"
 	"github.com/keeppage/keeppage/apps/api-go/internal/config"
@@ -37,6 +38,38 @@ func TestHealth(t *testing.T) {
 	}
 	if payload["status"] != "ok" || payload["storage"] != "memory" {
 		t.Fatalf("unexpected health payload: %#v", payload)
+	}
+}
+
+func TestRefactoredRoutesAreRegistered(t *testing.T) {
+	server := newTestServer()
+	routes := map[string]bool{}
+	router, ok := server.Router().(chi.Routes)
+	if !ok {
+		t.Fatal("server router does not expose chi routes")
+	}
+	if err := chi.Walk(router, func(method string, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		routes[method+" "+route] = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{
+		"GET /private-mode/status", "POST /private-mode/setup", "POST /private-mode/unlock", "POST /private-mode/password", "POST /private-mode/lock",
+		"POST /extension/connect", "POST /extension/connect/redeem", "GET /extension/devices", "DELETE /extension/devices/{deviceID}",
+		"POST /captures/init", "POST /captures/complete", "POST /private/captures/init", "POST /private/captures/complete",
+		"POST /bookmarks/icons/refresh", "POST /bookmarks/icons/refresh-all",
+		"GET /backups/bookmarks/export", "POST /backups/bookmarks/import/preview", "POST /backups/bookmarks/import",
+		"GET /public/objects", "GET /objects", "GET /objects/{encodedObjectKey}", "PUT /uploads/{encodedObjectKey}", "PUT /uploads/{encodedObjectKey}/chunks/{uploadID}",
+		"GET /bookmarks/sidebar-stats", "GET /bookmarks/status", "GET /bookmarks/{bookmarkID}", "DELETE /bookmarks/{bookmarkID}", "PATCH /bookmarks/{bookmarkID}/metadata",
+		"GET /private/bookmarks", "GET /private/bookmarks/{bookmarkID}",
+		"POST /imports/preview", "POST /imports", "GET /imports", "GET /imports/{taskID}",
+		"GET /shares", "POST /shares", "GET /shares/{shareID}", "PATCH /shares/{shareID}", "POST /shares/{shareID}/revoke", "GET /public/shares/{token}",
+	}
+	for _, route := range expected {
+		if !routes[route] {
+			t.Errorf("missing route %s", route)
+		}
 	}
 }
 
@@ -232,6 +265,7 @@ func newTestServer() *Server {
 		auth.NewService(cfg.AuthTokenSecret, 30*24*time.Hour, repo),
 		service.NewBookmarkService(repo, objectStorage),
 		access.NewTokenService(repo),
+		objectStorage,
 	)
 }
 

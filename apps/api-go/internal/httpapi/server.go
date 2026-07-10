@@ -19,17 +19,21 @@ import (
 	localmiddleware "github.com/keeppage/keeppage/apps/api-go/internal/middleware"
 	"github.com/keeppage/keeppage/apps/api-go/internal/repository"
 	"github.com/keeppage/keeppage/apps/api-go/internal/service"
+	"github.com/keeppage/keeppage/apps/api-go/internal/storage"
 )
 
 type Server struct {
-	cfg       config.Config
-	logger    *slog.Logger
-	repo      repository.Repository
-	taxonomy  repository.TaxonomyRepository
-	auth      *auth.Service
-	bookmarks *service.BookmarkService
-	tokens    *access.TokenService
-	startedAt time.Time
+	cfg            config.Config
+	logger         *slog.Logger
+	repo           repository.Repository
+	taxonomy       repository.TaxonomyRepository
+	auth           *auth.Service
+	bookmarks      *service.BookmarkService
+	bookmarkExtras *service.BookmarkExtrasService
+	backups        *service.BackupService
+	objects        storage.ObjectStorage
+	tokens         *access.TokenService
+	startedAt      time.Time
 }
 
 func NewServer(
@@ -39,20 +43,25 @@ func NewServer(
 	authService *auth.Service,
 	bookmarkService *service.BookmarkService,
 	tokenService *access.TokenService,
+	objectStorage storage.ObjectStorage,
 ) *Server {
 	taxonomy, ok := repo.(repository.TaxonomyRepository)
 	if !ok {
 		panic("repository must implement taxonomy operations")
 	}
+	bookmarkExtras := service.NewBookmarkExtrasService(repo, objectStorage)
 	return &Server{
-		cfg:       cfg,
-		logger:    logger,
-		repo:      repo,
-		taxonomy:  taxonomy,
-		auth:      authService,
-		bookmarks: bookmarkService,
-		tokens:    tokenService,
-		startedAt: time.Now(),
+		cfg:            cfg,
+		logger:         logger,
+		repo:           repo,
+		taxonomy:       taxonomy,
+		auth:           authService,
+		bookmarks:      bookmarkService,
+		bookmarkExtras: bookmarkExtras,
+		backups:        service.NewBackupService(repo, bookmarkService, bookmarkExtras, objectStorage),
+		objects:        objectStorage,
+		tokens:         tokenService,
+		startedAt:      time.Now(),
 	}
 }
 
@@ -82,8 +91,31 @@ func (s *Server) Router() http.Handler {
 	router.Patch("/tags/{tagID}", s.handleUpdateTag)
 	router.Delete("/tags/{tagID}", s.handleDeleteTag)
 	router.Get("/bookmarks", s.handleSearchBookmarks)
+	router.Get("/bookmarks/sidebar-stats", s.handleBookmarkSidebarStats)
+	router.Get("/bookmarks/status", s.handleBookmarkStatus)
+	router.Get("/bookmarks/{bookmarkID}", s.handleBookmarkDetail)
+	router.Delete("/bookmarks/{bookmarkID}", s.handleDeleteBookmark)
+	router.Patch("/bookmarks/{bookmarkID}/metadata", s.handleUpdateBookmarkMetadata)
+	router.Post("/bookmarks/icons/refresh", s.handleRefreshBookmarkIcon)
+	router.Post("/bookmarks/icons/refresh-all", s.handleRefreshAllBookmarkIcons)
+	router.Get("/backups/bookmarks/export", s.handleBackupExport)
+	router.Post("/backups/bookmarks/import/preview", s.handleBackupPreview)
+	router.Post("/backups/bookmarks/import", s.handleBackupImport)
+	router.Post("/imports/preview", s.handlePreviewImport)
+	router.Post("/imports", s.handleCreateImportTask)
+	router.Get("/imports", s.handleListImportTasks)
+	router.Get("/imports/{taskID}", s.handleGetImportTaskDetail)
+	router.Get("/shares", s.handleListShares)
+	router.Post("/shares", s.handleCreateShare)
+	router.Get("/shares/{shareID}", s.handleGetShareDetail)
+	router.Patch("/shares/{shareID}", s.handleUpdateShare)
+	router.Post("/shares/{shareID}/revoke", s.handleRevokeShare)
+	router.Get("/public/shares/{token}", s.handleGetPublicShare)
 	router.Post("/bookmarks", s.handleCreateBookmark)
 	router.Post("/ingest/bookmarks", s.handleIngestBookmark)
+	s.registerPrivateExtensionRoutes(router)
+	s.registerCaptureUploadRoutes(router)
+	s.registerPrivateBookmarkRoutes(router)
 	return router
 }
 

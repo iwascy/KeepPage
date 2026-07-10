@@ -124,6 +124,19 @@ func (s *Service) Login(ctx context.Context, input domain.AuthLoginRequest) (dom
 	return s.createSession(record.User), nil
 }
 
+// VerifyLoginPassword checks the account password without issuing a session.
+func (s *Service) VerifyLoginPassword(ctx context.Context, userID string, password string) (bool, error) {
+	user, err := s.users.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	record, err := s.users.FindUserByEmail(ctx, user.Email)
+	if err != nil || record == nil {
+		return false, err
+	}
+	return verifyPassword(password, record.PasswordHash), nil
+}
+
 func (s *Service) createSession(user domain.AuthUser) domain.AuthSession {
 	now := time.Now()
 	payload := TokenPayload{

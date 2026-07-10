@@ -44,7 +44,7 @@ func main() {
 	authService := auth.NewService(cfg.AuthTokenSecret, cfg.AuthTokenTTL(), repo)
 	tokenService := access.NewTokenService(repo)
 	bookmarkService := service.NewBookmarkService(repo, objectStorage)
-	apiServer := httpapi.NewServer(cfg, logger, repo, authService, bookmarkService, tokenService)
+	apiServer := httpapi.NewServer(cfg, logger, repo, authService, bookmarkService, tokenService, objectStorage)
 	backupScheduler := jobs.NewR2BookmarkBackupScheduler(cfg, logger)
 	backupScheduler.Start()
 	defer backupScheduler.Stop()
