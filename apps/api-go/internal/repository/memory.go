@@ -15,20 +15,36 @@ import (
 type MemoryRepository struct {
 	mu        sync.RWMutex
 	bookmarks map[string][]domain.Bookmark
-	users     map[string]domain.AuthUser
+	users     map[string]auth.UserAuthRecord
+	emailIDs  map[string]string
+	apiTokens map[string]memoryAPIToken
+	folders   map[string]map[string]domain.Folder
+	tags      map[string]map[string]domain.Tag
+}
+
+type memoryAPIToken struct {
+	userID    string
+	tokenHash string
+	item      domain.APIToken
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	now := time.Now().UTC()
 	return &MemoryRepository{
 		bookmarks: map[string][]domain.Bookmark{},
-		users: map[string]domain.AuthUser{
+		users: map[string]auth.UserAuthRecord{
 			"dev-user": {
-				ID:        "dev-user",
-				Email:     "dev@keeppage.local",
-				CreatedAt: now,
+				User: domain.AuthUser{
+					ID:        "dev-user",
+					Email:     "dev@keeppage.local",
+					CreatedAt: now,
+				},
 			},
 		},
+		emailIDs:  map[string]string{"dev@keeppage.local": "dev-user"},
+		apiTokens: map[string]memoryAPIToken{},
+		folders:   map[string]map[string]domain.Folder{},
+		tags:      map[string]map[string]domain.Tag{},
 	}
 }
 
@@ -45,19 +61,93 @@ func (r *MemoryRepository) GetUserByID(_ context.Context, userID string) (domain
 	if !ok {
 		return domain.AuthUser{}, ErrNotFound
 	}
+	return user.User, nil
+}
+
+func (r *MemoryRepository) FindUserByEmail(_ context.Context, email string) (*auth.UserAuthRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	id, ok := r.emailIDs[email]
+	if !ok {
+		return nil, nil
+	}
+	record := r.users[id]
+	return &record, nil
+}
+
+func (r *MemoryRepository) CreateUser(_ context.Context, email string, name *string, passwordHash string) (domain.AuthUser, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.emailIDs[email]; exists {
+		return domain.AuthUser{}, auth.ErrEmailExists
+	}
+	user := domain.AuthUser{ID: auth.NewUUID(), Email: email, Name: name, CreatedAt: time.Now().UTC()}
+	r.users[user.ID] = auth.UserAuthRecord{User: user, PasswordHash: passwordHash}
+	r.emailIDs[email] = user.ID
 	return user, nil
 }
 
-func (r *MemoryRepository) GetAPIAuthRecord(context.Context, string) (auth.APIAuthRecord, error) {
-	return auth.APIAuthRecord{}, ErrNotFound
+func (r *MemoryRepository) GetAPIAuthRecord(_ context.Context, tokenID string) (auth.APIAuthRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	token, ok := r.apiTokens[tokenID]
+	if !ok {
+		return auth.APIAuthRecord{}, ErrNotFound
+	}
+	return auth.APIAuthRecord{
+		ID: token.item.ID, UserID: token.userID, TokenHash: token.tokenHash, Scopes: append([]string(nil), token.item.Scopes...), ExpiresAt: token.item.ExpiresAt, RevokedAt: token.item.RevokedAt,
+	}, nil
 }
 
 func (r *MemoryRepository) GetDeviceAuthRecord(context.Context, string) (auth.DeviceAuthRecord, error) {
 	return auth.DeviceAuthRecord{}, ErrNotFound
 }
 
-func (r *MemoryRepository) TouchAPIToken(context.Context, string, time.Time) error {
+func (r *MemoryRepository) TouchAPIToken(_ context.Context, tokenID string, usedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	token, ok := r.apiTokens[tokenID]
+	if ok {
+		token.item.LastUsedAt = &usedAt
+		r.apiTokens[tokenID] = token
+	}
 	return nil
+}
+
+func (r *MemoryRepository) CreateAPIToken(_ context.Context, userID string, id string, name string, tokenPreview string, tokenHash string, scopes []string, expiresAt *time.Time) (domain.APIToken, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now().UTC()
+	item := domain.APIToken{ID: id, Name: name, TokenPreview: tokenPreview, Scopes: append([]string(nil), scopes...), ExpiresAt: expiresAt, CreatedAt: now}
+	r.apiTokens[id] = memoryAPIToken{userID: userID, tokenHash: tokenHash, item: item}
+	return item, nil
+}
+
+func (r *MemoryRepository) ListAPITokens(_ context.Context, userID string) ([]domain.APIToken, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	items := []domain.APIToken{}
+	for _, token := range r.apiTokens {
+		if token.userID == userID {
+			items = append(items, token.item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (r *MemoryRepository) RevokeAPIToken(_ context.Context, userID string, tokenID string, revokedAt time.Time) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	token, ok := r.apiTokens[tokenID]
+	if !ok || token.userID != userID {
+		return false, nil
+	}
+	if token.item.RevokedAt == nil {
+		token.item.RevokedAt = &revokedAt
+		r.apiTokens[tokenID] = token
+	}
+	return true, nil
 }
 
 func (r *MemoryRepository) TouchDevice(context.Context, string, time.Time) error {
@@ -74,6 +164,17 @@ func (r *MemoryRepository) SearchBookmarks(_ context.Context, userID string, que
 			continue
 		}
 		if query.View == "favorites" && !item.IsFavorite {
+			continue
+		}
+		if query.View == "recent" && item.UpdatedAt.Before(time.Now().Add(-7*24*time.Hour)) {
+			continue
+		}
+		if query.FolderID != "" {
+			if item.Folder == nil || !r.memoryFolderSubtreeContains(userID, query.FolderID, item.Folder.ID) {
+				continue
+			}
+		}
+		if query.TagID != "" && !bookmarkHasTag(item, query.TagID) {
 			continue
 		}
 		if query.Q != "" && !bookmarkMatches(item, query.Q) {
@@ -121,6 +222,10 @@ func (r *MemoryRepository) IngestBookmark(_ context.Context, userID string, inpu
 		if input.Note != nil {
 			item.Note = *input.Note
 		}
+		if input.FolderPath != "" {
+			item.Folder = r.ensureMemoryFolderPath(userID, input.FolderPath)
+		}
+		item.Tags = mergeTags(item.Tags, r.ensureMemoryTags(userID, input.Tags))
 		item.UpdatedAt = now
 		items[i] = item
 		r.bookmarks[userID] = items
@@ -134,10 +239,13 @@ func (r *MemoryRepository) IngestBookmark(_ context.Context, userID string, inpu
 		Domain:       parsed.Hostname(),
 		Note:         derefString(input.Note),
 		IsFavorite:   false,
-		Tags:         []domain.Tag{},
+		Tags:         r.ensureMemoryTags(userID, input.Tags),
 		VersionCount: 0,
 		CreatedAt:    now,
 		UpdatedAt:    now,
+	}
+	if input.FolderPath != "" {
+		bookmark.Folder = r.ensureMemoryFolderPath(userID, input.FolderPath)
 	}
 	r.bookmarks[userID] = append(items, bookmark)
 	return domain.IngestBookmarkResult{Bookmark: bookmark, Status: "created", Deduplicated: false}, nil

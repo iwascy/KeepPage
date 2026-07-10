@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/keeppage/keeppage/apps/api-go/internal/access"
 	"github.com/keeppage/keeppage/apps/api-go/internal/auth"
 	"github.com/keeppage/keeppage/apps/api-go/internal/config"
 	"github.com/keeppage/keeppage/apps/api-go/internal/httpapi"
@@ -35,10 +36,15 @@ func main() {
 	}
 	defer repo.Close()
 
-	objectStorage := storage.New(cfg)
-	authService := auth.NewService(cfg.AuthTokenSecret, repo)
+	objectStorage, err := storage.New(cfg)
+	if err != nil {
+		logger.Error("failed to initialize object storage", "err", err)
+		os.Exit(1)
+	}
+	authService := auth.NewService(cfg.AuthTokenSecret, cfg.AuthTokenTTL(), repo)
+	tokenService := access.NewTokenService(repo)
 	bookmarkService := service.NewBookmarkService(repo, objectStorage)
-	apiServer := httpapi.NewServer(cfg, logger, repo, authService, bookmarkService)
+	apiServer := httpapi.NewServer(cfg, logger, repo, authService, bookmarkService, tokenService)
 	backupScheduler := jobs.NewR2BookmarkBackupScheduler(cfg, logger)
 	backupScheduler.Start()
 	defer backupScheduler.Stop()

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/keeppage/keeppage/apps/api-go/internal/auth"
 	"github.com/keeppage/keeppage/apps/api-go/internal/domain"
@@ -58,6 +59,40 @@ func (r *PostgresRepository) GetUserByID(ctx context.Context, userID string) (do
 	return user, err
 }
 
+func (r *PostgresRepository) FindUserByEmail(ctx context.Context, email string) (*auth.UserAuthRecord, error) {
+	var record auth.UserAuthRecord
+	err := r.pool.QueryRow(ctx, `
+		select id::text, email, name, created_at, password_hash
+		from users
+		where email = $1
+		limit 1
+	`, email).Scan(&record.User.ID, &record.User.Email, &record.User.Name, &record.User.CreatedAt, &record.PasswordHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func (r *PostgresRepository) CreateUser(ctx context.Context, email string, name *string, passwordHash string) (domain.AuthUser, error) {
+	var user domain.AuthUser
+	err := r.pool.QueryRow(ctx, `
+		insert into users (email, name, password_hash)
+		values ($1, $2, $3)
+		returning id::text, email, name, created_at
+	`, email, name, passwordHash).Scan(&user.ID, &user.Email, &user.Name, &user.CreatedAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return domain.AuthUser{}, auth.ErrEmailExists
+		}
+		return domain.AuthUser{}, err
+	}
+	return user, nil
+}
+
 func (r *PostgresRepository) GetAPIAuthRecord(ctx context.Context, tokenID string) (auth.APIAuthRecord, error) {
 	var record auth.APIAuthRecord
 	var scopesJSON []byte
@@ -96,6 +131,55 @@ func (r *PostgresRepository) GetDeviceAuthRecord(ctx context.Context, deviceID s
 func (r *PostgresRepository) TouchAPIToken(ctx context.Context, tokenID string, usedAt time.Time) error {
 	_, err := r.pool.Exec(ctx, `update api_tokens set last_used_at = $2 where id = $1`, tokenID, usedAt)
 	return err
+}
+
+func (r *PostgresRepository) CreateAPIToken(ctx context.Context, userID string, id string, name string, tokenPreview string, tokenHash string, scopes []string, expiresAt *time.Time) (domain.APIToken, error) {
+	scopesJSON, err := json.Marshal(scopes)
+	if err != nil {
+		return domain.APIToken{}, err
+	}
+	var item domain.APIToken
+	err = r.pool.QueryRow(ctx, `
+		insert into api_tokens (id, user_id, name, token_preview, token_hash, scopes_json, expires_at)
+		values ($1, $2, $3, $4, $5, $6::jsonb, $7)
+		returning id::text, name, token_preview, scopes_json, last_used_at, expires_at, revoked_at, created_at
+	`, id, userID, name, tokenPreview, tokenHash, scopesJSON, expiresAt).Scan(&item.ID, &item.Name, &item.TokenPreview, &scopesJSON, &item.LastUsedAt, &item.ExpiresAt, &item.RevokedAt, &item.CreatedAt)
+	if err != nil {
+		return domain.APIToken{}, err
+	}
+	if err := json.Unmarshal(scopesJSON, &item.Scopes); err != nil {
+		return domain.APIToken{}, err
+	}
+	return item, nil
+}
+
+func (r *PostgresRepository) ListAPITokens(ctx context.Context, userID string) ([]domain.APIToken, error) {
+	rows, err := r.pool.Query(ctx, `
+		select id::text, name, token_preview, scopes_json, last_used_at, expires_at, revoked_at, created_at
+		from api_tokens where user_id = $1 order by created_at desc
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.APIToken{}
+	for rows.Next() {
+		var item domain.APIToken
+		var scopesJSON []byte
+		if err := rows.Scan(&item.ID, &item.Name, &item.TokenPreview, &scopesJSON, &item.LastUsedAt, &item.ExpiresAt, &item.RevokedAt, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(scopesJSON, &item.Scopes); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *PostgresRepository) RevokeAPIToken(ctx context.Context, userID string, tokenID string, revokedAt time.Time) (bool, error) {
+	command, err := r.pool.Exec(ctx, `update api_tokens set revoked_at = coalesce(revoked_at, $3) where id = $1 and user_id = $2`, tokenID, userID, revokedAt)
+	return command.RowsAffected() > 0, err
 }
 
 func (r *PostgresRepository) TouchDevice(ctx context.Context, deviceID string, usedAt time.Time) error {

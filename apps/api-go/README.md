@@ -17,8 +17,12 @@ Default address:
 For Postgres-backed development:
 
 ```sh
+STORAGE_DRIVER=postgres DATABASE_URL=postgres://... npm run db:init -w @keeppage/api-go
 STORAGE_DRIVER=postgres DATABASE_URL=postgres://... npm run dev -w @keeppage/api-go
 ```
+
+The container entrypoint runs the same migration command before starting a
+Postgres-backed service.
 
 The current vertical slice includes:
 

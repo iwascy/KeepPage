@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/keeppage/keeppage/apps/api-go/internal/access"
 	"github.com/keeppage/keeppage/apps/api-go/internal/auth"
 	"github.com/keeppage/keeppage/apps/api-go/internal/config"
 	"github.com/keeppage/keeppage/apps/api-go/internal/domain"
@@ -24,8 +25,10 @@ type Server struct {
 	cfg       config.Config
 	logger    *slog.Logger
 	repo      repository.Repository
+	taxonomy  repository.TaxonomyRepository
 	auth      *auth.Service
 	bookmarks *service.BookmarkService
+	tokens    *access.TokenService
 	startedAt time.Time
 }
 
@@ -35,13 +38,20 @@ func NewServer(
 	repo repository.Repository,
 	authService *auth.Service,
 	bookmarkService *service.BookmarkService,
+	tokenService *access.TokenService,
 ) *Server {
+	taxonomy, ok := repo.(repository.TaxonomyRepository)
+	if !ok {
+		panic("repository must implement taxonomy operations")
+	}
 	return &Server{
 		cfg:       cfg,
 		logger:    logger,
 		repo:      repo,
+		taxonomy:  taxonomy,
 		auth:      authService,
 		bookmarks: bookmarkService,
+		tokens:    tokenService,
 		startedAt: time.Now(),
 	}
 }
@@ -56,10 +66,289 @@ func (s *Server) Router() http.Handler {
 
 	router.Get("/", s.handleRoot)
 	router.Get("/health", s.handleHealth)
+	router.Post("/auth/register", s.handleRegister)
+	router.Post("/auth/login", s.handleLogin)
+	router.Get("/auth/me", s.handleCurrentUser)
+	router.Get("/api-tokens", s.handleListAPITokens)
+	router.Post("/api-tokens", s.handleCreateAPIToken)
+	router.Delete("/api-tokens/{tokenID}", s.handleRevokeAPIToken)
+	router.Get("/workspace/bootstrap", s.handleWorkspaceBootstrap)
+	router.Get("/folders", s.handleListFolders)
+	router.Post("/folders", s.handleCreateFolder)
+	router.Patch("/folders/{folderID}", s.handleUpdateFolder)
+	router.Delete("/folders/{folderID}", s.handleDeleteFolder)
+	router.Get("/tags", s.handleListTags)
+	router.Post("/tags", s.handleCreateTag)
+	router.Patch("/tags/{tagID}", s.handleUpdateTag)
+	router.Delete("/tags/{tagID}", s.handleDeleteTag)
 	router.Get("/bookmarks", s.handleSearchBookmarks)
 	router.Post("/bookmarks", s.handleCreateBookmark)
 	router.Post("/ingest/bookmarks", s.handleIngestBookmark)
 	return router
+}
+
+func (s *Server) handleWorkspaceBootstrap(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	folders, err := s.taxonomy.ListFolders(r.Context(), user.ID)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	tags, err := s.taxonomy.ListTags(r.Context(), user.ID)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	stats, err := s.taxonomy.GetBookmarkSidebarStats(r.Context(), user.ID)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, domain.WorkspaceBootstrapResponse{Folders: folders, Tags: tags, FolderCounts: stats.FolderCounts})
+}
+
+func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{AllowExtensionDevice: true})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	items, err := s.taxonomy.ListFolders(r.Context(), user.ID)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, domain.FolderListResponse{Items: items})
+}
+
+func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	var input domain.FolderCreateRequest
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	folder, err := s.taxonomy.CreateFolder(r.Context(), user.ID, input)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, folder)
+}
+
+func (s *Server) handleUpdateFolder(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	var input domain.FolderUpdateRequest
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	folder, err := s.taxonomy.UpdateFolder(r.Context(), user.ID, chi.URLParam(r, "folderID"), input)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	if folder == nil {
+		writeError(s.logger, w, httperror.NotFound("FolderNotFound", "Folder not found."))
+		return
+	}
+	writeJSON(w, http.StatusOK, folder)
+}
+
+func (s *Server) handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	deleted, err := s.taxonomy.DeleteFolder(r.Context(), user.ID, chi.URLParam(r, "folderID"))
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	if !deleted {
+		writeError(s.logger, w, httperror.NotFound("FolderNotFound", "Folder not found."))
+		return
+	}
+	writeNoContent(w)
+}
+
+func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{AllowExtensionDevice: true})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	items, err := s.taxonomy.ListTags(r.Context(), user.ID)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, domain.TagListResponse{Items: items})
+}
+
+func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	var input domain.TagCreateRequest
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	tag, err := s.taxonomy.CreateTag(r.Context(), user.ID, input)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, tag)
+}
+
+func (s *Server) handleUpdateTag(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	var input domain.TagUpdateRequest
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	tag, err := s.taxonomy.UpdateTag(r.Context(), user.ID, chi.URLParam(r, "tagID"), input)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	if tag == nil {
+		writeError(s.logger, w, httperror.NotFound("TagNotFound", "Tag not found."))
+		return
+	}
+	writeJSON(w, http.StatusOK, tag)
+}
+
+func (s *Server) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	deleted, err := s.taxonomy.DeleteTag(r.Context(), user.ID, chi.URLParam(r, "tagID"))
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	if !deleted {
+		writeError(s.logger, w, httperror.NotFound("TagNotFound", "Tag not found."))
+		return
+	}
+	writeNoContent(w)
+}
+
+func (s *Server) handleListAPITokens(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	payload, err := s.tokens.List(r.Context(), user.ID)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, payload)
+}
+
+func (s *Server) handleCreateAPIToken(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	var input domain.APITokenCreateRequest
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	payload, err := s.tokens.Create(r.Context(), user.ID, input)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, payload)
+}
+
+func (s *Server) handleRevokeAPIToken(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	revoked, err := s.tokens.Revoke(r.Context(), user.ID, chi.URLParam(r, "tokenID"))
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	if !revoked {
+		writeError(s.logger, w, httperror.NotFound("ApiTokenNotFound", "API token not found."))
+		return
+	}
+	writeNoContent(w)
+}
+
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	var input domain.AuthRegisterRequest
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	session, err := s.auth.Register(r.Context(), input)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, session)
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var input domain.AuthLoginRequest
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	session, err := s.auth.Login(r.Context(), input)
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
+}
+
+func (s *Server) handleCurrentUser(w http.ResponseWriter, r *http.Request) {
+	user, err := s.requireUser(r, auth.RequireOptions{
+		AllowAPIToken:        true,
+		AllowExtensionDevice: true,
+		RequiredAPIScope:     "bookmark:create",
+	})
+	if err != nil {
+		writeError(s.logger, w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, _ *http.Request) {

@@ -26,6 +26,10 @@ func BadRequest(code string, message string, details any) *Error {
 	return New(http.StatusBadRequest, code, message, details)
 }
 
+func Conflict(code string, message string) *Error {
+	return New(http.StatusConflict, code, message, nil)
+}
+
 func Unauthorized(code string, message string) *Error {
 	return New(http.StatusUnauthorized, code, message, nil)
 }

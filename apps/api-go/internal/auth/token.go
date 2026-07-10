@@ -3,21 +3,28 @@ package auth
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/keeppage/keeppage/apps/api-go/internal/domain"
 	"github.com/keeppage/keeppage/apps/api-go/internal/httperror"
+	"golang.org/x/crypto/scrypt"
 )
 
 type contextKey string
 
 const UserContextKey contextKey = "keeppage.user"
+
+var ErrEmailExists = errors.New("email already exists")
 
 type UserLookup interface {
 	GetUserByID(ctx context.Context, userID string) (domain.AuthUser, error)
@@ -25,6 +32,17 @@ type UserLookup interface {
 	GetDeviceAuthRecord(ctx context.Context, deviceID string) (DeviceAuthRecord, error)
 	TouchAPIToken(ctx context.Context, tokenID string, usedAt time.Time) error
 	TouchDevice(ctx context.Context, deviceID string, usedAt time.Time) error
+}
+
+type UserAuthRecord struct {
+	User         domain.AuthUser
+	PasswordHash string
+}
+
+type CredentialsStore interface {
+	UserLookup
+	FindUserByEmail(ctx context.Context, email string) (*UserAuthRecord, error)
+	CreateUser(ctx context.Context, email string, name *string, passwordHash string) (domain.AuthUser, error)
 }
 
 type APIAuthRecord struct {
@@ -46,7 +64,8 @@ type DeviceAuthRecord struct {
 
 type Service struct {
 	secret []byte
-	users  UserLookup
+	ttl    time.Duration
+	users  CredentialsStore
 }
 
 type TokenPayload struct {
@@ -56,11 +75,66 @@ type TokenPayload struct {
 	Exp   int64  `json:"exp"`
 }
 
-func NewService(secret string, users UserLookup) *Service {
+func NewService(secret string, ttl time.Duration, users CredentialsStore) *Service {
 	return &Service{
 		secret: []byte(secret),
+		ttl:    ttl,
 		users:  users,
 	}
+}
+
+func (s *Service) Register(ctx context.Context, input domain.AuthRegisterRequest) (domain.AuthSession, error) {
+	email, name, err := validateRegistration(input)
+	if err != nil {
+		return domain.AuthSession{}, err
+	}
+	existing, err := s.users.FindUserByEmail(ctx, email)
+	if err != nil {
+		return domain.AuthSession{}, err
+	}
+	if existing != nil {
+		return domain.AuthSession{}, httperror.Conflict("EmailAlreadyExists", "该邮箱已注册。")
+	}
+	passwordHash, err := hashPassword(input.Password)
+	if err != nil {
+		return domain.AuthSession{}, err
+	}
+	user, err := s.users.CreateUser(ctx, email, name, passwordHash)
+	if err != nil {
+		if errors.Is(err, ErrEmailExists) {
+			return domain.AuthSession{}, httperror.Conflict("EmailAlreadyExists", "该邮箱已注册。")
+		}
+		return domain.AuthSession{}, err
+	}
+	return s.createSession(user), nil
+}
+
+func (s *Service) Login(ctx context.Context, input domain.AuthLoginRequest) (domain.AuthSession, error) {
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if email == "" || len(input.Password) == 0 || len(input.Password) > 128 {
+		return domain.AuthSession{}, httperror.Unauthorized("InvalidCredentials", "邮箱或密码错误。")
+	}
+	record, err := s.users.FindUserByEmail(ctx, email)
+	if err != nil {
+		return domain.AuthSession{}, err
+	}
+	if record == nil || !verifyPassword(input.Password, record.PasswordHash) {
+		return domain.AuthSession{}, httperror.Unauthorized("InvalidCredentials", "邮箱或密码错误。")
+	}
+	return s.createSession(record.User), nil
+}
+
+func (s *Service) createSession(user domain.AuthUser) domain.AuthSession {
+	now := time.Now()
+	payload := TokenPayload{
+		Sub:   user.ID,
+		Email: user.Email,
+		Iat:   now.Unix(),
+		Exp:   now.Add(s.ttl).Unix(),
+	}
+	raw, _ := json.Marshal(payload)
+	encodedPayload := base64.RawURLEncoding.EncodeToString(raw)
+	return domain.AuthSession{Token: encodedPayload + "." + s.sign(encodedPayload), User: user}
 }
 
 func UserFromContext(ctx context.Context) (domain.AuthUser, bool) {
@@ -204,4 +278,65 @@ func hasScope(scopes []string, required string) bool {
 		}
 	}
 	return false
+}
+
+func validateRegistration(input domain.AuthRegisterRequest) (string, *string, error) {
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		return "", nil, httperror.BadRequest("ValidationError", "email must be a valid email address.", nil)
+	}
+	if len(input.Password) < 8 || len(input.Password) > 128 {
+		return "", nil, httperror.BadRequest("ValidationError", "password must be between 8 and 128 characters.", nil)
+	}
+	name := strings.TrimSpace(input.Name)
+	if len(name) > 120 {
+		return "", nil, httperror.BadRequest("ValidationError", "name must be at most 120 characters.", nil)
+	}
+	if name == "" {
+		return email, nil, nil
+	}
+	return email, &name, nil
+}
+
+func hashPassword(password string) (string, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("generate password salt: %w", err)
+	}
+	derived, err := scrypt.Key([]byte(password), salt, 16384, 8, 1, 64)
+	if err != nil {
+		return "", fmt.Errorf("derive password hash: %w", err)
+	}
+	return "scrypt$" + base64.RawURLEncoding.EncodeToString(salt) + "$" + base64.RawURLEncoding.EncodeToString(derived), nil
+}
+
+func verifyPassword(password string, stored string) bool {
+	parts := strings.Split(stored, "$")
+	if len(parts) != 3 || parts[0] != "scrypt" {
+		return false
+	}
+	salt, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	expected, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+	actual, err := scrypt.Key([]byte(password), salt, 16384, 8, 1, len(expected))
+	if err != nil || len(actual) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare(actual, expected) == 1
+}
+
+func NewUUID() string {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		panic("failed to generate UUID: " + err.Error())
+	}
+	bytes[6] = (bytes[6] & 0x0f) | 0x40
+	bytes[8] = (bytes[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", bytes[0:4], bytes[4:6], bytes[6:8], bytes[8:10], bytes[10:16])
 }

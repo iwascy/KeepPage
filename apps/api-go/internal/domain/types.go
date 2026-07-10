@@ -1,12 +1,57 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type AuthUser struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	Name      *string   `json:"name,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+type AuthRegisterRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Name     string `json:"name,omitempty"`
+}
+
+type AuthLoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type AuthSession struct {
+	Token string   `json:"token"`
+	User  AuthUser `json:"user"`
+}
+
+type APIToken struct {
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	TokenPreview string     `json:"tokenPreview"`
+	Scopes       []string   `json:"scopes"`
+	LastUsedAt   *time.Time `json:"lastUsedAt,omitempty"`
+	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
+	RevokedAt    *time.Time `json:"revokedAt,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+}
+
+type APITokenCreateRequest struct {
+	Name      string     `json:"name"`
+	Scopes    []string   `json:"scopes"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+}
+
+type APITokenListResponse struct {
+	Items []APIToken `json:"items"`
+}
+
+type APITokenCreateResponse struct {
+	Token string   `json:"token"`
+	Item  APIToken `json:"item"`
 }
 
 type Tag struct {
@@ -19,7 +64,69 @@ type Folder struct {
 	ID       string  `json:"id"`
 	Name     string  `json:"name"`
 	Path     string  `json:"path"`
-	ParentID *string `json:"parentId,omitempty"`
+	ParentID *string `json:"parentId"`
+}
+
+type FolderListResponse struct {
+	Items []Folder `json:"items"`
+}
+
+type FolderCreateRequest struct {
+	Name     string  `json:"name"`
+	ParentID *string `json:"parentId"`
+}
+
+type OptionalString struct {
+	Present bool
+	Value   *string
+}
+
+func (o *OptionalString) UnmarshalJSON(data []byte) error {
+	o.Present = true
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	o.Value = &value
+	return nil
+}
+
+type FolderUpdateRequest struct {
+	Name     OptionalString `json:"name"`
+	ParentID OptionalString `json:"parentId"`
+}
+
+type TagListResponse struct {
+	Items []Tag `json:"items"`
+}
+
+type TagCreateRequest struct {
+	Name  string  `json:"name"`
+	Color *string `json:"color"`
+}
+
+type TagUpdateRequest struct {
+	Name  OptionalString `json:"name"`
+	Color OptionalString `json:"color"`
+}
+
+type FolderCount struct {
+	FolderID string `json:"folderId"`
+	Count    int    `json:"count"`
+}
+
+type BookmarkSidebarStatsResponse struct {
+	FolderCounts []FolderCount `json:"folderCounts"`
+}
+
+type WorkspaceBootstrapResponse struct {
+	Folders      []Folder      `json:"folders"`
+	Tags         []Tag         `json:"tags"`
+	FolderCounts []FolderCount `json:"folderCounts"`
 }
 
 type QualityReason struct {

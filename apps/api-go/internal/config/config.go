@@ -120,6 +120,11 @@ func (c Config) Validate() error {
 	if c.ObjectStorageDriver != "localfs" && c.ObjectStorageDriver != "r2" {
 		return fmt.Errorf("OBJECT_STORAGE_DRIVER must be localfs or r2")
 	}
+	if c.ObjectStorageDriver == "r2" {
+		if strings.TrimSpace(c.R2Endpoint) == "" || strings.TrimSpace(c.R2Bucket) == "" || strings.TrimSpace(c.R2AccessKeyID) == "" || strings.TrimSpace(c.R2SecretAccessKey) == "" {
+			return fmt.Errorf("R2_ENDPOINT, R2_BUCKET, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY are required when OBJECT_STORAGE_DRIVER=r2")
+		}
+	}
 	if c.AuthTokenTTLDays <= 0 {
 		return fmt.Errorf("AUTH_TOKEN_TTL_DAYS must be positive")
 	}
