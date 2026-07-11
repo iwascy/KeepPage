@@ -45,7 +45,11 @@ func main() {
 	tokenService := access.NewTokenService(repo)
 	bookmarkService := service.NewBookmarkService(repo, objectStorage)
 	apiServer := httpapi.NewServer(cfg, logger, repo, authService, bookmarkService, tokenService, objectStorage)
-	backupScheduler := jobs.NewR2BookmarkBackupScheduler(cfg, logger)
+	backupScheduler, err := jobs.NewR2BookmarkBackupScheduler(cfg, repo, apiServer.BackupService(), logger)
+	if err != nil {
+		logger.Error("failed to initialize backup scheduler", "err", err)
+		os.Exit(1)
+	}
 	backupScheduler.Start()
 	defer backupScheduler.Stop()
 

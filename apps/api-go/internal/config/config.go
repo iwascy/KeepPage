@@ -60,7 +60,7 @@ func Read() (Config, error) {
 	cfg := Config{
 		NodeEnv:             Environment(readString("NODE_ENV", string(Development))),
 		APIHost:             readString("API_HOST", "127.0.0.1"),
-		APIPort:             readInt("API_PORT", 8788),
+		APIPort:             readInt("API_PORT", 8787),
 		APIPublicBaseURL:    readString("API_PUBLIC_BASE_URL", ""),
 		WebPublicBaseURL:    readString("WEB_PUBLIC_BASE_URL", ""),
 		StorageDriver:       readString("STORAGE_DRIVER", "memory"),
@@ -135,8 +135,9 @@ func (c Config) Validate() error {
 		return fmt.Errorf("AUTH_TOKEN_SECRET must be set to a non-default value when NODE_ENV=production")
 	}
 	if c.BackupR2Enabled {
-		// Scheduled R2 bookmark backups are not implemented in the Go vertical slice yet.
-		return fmt.Errorf("BACKUP_R2_ENABLED is not supported by the Go API yet; disable it or use the TypeScript API")
+		if strings.TrimSpace(c.R2Endpoint) == "" || strings.TrimSpace(c.R2Bucket) == "" || strings.TrimSpace(c.R2AccessKeyID) == "" || strings.TrimSpace(c.R2SecretAccessKey) == "" {
+			return fmt.Errorf("R2_ENDPOINT, R2_BUCKET, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY are required when BACKUP_R2_ENABLED=true")
+		}
 	}
 	if _, err := time.Parse("15:04", c.BackupR2Time); err != nil {
 		return fmt.Errorf("BACKUP_R2_TIME must be HH:mm: %w", err)

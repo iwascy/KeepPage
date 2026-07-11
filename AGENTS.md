@@ -1,10 +1,10 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-`KeepPage` uses npm workspaces. `apps/api` holds the Fastify backend, with routes in `src/routes` and storage in `src/repositories`; treat `apps/api/data/` as runtime data. `apps/web` is the React + Vite UI. `apps/extension` is the WXT Chrome MV3 extension, with browser entrypoints in `entrypoints/` and shared code in `src/lib/`. Shared schemas live in `packages/domain`; Drizzle schema and migrations live in `packages/db`. Docs are in `docs/`. Do not edit generated outputs such as `apps/web/dist`, `apps/extension/.output`, or `apps/extension/.wxt`.
+`KeepPage` uses npm workspaces. `apps/api-go` is the production Go backend; `apps/api` is the retained TypeScript/Fastify rollback backend. Treat `apps/api/data/` as legacy runtime data and configure Go object storage explicitly. `apps/web` is the React + Vite UI. `apps/extension` is the WXT Chrome MV3 extension, with browser entrypoints in `entrypoints/` and shared code in `src/lib/`. Shared schemas live in `packages/domain`; Drizzle schema and migrations live in `packages/db`. Docs are in `docs/`. Do not edit generated outputs such as `apps/web/dist`, `apps/extension/.output`, or `apps/extension/.wxt`.
 
 ## Build, Test, and Development Commands
-Run `npm install` once at the repo root. Use `npm run dev:api` to start the API on `127.0.0.1:8787`, `npm run dev:web` for the Vite UI, and `npm run dev:extension` for extension development. `npm run build` builds every workspace that defines a `build` script. `npm run typecheck` is the repo-wide verification baseline. For Postgres-backed development, set `STORAGE_DRIVER=postgres`, provide `DATABASE_URL`, then run `npm run db:init -w @keeppage/api`.
+Run `npm install` once at the repo root. Use `npm run dev:api` to start the Go API on `127.0.0.1:8787`, `npm run dev:api-ts` only for the rollback backend on `127.0.0.1:8788`, `npm run dev:web` for the Vite UI, and `npm run dev:extension` for extension development. `npm run build` builds every workspace that defines a `build` script. `npm run typecheck` is the repo-wide verification baseline. For Postgres-backed development, set `STORAGE_DRIVER=postgres`, provide `DATABASE_URL`, then run `npm run db:init -w @keeppage/api-go`.
 
 ## Extension Change Requirements
 Whenever you modify code or configuration under `apps/extension`, you must do all of the following before finishing:

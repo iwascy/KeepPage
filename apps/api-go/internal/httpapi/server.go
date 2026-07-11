@@ -65,6 +65,10 @@ func NewServer(
 	}
 }
 
+func (s *Server) BackupService() *service.BackupService {
+	return s.backups
+}
+
 func (s *Server) Router() http.Handler {
 	router := chi.NewRouter()
 	router.Use(middleware.RealIP)

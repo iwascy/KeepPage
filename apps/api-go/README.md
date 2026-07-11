@@ -1,6 +1,6 @@
 # KeepPage Go API
 
-Experimental Go backend for a contract-first, module-by-module migration from the existing TypeScript API.
+Production-default Go backend for KeepPage. The TypeScript API remains under `apps/api` as a rollback implementation.
 
 ## Development
 
@@ -11,7 +11,7 @@ npm run dev -w @keeppage/api-go
 Default address:
 
 ```text
-127.0.0.1:8788
+127.0.0.1:8787
 ```
 
 For Postgres-backed development:
@@ -30,9 +30,9 @@ filename is applied at most once.
 | Variable | Notes |
 | --- | --- |
 | `AUTH_TOKEN_SECRET` | Required non-default value when `NODE_ENV=production` |
-| `BACKUP_R2_ENABLED` | Not supported yet; config validation rejects `true` |
+| `BACKUP_R2_ENABLED` | Enables scheduled per-user R2 bookmark backups |
 | `UPLOAD_BODY_LIMIT_MB` | Caps raw, gzip-decompressed, and chunked uploads |
-| Share rate limits | Process-local only; multi-replica needs a shared limiter or sticky routing |
+| Share rate limits | Stored in Postgres fixed-window buckets; memory mode is process-local for development |
 
 ## Implemented surface
 
@@ -67,11 +67,6 @@ Imports, shares, backups:
 - Share CRUD + public share fetch
 - Bookmark package export/import/preview
   - Import remaps object keys into `captures/<importerUserId>/...`
-
-## Parity gaps vs TypeScript API
-
-- Scheduled R2 bookmark backups (`BACKUP_R2_ENABLED`) are not implemented
-- Share rate limiting is in-process only
 
 ## Tests
 

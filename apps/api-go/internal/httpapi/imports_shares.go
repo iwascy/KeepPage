@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,39 +14,6 @@ import (
 	"github.com/keeppage/keeppage/apps/api-go/internal/service"
 )
 
-// memoryRateLimiter is process-local. Multi-replica deployments should put a
-// shared limiter (Redis/Postgres) in front of share endpoints, or pin traffic
-// to a single api-go instance for these routes.
-type memoryRateLimiter struct {
-	mu   sync.Mutex
-	hits map[string][]time.Time
-}
-
-var shareCreateLimiter = memoryRateLimiter{hits: map[string][]time.Time{}}
-var publicShareLimiter = memoryRateLimiter{hits: map[string][]time.Time{}}
-
-func (l *memoryRateLimiter) hit(key string, max int, window time.Duration) (bool, int) {
-	now := time.Now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	values := l.hits[key]
-	cutoff := now.Add(-window)
-	start := 0
-	for start < len(values) && values[start].Before(cutoff) {
-		start++
-	}
-	values = values[start:]
-	if len(values) >= max {
-		wait := int(time.Until(values[0].Add(window)).Seconds())
-		if wait < 1 {
-			wait = 1
-		}
-		l.hits[key] = values
-		return false, wait
-	}
-	l.hits[key] = append(values, now)
-	return true, 0
-}
 func (s *Server) importShareService() (*service.ImportShareService, error) {
 	return service.NewImportShareService(s.repo, s.cfg.WebPublicBaseURL)
 }
@@ -154,7 +120,12 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 		writeError(s.logger, w, err)
 		return
 	}
-	if ok, retry := shareCreateLimiter.hit("share-create:"+user.ID, 10, time.Minute); !ok {
+	ok, retry, rateErr := s.repo.HitRateLimit(r.Context(), "share-create", user.ID, 10, time.Minute)
+	if rateErr != nil {
+		writeError(s.logger, w, rateErr)
+		return
+	}
+	if !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(retry))
 		writeError(s.logger, w, httperror.New(http.StatusTooManyRequests, "RateLimited", "创建分享过于频繁，请稍后再试。", nil))
 		return
@@ -239,7 +210,12 @@ func (s *Server) handleGetPublicShare(w http.ResponseWriter, r *http.Request) {
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		ip = host
 	}
-	if ok, retry := publicShareLimiter.hit("public-share:"+ip, 120, time.Minute); !ok {
+	ok, retry, rateErr := s.repo.HitRateLimit(r.Context(), "public-share", ip, 120, time.Minute)
+	if rateErr != nil {
+		writeError(s.logger, w, rateErr)
+		return
+	}
+	if !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(retry))
 		writeError(s.logger, w, httperror.New(http.StatusTooManyRequests, "RateLimited", "请求过于频繁，请稍后再试。", nil))
 		return

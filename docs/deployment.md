@@ -11,16 +11,16 @@
 
 这是当前版本最贴近现状的部署方案，原因如下：
 
-- API 目前只有 `localfs` 对象存储，没有 S3/R2/OSS 等远程对象存储实现
+- Go API 支持 `localfs` 和 R2 对象存储；生产默认使用 `apps/api-go`
 - API 当前没有显式开启 CORS，Web 更适合同域访问
-- API 当前没有单独的 JS 构建产物，生产启动仍依赖 `tsx`
+- Go API 生产镜像是静态二进制，不依赖 Node.js/tsx；TS 后端仅通过回滚 Compose 覆盖使用
 
 ## 适用范围
 
 本文覆盖：
 
 - 前端部署：`apps/web`
-- 后端部署：`apps/api`
+- 后端部署：`apps/api-go`（回滚入口：`apps/api`）
 - 浏览器插件分发：`apps/extension`
 
 ---
@@ -43,7 +43,7 @@
 npm install
 ```
 
-> 注意：当前 API 的 `start` 命令依赖 `tsx`，而 `tsx` 位于 `devDependencies`。这意味着当前版本的后端部署不能直接只装生产依赖。
+> 生产默认使用 Go API 镜像，不依赖 Node.js。TS 回滚服务才需要安装 Node.js 依赖和 `tsx`。
 >
 > CI / Jenkins 场景下，仓库根目录的 `.puppeteerrc.cjs` 会默认跳过 Puppeteer 的浏览器下载，避免 `npm install` 因网络下载 Chromium 超时。
 > 如果部署环境需要启用云端归档，运行时仍需自行提供 Chrome / Chromium，或设置 `PUPPETEER_EXECUTABLE_PATH` 指向可执行文件。
@@ -54,7 +54,7 @@ npm install
 
 当前对象文件写入本地目录：
 
-- 默认目录：`apps/api/data/object-storage/`
+- Go 默认目录由 `OBJECT_STORAGE_ROOT` 控制；生产 Compose 挂载 `/data/apps/keeppage/shared/object-storage/`。
 
 如果启多个 API 实例，但不共享同一块持久化存储，会出现：
 
@@ -147,7 +147,7 @@ export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 ### 2.2 初始化数据库
 
 ```bash
-npm run db:init -w @keeppage/api
+npm run db:init -w @keeppage/api-go
 ```
 
 这个命令会：
@@ -159,7 +159,7 @@ npm run db:init -w @keeppage/api
 ### 2.3 启动 API
 
 ```bash
-npm run start -w @keeppage/api
+npm run dev -w @keeppage/api-go
 ```
 
 推荐使用进程管理器托管，例如 PM2、Systemd 或容器编排系统。
@@ -395,7 +395,7 @@ export OBJECT_STORAGE_ROOT='/srv/keeppage/object-storage'
 
 ### 4. 生产环境只安装了生产依赖，API 启不来
 
-当前是已知约束。原因是 API 的启动命令依赖 `tsx`。如果暂不改造构建链路，请保留开发依赖安装。
+TS 回滚服务仍依赖 `tsx`；Go 默认服务使用静态二进制，不受此约束。
 
 ---
 
@@ -403,7 +403,7 @@ export OBJECT_STORAGE_ROOT='/srv/keeppage/object-storage'
 
 如果后续要把部署方案做得更完整，建议优先补以下能力：
 
-1. API 增加正式 `build` 产物，摆脱运行时 `tsx`
+1. Go API 已提供正式静态构建产物，生产默认不再依赖运行时 `tsx`
 2. API 增加 CORS 配置，支持跨域 Web 部署
 3. 对象存储切换到 S3/R2/OSS/MinIO 兼容实现
 4. 增加 Dockerfile、Compose 和基础 IaC

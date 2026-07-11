@@ -45,6 +45,58 @@ func (r *PostgresRepository) Close() {
 	r.pool.Close()
 }
 
+func (r *PostgresRepository) ListUsersForBackup(ctx context.Context) ([]domain.AuthUser, error) {
+	rows, err := r.pool.Query(ctx, `select id::text, email, name, created_at from users order by id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]domain.AuthUser, 0)
+	for rows.Next() {
+		var user domain.AuthUser
+		if err := rows.Scan(&user.ID, &user.Email, &user.Name, &user.CreatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
+}
+
+func (r *PostgresRepository) HitRateLimit(ctx context.Context, scope string, key string, maxHits int, window time.Duration) (bool, int, error) {
+	now := time.Now().UTC()
+	windowStart := now.Truncate(window)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, 0, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `delete from rate_limit_buckets where window_start < $1`, now.Add(-window)); err != nil {
+		return false, 0, err
+	}
+	var hits int
+	if err := tx.QueryRow(ctx, `
+		insert into rate_limit_buckets (scope, bucket_key, window_start, hits)
+		values ($1, $2, $3, 0)
+		on conflict (scope, bucket_key, window_start) do update set hits = rate_limit_buckets.hits
+		returning hits
+	`, scope, key, windowStart).Scan(&hits); err != nil {
+		return false, 0, err
+	}
+	if hits >= maxHits {
+		if err := tx.Commit(ctx); err != nil {
+			return false, 0, err
+		}
+		return false, retryAfter(windowStart, window), nil
+	}
+	if _, err := tx.Exec(ctx, `update rate_limit_buckets set hits = hits + 1 where scope=$1 and bucket_key=$2 and window_start=$3`, scope, key, windowStart); err != nil {
+		return false, 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, 0, err
+	}
+	return true, 0, nil
+}
+
 func (r *PostgresRepository) GetUserByID(ctx context.Context, userID string) (domain.AuthUser, error) {
 	var user domain.AuthUser
 	err := r.pool.QueryRow(ctx, `

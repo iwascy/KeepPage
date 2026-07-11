@@ -5,7 +5,8 @@ KeepPage 是一个 archive-first 的网页收藏系统。
 当前仓库已经具备一条可运行的 archive-first MVP 链路：
 
 - `apps/extension`: Chrome MV3 扩展，已接入 SingleFile MV3 注入模型，支持本地归档、质量评估、IndexedDB 队列、Side Panel 预览与同步
-- `apps/api`: Fastify 同步后端，已提供 `captures/init`、`captures/complete`、`bookmarks` 列表 / 详情、对象上传与对象读取路由，并支持 `memory` / `postgres` 双仓储
+- `apps/api-go`: Go 同步后端，生产默认入口，覆盖认证、书签、归档上传、私密模式、导入、分享、备份和对象读写，并支持 `memory` / `postgres` 双仓储
+- `apps/api`: Fastify/TypeScript 兼容后端，仅作为迁移回滚入口保留
 - `apps/web`: Web 管理端，已提供归档列表、搜索、质量筛选、统计概览，以及归档查看页、版本切换、iframe 预览和归档下载
 - `packages/domain`: 共享领域模型、状态机、质量评估规则与 API schema
 - `packages/db`: Postgres/Drizzle schema 与初始化 migration
@@ -24,8 +25,8 @@ npm run dev:extension
 ```bash
 export STORAGE_DRIVER=postgres
 export DATABASE_URL='postgresql://cyan:144125236@127.0.0.1:5432/keeppage'
-npm run db:init -w @keeppage/api
-npm run start -w @keeppage/api
+npm run db:init -w @keeppage/api-go
+npm run dev -w @keeppage/api-go
 ```
 
 Web 开发态默认通过 Vite 代理把 `/api/*` 转发到 `http://127.0.0.1:8787`；如需改目标，可设置：

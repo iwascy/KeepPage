@@ -20,6 +20,7 @@ type MemoryRepository struct {
 	apiTokens map[string]memoryAPIToken
 	folders   map[string]map[string]domain.Folder
 	tags      map[string]map[string]domain.Tag
+	rateLimit map[string]memoryRateLimitBucket
 }
 
 type memoryAPIToken struct {
@@ -45,6 +46,7 @@ func NewMemoryRepository() *MemoryRepository {
 		apiTokens: map[string]memoryAPIToken{},
 		folders:   map[string]map[string]domain.Folder{},
 		tags:      map[string]map[string]domain.Tag{},
+		rateLimit: map[string]memoryRateLimitBucket{},
 	}
 }
 
@@ -53,6 +55,48 @@ func (r *MemoryRepository) Kind() string {
 }
 
 func (r *MemoryRepository) Close() {}
+
+func (r *MemoryRepository) ListUsersForBackup(_ context.Context) ([]domain.AuthUser, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	users := make([]domain.AuthUser, 0, len(r.users))
+	for _, record := range r.users {
+		users = append(users, record.User)
+	}
+	sort.Slice(users, func(i, j int) bool { return users[i].ID < users[j].ID })
+	return users, nil
+}
+
+type memoryRateLimitBucket struct {
+	windowStart time.Time
+	hits        int
+}
+
+func (r *MemoryRepository) HitRateLimit(_ context.Context, scope string, key string, maxHits int, window time.Duration) (bool, int, error) {
+	now := time.Now().UTC()
+	windowStart := now.Truncate(window)
+	bucketKey := scope + "\x00" + key + "\x00" + windowStart.Format(time.RFC3339Nano)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	bucket := r.rateLimit[bucketKey]
+	if bucket.windowStart.IsZero() {
+		bucket.windowStart = windowStart
+	}
+	if bucket.hits >= maxHits {
+		return false, retryAfter(windowStart, window), nil
+	}
+	bucket.hits++
+	r.rateLimit[bucketKey] = bucket
+	return true, 0, nil
+}
+
+func retryAfter(windowStart time.Time, window time.Duration) int {
+	seconds := int(time.Until(windowStart.Add(window)).Seconds())
+	if seconds < 1 {
+		return 1
+	}
+	return seconds
+}
 
 func (r *MemoryRepository) GetUserByID(_ context.Context, userID string) (domain.AuthUser, error) {
 	r.mu.RLock()

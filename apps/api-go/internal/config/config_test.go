@@ -18,7 +18,7 @@ func TestValidateRejectsDefaultSecretInProduction(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsBackupR2Enabled(t *testing.T) {
+func TestValidateRejectsBackupR2EnabledWithoutR2Settings(t *testing.T) {
 	cfg := Config{
 		NodeEnv:             Development,
 		APIPort:             8788,
@@ -31,7 +31,28 @@ func TestValidateRejectsBackupR2Enabled(t *testing.T) {
 		BackupR2Time:        "03:30",
 	}
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected BACKUP_R2_ENABLED to be rejected")
+		t.Fatal("expected missing R2 settings to be rejected")
+	}
+}
+
+func TestValidateAcceptsBackupR2EnabledWithR2Settings(t *testing.T) {
+	cfg := Config{
+		NodeEnv:             Development,
+		APIPort:             8788,
+		StorageDriver:       "memory",
+		ObjectStorageDriver: "localfs",
+		AuthTokenSecret:     "keeppage-dev-secret",
+		AuthTokenTTLDays:    30,
+		UploadBodyLimitMB:   32,
+		BackupR2Enabled:     true,
+		BackupR2Time:        "03:30",
+		R2Endpoint:          "https://r2.example.test",
+		R2Bucket:            "keeppage",
+		R2AccessKeyID:       "access",
+		R2SecretAccessKey:   "secret",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
