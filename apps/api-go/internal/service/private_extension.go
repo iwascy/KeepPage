@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -33,23 +32,13 @@ type privateTokenPayload struct {
 	Exp               int64  `json:"exp"`
 }
 
-type pendingExtensionConnect struct {
-	userID      string
-	deviceName  string
-	platform    string
-	extensionID string
-	expiresAt   time.Time
-}
-
 type PrivateExtensionService struct {
 	repository repository.PrivateExtensionRepository
 	secret     []byte
-	pendingMu  sync.Mutex
-	pending    map[string]pendingExtensionConnect
 }
 
 func NewPrivateExtensionService(repo repository.PrivateExtensionRepository, authTokenSecret string) *PrivateExtensionService {
-	return &PrivateExtensionService{repository: repo, secret: []byte(authTokenSecret + ":private-mode"), pending: map[string]pendingExtensionConnect{}}
+	return &PrivateExtensionService{repository: repo, secret: []byte(authTokenSecret + ":private-mode")}
 }
 
 func (s *PrivateExtensionService) PrivateModeStatus(ctx context.Context, userID string, token string) (domain.PrivateVaultSummary, error) {
@@ -121,7 +110,7 @@ func (s *PrivateExtensionService) ChangePrivateModePassword(ctx context.Context,
 	return s.createUnlockResponse(ctx, userID)
 }
 
-func (s *PrivateExtensionService) CreateExtensionConnectCode(userID string, input domain.ExtensionConnectInitRequest) (domain.ExtensionConnectInitResponse, error) {
+func (s *PrivateExtensionService) CreateExtensionConnectCode(ctx context.Context, userID string, input domain.ExtensionConnectInitRequest) (domain.ExtensionConnectInitResponse, error) {
 	name := strings.TrimSpace(input.DeviceName)
 	platform := strings.TrimSpace(input.Platform)
 	if name == "" || utf8.RuneCountInString(name) > 120 || platform == "" || utf8.RuneCountInString(platform) > 80 || (input.ExtensionID != "" && utf8.RuneCountInString(strings.TrimSpace(input.ExtensionID)) > 120) {
@@ -132,10 +121,16 @@ func (s *PrivateExtensionService) CreateExtensionConnectCode(userID string, inpu
 		return domain.ExtensionConnectInitResponse{}, err
 	}
 	expiresAt := time.Now().UTC().Add(extensionConnectCodeTTL)
-	s.pendingMu.Lock()
-	s.pruneExpiredConnectCodesLocked(time.Now())
-	s.pending[code] = pendingExtensionConnect{userID: userID, deviceName: name, platform: platform, extensionID: strings.TrimSpace(input.ExtensionID), expiresAt: expiresAt}
-	s.pendingMu.Unlock()
+	if err := s.repository.SaveExtensionConnectCode(ctx, repository.ExtensionConnectCode{
+		Code:        code,
+		UserID:      userID,
+		DeviceName:  name,
+		Platform:    platform,
+		ExtensionID: strings.TrimSpace(input.ExtensionID),
+		ExpiresAt:   expiresAt,
+	}); err != nil {
+		return domain.ExtensionConnectInitResponse{}, err
+	}
 	return domain.ExtensionConnectInitResponse{Code: code, ExpiresAt: expiresAt}, nil
 }
 
@@ -144,19 +139,14 @@ func (s *PrivateExtensionService) RedeemExtensionConnectCode(ctx context.Context
 	if code == "" {
 		return domain.ExtensionDeviceSession{}, httperror.BadRequest("ValidationError", "Invalid extension connection code.", nil)
 	}
-	s.pendingMu.Lock()
-	pending, ok := s.pending[code]
-	if ok {
-		delete(s.pending, code)
+	pending, err := s.repository.TakeExtensionConnectCode(ctx, code)
+	if err != nil {
+		return domain.ExtensionDeviceSession{}, err
 	}
-	s.pendingMu.Unlock()
-	if !ok {
-		return domain.ExtensionDeviceSession{}, httperror.Unauthorized("ExtensionConnectCodeInvalid", "扩展连接码无效或已使用。")
+	if pending == nil {
+		return domain.ExtensionDeviceSession{}, httperror.Unauthorized("ExtensionConnectCodeInvalid", "扩展连接码无效、已使用或已过期。")
 	}
-	if !pending.expiresAt.After(time.Now()) {
-		return domain.ExtensionDeviceSession{}, httperror.Unauthorized("ExtensionConnectCodeExpired", "扩展连接码已过期，请重新连接。")
-	}
-	user, err := s.repository.GetUserByID(ctx, pending.userID)
+	user, err := s.repository.GetUserByID(ctx, pending.UserID)
 	if err != nil {
 		if err == repository.ErrNotFound {
 			return domain.ExtensionDeviceSession{}, httperror.Unauthorized("Unauthorized", "连接码对应账号不存在。")
@@ -169,7 +159,7 @@ func (s *PrivateExtensionService) RedeemExtensionConnectCode(ctx context.Context
 		return domain.ExtensionDeviceSession{}, err
 	}
 	token := "kpd_" + deviceID + "." + secret
-	device, err := s.repository.CreateExtensionDevice(ctx, user.ID, deviceID, pending.deviceName, pending.platform, deviceTokenPreview(deviceID, secret), sha256Hex(token), nil)
+	device, err := s.repository.CreateExtensionDevice(ctx, user.ID, deviceID, pending.DeviceName, pending.Platform, deviceTokenPreview(deviceID, secret), sha256Hex(token), nil)
 	if err != nil {
 		return domain.ExtensionDeviceSession{}, err
 	}
@@ -234,14 +224,6 @@ func (s *PrivateExtensionService) signPrivateToken(encodedPayload string) string
 	mac := hmac.New(sha256.New, s.secret)
 	_, _ = mac.Write([]byte(encodedPayload))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-func (s *PrivateExtensionService) pruneExpiredConnectCodesLocked(now time.Time) {
-	for code, pending := range s.pending {
-		if !pending.expiresAt.After(now) {
-			delete(s.pending, code)
-		}
-	}
 }
 
 func validatePassword(password string, min int) error {

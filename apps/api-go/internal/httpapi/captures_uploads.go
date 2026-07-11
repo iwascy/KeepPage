@@ -21,7 +21,7 @@ func (s *Server) registerCaptureUploadRoutes(router chi.Router) {
 	if !ok {
 		return
 	}
-	api := service.NewCaptureUploadService(repo, s.objects)
+	api := service.NewCaptureUploadService(repo, s.objects, s.cfg.UploadBodyLimitBytes())
 	router.Post("/captures/init", s.handleCaptureInit(api, false))
 	router.Post("/captures/complete", s.handleCaptureComplete(api, false))
 	router.Post("/private/captures/init", s.handleCaptureInit(api, true))

@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/keeppage/keeppage/apps/api-go/internal/auth"
 	"github.com/keeppage/keeppage/apps/api-go/internal/domain"
 	"github.com/keeppage/keeppage/apps/api-go/internal/httperror"
 	"github.com/keeppage/keeppage/apps/api-go/internal/repository"
@@ -192,9 +194,14 @@ func (s *BackupService) Import(ctx context.Context, userID string, body []byte) 
 	if out.Imported.TagsEnsured, err = s.ensureTags(ctx, userID, pkg.Tags); err != nil {
 		return out, err
 	}
+	// Remap every object into the importer's namespace so package keys cannot
+	// overwrite other users' shared object-storage paths.
+	keyMap := map[string]string{}
 	objectEntries := map[string]backupObject{}
 	for _, o := range pkg.Objects {
-		objectEntries[o.ObjectKey] = o
+		if err := validObjectKey(o.ObjectKey); err != nil {
+			return out, httperror.BadRequest("InvalidBackupObjectKey", "Backup package contains an invalid object key: "+o.ObjectKey, nil)
+		}
 		raw, err := base64.StdEncoding.DecodeString(o.ContentBase64)
 		if err != nil {
 			return out, httperror.BadRequest("InvalidBackupPackage", "Object payload is invalid.", nil)
@@ -203,9 +210,17 @@ func (s *BackupService) Import(ctx context.Context, userID string, body []byte) 
 		if hex.EncodeToString(sum[:]) != o.SHA256 {
 			return out, httperror.BadRequest("BackupObjectChecksumMismatch", "Object checksum mismatch: "+o.ObjectKey, nil)
 		}
-		if err = s.objects.PutObject(ctx, o.ObjectKey, raw, o.ContentType); err != nil {
+		newKey, err := remapImportedObjectKey(userID, o.ObjectKey)
+		if err != nil {
 			return out, err
 		}
+		if err = s.objects.PutObject(ctx, newKey, raw, o.ContentType); err != nil {
+			return out, err
+		}
+		keyMap[o.ObjectKey] = newKey
+		remapped := o
+		remapped.ObjectKey = newKey
+		objectEntries[o.ObjectKey] = remapped
 		out.Imported.ObjectsWritten++
 	}
 	for _, p := range pkg.Bookmarks {
@@ -244,13 +259,52 @@ func (s *BackupService) Import(ctx context.Context, userID string, body []byte) 
 				out.Imported.VersionsSkippedMissingObject++
 				continue
 			}
-			if _, err = s.restore.AddRestoredBookmarkVersion(ctx, userID, result.Bookmark.ID, version); err != nil {
+			restored := rewriteRestoredVersionKeys(version, keyMap)
+			if _, err = s.restore.AddRestoredBookmarkVersion(ctx, userID, result.Bookmark.ID, restored); err != nil {
 				return out, err
 			}
 			out.Imported.VersionsRestored++
 		}
 	}
 	return out, nil
+}
+
+func remapImportedObjectKey(userID, oldKey string) (string, error) {
+	if err := validObjectKey(oldKey); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(userID) == "" {
+		return "", httperror.BadRequest("InvalidBackupObjectKey", "Importer user id is required.", nil)
+	}
+	base := filepath.Base(filepath.ToSlash(oldKey))
+	if base == "." || base == ".." || base == "" || strings.Contains(base, "/") {
+		base = "object.bin"
+	}
+	// Always write under the importer's capture prefix, never trust package keys.
+	return fmt.Sprintf("captures/%s/%s-%s", userID, auth.NewUUID(), base), nil
+}
+
+func rewriteRestoredVersionKeys(version domain.BookmarkVersion, keyMap map[string]string) domain.BookmarkVersion {
+	if mapped, ok := keyMap[version.HTMLObjectKey]; ok {
+		version.HTMLObjectKey = mapped
+	}
+	if version.ReaderHTMLObjectKey != nil {
+		if mapped, ok := keyMap[*version.ReaderHTMLObjectKey]; ok {
+			value := mapped
+			version.ReaderHTMLObjectKey = &value
+		}
+	}
+	if len(version.MediaFiles) > 0 {
+		media := make([]domain.CaptureMediaFile, len(version.MediaFiles))
+		copy(media, version.MediaFiles)
+		for i := range media {
+			if mapped, ok := keyMap[media[i].ObjectKey]; ok {
+				media[i].ObjectKey = mapped
+			}
+		}
+		version.MediaFiles = media
+	}
+	return version
 }
 
 func (s *BackupService) ensureFolders(ctx context.Context, userID string, folders []domain.Folder) (int, error) {

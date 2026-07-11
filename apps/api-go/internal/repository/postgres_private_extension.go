@@ -97,3 +97,42 @@ func (r *PostgresRepository) RevokeExtensionDevice(ctx context.Context, userID s
 	`, deviceID, userID, revokedAt)
 	return command.RowsAffected() > 0, err
 }
+
+func (r *PostgresRepository) SaveExtensionConnectCode(ctx context.Context, code ExtensionConnectCode) error {
+	_, _ = r.pool.Exec(ctx, `delete from extension_connect_codes where expires_at <= now()`)
+	var extensionID *string
+	if code.ExtensionID != "" {
+		extensionID = &code.ExtensionID
+	}
+	_, err := r.pool.Exec(ctx, `
+		insert into extension_connect_codes (code, user_id, device_name, platform, extension_id, expires_at)
+		values ($1, $2, $3, $4, $5, $6)
+		on conflict (code) do update set
+			user_id = excluded.user_id,
+			device_name = excluded.device_name,
+			platform = excluded.platform,
+			extension_id = excluded.extension_id,
+			expires_at = excluded.expires_at
+	`, code.Code, code.UserID, code.DeviceName, code.Platform, extensionID, code.ExpiresAt)
+	return err
+}
+
+func (r *PostgresRepository) TakeExtensionConnectCode(ctx context.Context, code string) (*ExtensionConnectCode, error) {
+	var pending ExtensionConnectCode
+	var extensionID *string
+	err := r.pool.QueryRow(ctx, `
+		delete from extension_connect_codes
+		where code = $1 and expires_at > now()
+		returning code, user_id::text, device_name, platform, extension_id, expires_at
+	`, code).Scan(&pending.Code, &pending.UserID, &pending.DeviceName, &pending.Platform, &extensionID, &pending.ExpiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if extensionID != nil {
+		pending.ExtensionID = *extensionID
+	}
+	return &pending, nil
+}

@@ -131,6 +131,13 @@ func (c Config) Validate() error {
 	if c.UploadBodyLimitMB <= 0 {
 		return fmt.Errorf("UPLOAD_BODY_LIMIT_MB must be positive")
 	}
+	if c.NodeEnv == Production && (strings.TrimSpace(c.AuthTokenSecret) == "" || c.AuthTokenSecret == "keeppage-dev-secret") {
+		return fmt.Errorf("AUTH_TOKEN_SECRET must be set to a non-default value when NODE_ENV=production")
+	}
+	if c.BackupR2Enabled {
+		// Scheduled R2 bookmark backups are not implemented in the Go vertical slice yet.
+		return fmt.Errorf("BACKUP_R2_ENABLED is not supported by the Go API yet; disable it or use the TypeScript API")
+	}
 	if _, err := time.Parse("15:04", c.BackupR2Time); err != nil {
 		return fmt.Errorf("BACKUP_R2_TIME must be HH:mm: %w", err)
 	}

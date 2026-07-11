@@ -16,10 +16,10 @@ func NewR2BookmarkBackupScheduler(cfg config.Config, logger *slog.Logger) *R2Boo
 }
 
 func (s *R2BookmarkBackupScheduler) Start() {
-	if !s.cfg.BackupR2Enabled {
-		return
+	// BACKUP_R2_ENABLED is rejected in config.Validate until the scheduler is ported.
+	if s.cfg.BackupR2Enabled {
+		s.logger.Error("R2 bookmark backup scheduler is not implemented; refusing to start with BACKUP_R2_ENABLED=true")
 	}
-	s.logger.Warn("R2 bookmark backup scheduler is configured but not implemented in the Go vertical slice yet")
 }
 
 func (s *R2BookmarkBackupScheduler) Stop() {}

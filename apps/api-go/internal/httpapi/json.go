@@ -44,9 +44,10 @@ func writeError(logger *slog.Logger, w http.ResponseWriter, err error) {
 		return
 	}
 	logger.Error("unhandled API error", "err", err)
+	// Never expose internal driver/path details to clients.
 	writeJSON(w, http.StatusInternalServerError, errorResponse{
 		Error:   "InternalServerError",
-		Message: err.Error(),
+		Message: "Internal server error.",
 	})
 }
 

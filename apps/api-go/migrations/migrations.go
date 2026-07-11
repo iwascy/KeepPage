@@ -57,8 +57,8 @@ func EnsureDatabase(ctx context.Context, databaseURL string) error {
 	return nil
 }
 
-// Apply applies the checked-in schema migrations in lexical order. The current
-// migration set is idempotent for pre-existing KeepPage installations.
+// Apply applies pending schema migrations in lexical filename order. Each
+// filename is recorded in schema_migrations and never re-executed.
 func Apply(ctx context.Context, databaseURL string) error {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
@@ -70,9 +70,77 @@ func Apply(ctx context.Context, databaseURL string) error {
 	}
 	defer pool.Close()
 
+	if _, err := pool.Exec(ctx, `
+		create table if not exists schema_migrations (
+			filename text primary key,
+			applied_at timestamptz not null default now()
+		)
+	`); err != nil {
+		return fmt.Errorf("ensure schema_migrations: %w", err)
+	}
+
+	applied := map[string]bool{}
+	rows, err := pool.Query(ctx, `select filename from schema_migrations`)
+	if err != nil {
+		return fmt.Errorf("list applied migrations: %w", err)
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan applied migration: %w", err)
+		}
+		applied[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate applied migrations: %w", err)
+	}
+
+	names, err := listMigrationFiles()
+	if err != nil {
+		return err
+	}
+
+	for _, name := range names {
+		if applied[name] {
+			continue
+		}
+		contents, err := files.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", name, err)
+		}
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", name, err)
+		}
+		for _, statement := range splitStatements(string(contents)) {
+			if _, err := tx.Exec(ctx, statement); err != nil {
+				var pgErr *pgconn.PgError
+				// Tolerate duplicate-object noise so installs that previously
+				// applied schema without a ledger can adopt the ledger safely.
+				if errors.As(err, &pgErr) && duplicateErrorCodes[pgErr.Code] {
+					continue
+				}
+				_ = tx.Rollback(ctx)
+				return fmt.Errorf("apply migration %s: %w", name, err)
+			}
+		}
+		if _, err := tx.Exec(ctx, `insert into schema_migrations (filename) values ($1)`, name); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("record migration %s: %w", name, err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit migration %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func listMigrationFiles() ([]string, error) {
 	entries, err := fs.ReadDir(files, ".")
 	if err != nil {
-		return fmt.Errorf("read embedded migrations: %w", err)
+		return nil, fmt.Errorf("read embedded migrations: %w", err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -81,21 +149,20 @@ func Apply(ctx context.Context, databaseURL string) error {
 		}
 	}
 	sort.Strings(names)
+	if err := validateUniquePrefixes(names); err != nil {
+		return nil, err
+	}
+	return names, nil
+}
 
+func validateUniquePrefixes(names []string) error {
+	seen := map[string]string{}
 	for _, name := range names {
-		contents, err := files.ReadFile(name)
-		if err != nil {
-			return fmt.Errorf("read migration %s: %w", name, err)
+		prefix := strings.SplitN(name, "_", 2)[0]
+		if previous, ok := seen[prefix]; ok {
+			return fmt.Errorf("duplicate migration number %s: %s and %s", prefix, previous, name)
 		}
-		for _, statement := range splitStatements(string(contents)) {
-			if _, err := pool.Exec(ctx, statement); err != nil {
-				var pgErr *pgconn.PgError
-				if errors.As(err, &pgErr) && duplicateErrorCodes[pgErr.Code] {
-					continue
-				}
-				return fmt.Errorf("apply migration %s: %w", name, err)
-			}
-		}
+		seen[prefix] = name
 	}
 	return nil
 }

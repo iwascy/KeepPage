@@ -15,6 +15,9 @@ import (
 	"github.com/keeppage/keeppage/apps/api-go/internal/service"
 )
 
+// memoryRateLimiter is process-local. Multi-replica deployments should put a
+// shared limiter (Redis/Postgres) in front of share endpoints, or pin traffic
+// to a single api-go instance for these routes.
 type memoryRateLimiter struct {
 	mu   sync.Mutex
 	hits map[string][]time.Time

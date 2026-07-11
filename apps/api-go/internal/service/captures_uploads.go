@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/keeppage/keeppage/apps/api-go/internal/domain"
 	"github.com/keeppage/keeppage/apps/api-go/internal/httperror"
@@ -18,33 +19,48 @@ import (
 	"github.com/keeppage/keeppage/apps/api-go/internal/storage"
 )
 
+const defaultMaxUploadBytes int64 = 32 << 20
+const chunkStateTTL = 30 * time.Minute
+
 type CaptureUploadService struct {
-	repo    repository.CaptureUploadRepository
-	objects storage.ObjectStorage
-	chunks  sync.Map
+	repo         repository.CaptureUploadRepository
+	objects      storage.ObjectStorage
+	maxBodyBytes int64
+	chunks       sync.Map
 }
+
 type chunkState struct {
-	mu   sync.Mutex
-	data []byte
+	mu        sync.Mutex
+	data      []byte
+	updatedAt time.Time
 }
+
 type ChunkUploadResult struct {
 	ReceivedBytes int64  `json:"receivedBytes"`
 	UploadID      string `json:"uploadId"`
 	Complete      bool
 }
 
-func NewCaptureUploadService(repo repository.CaptureUploadRepository, objects storage.ObjectStorage) *CaptureUploadService {
-	return &CaptureUploadService{repo: repo, objects: objects}
+func NewCaptureUploadService(repo repository.CaptureUploadRepository, objects storage.ObjectStorage, maxBodyBytes int64) *CaptureUploadService {
+	if maxBodyBytes <= 0 {
+		maxBodyBytes = defaultMaxUploadBytes
+	}
+	return &CaptureUploadService{repo: repo, objects: objects, maxBodyBytes: maxBodyBytes}
 }
+
 func (s *CaptureUploadService) Init(ctx context.Context, userID string, input domain.CaptureInitRequest, private bool) (domain.CaptureInitResponse, error) {
 	if err := validateCaptureInit(input); err != nil {
 		return domain.CaptureInitResponse{}, err
+	}
+	if input.FileSize > s.maxBodyBytes {
+		return domain.CaptureInitResponse{}, httperror.New(413, "UploadTooLarge", "Capture file size exceeds the configured upload limit.", map[string]int64{"limitBytes": s.maxBodyBytes, "fileSize": input.FileSize})
 	}
 	if private {
 		return s.repo.InitPrivateCapture(ctx, userID, input)
 	}
 	return s.repo.InitCapture(ctx, userID, input)
 }
+
 func (s *CaptureUploadService) Complete(ctx context.Context, userID string, input domain.CaptureCompleteRequest, private bool) (domain.CaptureCompleteResult, error) {
 	if err := validateCaptureComplete(input); err != nil {
 		return domain.CaptureCompleteResult{}, err
@@ -77,6 +93,7 @@ func (s *CaptureUploadService) Complete(ctx context.Context, userID string, inpu
 	}
 	return s.repo.CompleteCapture(ctx, userID, input)
 }
+
 func (s *CaptureUploadService) Get(ctx context.Context, userID, key string, public bool) ([]byte, string, error) {
 	if err := validObjectKey(key); err != nil {
 		return nil, "", err
@@ -100,6 +117,7 @@ func (s *CaptureUploadService) Get(ctx context.Context, userID, key string, publ
 	}
 	return body, contentType(key), err
 }
+
 func (s *CaptureUploadService) Put(ctx context.Context, userID, key string, body []byte, contentType, encoding string) error {
 	if err := validObjectKey(key); err != nil {
 		return err
@@ -111,15 +129,19 @@ func (s *CaptureUploadService) Put(ctx context.Context, userID, key string, body
 	if !ok {
 		return httperror.Forbidden("UploadForbidden", "Current user cannot upload to this object key.")
 	}
-	body, err = decodeBody(body, encoding)
+	body, err = decodeBody(body, encoding, s.maxBodyBytes)
 	if err != nil {
 		return err
 	}
 	if len(body) == 0 {
 		return httperror.BadRequest("EmptyUploadBody", "Upload body is empty.", nil)
 	}
+	if int64(len(body)) > s.maxBodyBytes {
+		return httperror.New(413, "UploadTooLarge", "Upload body exceeds the configured upload limit.", map[string]int64{"limitBytes": s.maxBodyBytes, "sizeBytes": int64(len(body))})
+	}
 	return s.objects.PutObject(ctx, key, body, contentType)
 }
+
 func (s *CaptureUploadService) PutChunk(ctx context.Context, userID, key, uploadID string, body []byte, offset int64, total *int64, complete bool, contentType, encoding string) (ChunkUploadResult, error) {
 	if uploadID == "" {
 		return ChunkUploadResult{}, httperror.BadRequest("InvalidUploadHeader", "uploadId is required.", nil)
@@ -137,14 +159,36 @@ func (s *CaptureUploadService) PutChunk(ctx context.Context, userID, key, upload
 	if len(body) == 0 {
 		return ChunkUploadResult{}, httperror.BadRequest("EmptyUploadBody", "Upload chunk body is empty.", nil)
 	}
-	stateAny, _ := s.chunks.LoadOrStore(userID+"\x00"+key+"\x00"+uploadID, &chunkState{})
+	if total != nil {
+		if *total <= 0 {
+			return ChunkUploadResult{}, httperror.BadRequest("InvalidUploadHeader", "total must be positive when provided.", nil)
+		}
+		if *total > s.maxBodyBytes {
+			return ChunkUploadResult{}, httperror.New(413, "UploadTooLarge", "Upload total exceeds the configured upload limit.", map[string]int64{"limitBytes": s.maxBodyBytes, "total": *total})
+		}
+	}
+
+	s.pruneExpiredChunks(time.Now())
+	stateKey := userID + "\x00" + key + "\x00" + uploadID
+	stateAny, _ := s.chunks.LoadOrStore(stateKey, &chunkState{updatedAt: time.Now()})
 	state := stateAny.(*chunkState)
 	state.mu.Lock()
 	defer state.mu.Unlock()
+	if time.Since(state.updatedAt) > chunkStateTTL {
+		state.data = nil
+	}
 	if int64(len(state.data)) != offset {
 		return ChunkUploadResult{}, httperror.New(409, "UploadOffsetMismatch", "Upload offset mismatch.", map[string]int64{"expectedOffset": int64(len(state.data)), "receivedOffset": offset})
 	}
+	nextSize := int64(len(state.data) + len(body))
+	if nextSize > s.maxBodyBytes {
+		return ChunkUploadResult{}, httperror.New(413, "UploadTooLarge", "Upload exceeds the configured upload limit.", map[string]int64{"limitBytes": s.maxBodyBytes, "receivedBytes": nextSize})
+	}
+	if total != nil && nextSize > *total {
+		return ChunkUploadResult{}, httperror.New(409, "UploadSizeMismatch", "Upload size exceeds declared total.", map[string]int64{"expectedSize": *total, "receivedBytes": nextSize})
+	}
 	state.data = append(state.data, body...)
+	state.updatedAt = time.Now()
 	result := ChunkUploadResult{UploadID: uploadID, ReceivedBytes: int64(len(state.data)), Complete: complete}
 	if !complete {
 		return result, nil
@@ -155,9 +199,23 @@ func (s *CaptureUploadService) PutChunk(ctx context.Context, userID, key, upload
 	if err := s.Put(ctx, userID, key, state.data, contentType, encoding); err != nil {
 		return ChunkUploadResult{}, err
 	}
-	s.chunks.Delete(userID + "\x00" + key + "\x00" + uploadID)
+	s.chunks.Delete(stateKey)
 	return result, nil
 }
+
+func (s *CaptureUploadService) pruneExpiredChunks(now time.Time) {
+	s.chunks.Range(func(key, value any) bool {
+		state := value.(*chunkState)
+		state.mu.Lock()
+		expired := now.Sub(state.updatedAt) > chunkStateTTL
+		state.mu.Unlock()
+		if expired {
+			s.chunks.Delete(key)
+		}
+		return true
+	})
+}
+
 func validateCaptureInit(in domain.CaptureInitRequest) error {
 	if strings.TrimSpace(in.URL) == "" || strings.TrimSpace(in.Title) == "" || in.FileSize <= 0 || strings.TrimSpace(in.HTMLSHA256) == "" || strings.TrimSpace(in.DeviceID) == "" {
 		return httperror.BadRequest("ValidationError", "Invalid capture initialization request.", nil)
@@ -169,21 +227,27 @@ func validateCaptureInit(in domain.CaptureInitRequest) error {
 	}
 	return nil
 }
+
 func validateCaptureComplete(in domain.CaptureCompleteRequest) error {
 	if strings.TrimSpace(in.ObjectKey) == "" || strings.TrimSpace(in.HTMLSHA256) == "" || strings.TrimSpace(in.Source.URL) == "" || strings.TrimSpace(in.Source.Title) == "" || strings.TrimSpace(in.DeviceID) == "" || in.Quality.Score < 0 || in.Quality.Score > 100 {
 		return httperror.BadRequest("ValidationError", "Invalid capture completion request.", nil)
 	}
 	return nil
 }
+
 func validObjectKey(key string) error {
 	clean := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(key, "/")))
-	if clean == "." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") || filepath.IsAbs(clean) {
 		return httperror.BadRequest("InvalidUploadObjectKey", "Invalid upload object key.", nil)
 	}
 	return nil
 }
-func decodeBody(body []byte, encoding string) ([]byte, error) {
+
+func decodeBody(body []byte, encoding string, maxBytes int64) ([]byte, error) {
 	if !strings.EqualFold(strings.TrimSpace(encoding), "gzip") {
+		if int64(len(body)) > maxBytes {
+			return nil, httperror.New(413, "UploadTooLarge", "Upload body exceeds the configured upload limit.", map[string]int64{"limitBytes": maxBytes, "sizeBytes": int64(len(body))})
+		}
 		return body, nil
 	}
 	reader, err := gzip.NewReader(bytes.NewReader(body))
@@ -191,12 +255,18 @@ func decodeBody(body []byte, encoding string) ([]byte, error) {
 		return nil, httperror.BadRequest("InvalidUploadBody", "Invalid gzip upload body.", nil)
 	}
 	defer reader.Close()
-	decoded, err := io.ReadAll(reader)
+	// Cap decompressed size; body limit only covers the compressed payload.
+	limited := io.LimitReader(reader, maxBytes+1)
+	decoded, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("decode gzip upload: %w", err)
 	}
+	if int64(len(decoded)) > maxBytes {
+		return nil, httperror.New(413, "UploadTooLarge", "Decompressed upload body exceeds the configured upload limit.", map[string]int64{"limitBytes": maxBytes})
+	}
 	return decoded, nil
 }
+
 func isPublicAssetObjectKey(key string) bool {
 	if strings.HasPrefix(key, "private-captures/") {
 		return false
@@ -207,12 +277,14 @@ func isPublicAssetObjectKey(key string) bool {
 	}
 	return false
 }
+
 func contentType(key string) string {
 	if guessed := mime.TypeByExtension(filepath.Ext(key)); guessed != "" {
 		return guessed
 	}
 	return "application/octet-stream"
 }
+
 func ParseNonNegativeHeader(raw, name string, required bool) (int64, error) {
 	if strings.TrimSpace(raw) == "" {
 		if required {

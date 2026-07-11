@@ -44,78 +44,22 @@ func (r *PostgresRepository) CreateImportTask(ctx context.Context, userID string
 		byHash[m.NormalizedURLHash] = m
 	}
 	now := time.Now().UTC()
-	task := domain.ImportTask{ID: newPgImportID("imp_"), Name: input.TaskName, SourceType: input.SourceType, Mode: input.Options.Mode, Status: "completed", FileName: input.FileName, TotalCount: input.Preview.Summary.TotalCount, ValidCount: input.Preview.Summary.ValidCount, InvalidCount: input.Preview.Summary.InvalidCount, DuplicateInFileCount: input.Preview.Summary.DuplicateInFileCount, DuplicateExistingCount: input.Preview.Summary.DuplicateExistingCount, CreatedAt: now, UpdatedAt: now, CompletedAt: &now}
-	items := []domain.ImportTaskItem{}
-	for _, p := range input.Items {
-		item := domain.ImportTaskItem{ID: newPgImportID("imp_item_"), TaskID: task.ID, Index: p.Index, Title: p.Title, URL: p.URL, Domain: p.Domain, FolderPath: p.FolderPath, CreatedAt: now, UpdatedAt: now}
-		if !p.Valid {
-			item.Status = "skipped"
-			item.DedupeResult = "invalid_input"
-			item.Reason = p.Reason
-			task.SkippedCount++
-			items = append(items, item)
-			continue
-		}
-		if p.DuplicateInFile {
-			item.Status = "skipped"
-			item.DedupeResult = "skipped_duplicate"
-			item.Reason = p.Reason
-			task.SkippedCount++
-			items = append(items, item)
-			continue
-		}
-		var existing *domain.ImportBookmarkMatch
-		if p.NormalizedURLHash != nil {
-			if x, ok := byHash[*p.NormalizedURLHash]; ok {
-				existing = &x
-			}
-		}
-		if existing != nil {
-			item.BookmarkID = &existing.BookmarkID
-			item.ArchivedVersionID = existing.LatestVersionID
-			item.HasArchive = existing.HasArchive
-			if input.Options.DedupeStrategy == "skip" {
-				item.Status = "skipped"
-				item.DedupeResult = "skipped_existing"
-				x := "站内已存在同一链接，按当前策略跳过。"
-				item.Reason = &x
-				task.SkippedCount++
-			} else {
-				item.Status = "deduplicated"
-				item.DedupeResult = "merged_existing"
-				x := "已合并到现有书签。"
-				if existing.HasArchive {
-					x = "已合并到现有书签，且该书签已有归档。"
-				}
-				item.Reason = &x
-				task.MergedCount++
-				if input.Options.DedupeStrategy == "update_metadata" {
-					_, _ = r.IngestBookmark(ctx, userID, postgresImportIngest(p, input.Options))
-				}
-			}
-			items = append(items, item)
-			continue
-		}
-		result, e := r.IngestBookmark(ctx, userID, postgresImportIngest(p, input.Options))
-		if e != nil {
-			item.Status = "failed"
-			item.DedupeResult = "none"
-			x := e.Error()
-			item.Reason = &x
-			task.FailedCount++
-			items = append(items, item)
-			continue
-		}
-		item.Status = "created_bookmark"
-		item.DedupeResult = "created_bookmark"
-		x := "已完成轻导入。"
-		item.Reason = &x
-		item.BookmarkID = &result.Bookmark.ID
-		task.CreatedCount++
-		items = append(items, item)
+	task := domain.ImportTask{
+		ID: inputTaskID(), Name: input.TaskName, SourceType: input.SourceType, Mode: input.Options.Mode,
+		Status: "running", FileName: input.FileName,
+		TotalCount: input.Preview.Summary.TotalCount, ValidCount: input.Preview.Summary.ValidCount,
+		InvalidCount: input.Preview.Summary.InvalidCount, DuplicateInFileCount: input.Preview.Summary.DuplicateInFileCount,
+		DuplicateExistingCount: input.Preview.Summary.DuplicateExistingCount, CreatedAt: now, UpdatedAt: now,
 	}
-	if task.FailedCount > 0 || task.InvalidCount > 0 {
-		task.Status = "partial_failed"
+	// Persist the task shell first so a crash mid-ingest leaves an auditable running task
+	// instead of ghost bookmarks with no import history.
+	items := make([]domain.ImportTaskItem, 0, len(input.Items))
+	for _, p := range input.Items {
+		items = append(items, domain.ImportTaskItem{
+			ID: newPgImportID("imp_item_"), TaskID: task.ID, Index: p.Index, Title: p.Title, URL: p.URL,
+			Domain: p.Domain, FolderPath: p.FolderPath, Status: "pending", DedupeResult: "none",
+			CreatedAt: now, UpdatedAt: now,
+		})
 	}
 	meta, _ := json.Marshal(map[string]any{"options": input.Options, "preview": input.Preview.Summary})
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -123,7 +67,7 @@ func (r *PostgresRepository) CreateImportTask(ctx context.Context, userID string
 		return domain.ImportTaskDetailResponse{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `insert into import_tasks (id,user_id,name,source_type,mode,status,file_name,total_count,valid_count,invalid_count,duplicate_in_file_count,duplicate_existing_count,created_count,merged_count,skipped_count,failed_count,archive_queued_count,archive_success_count,archive_failed_count,source_meta_json,created_at,updated_at,completed_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,0,0,0,$17::jsonb,$18,$18,$18)`, task.ID, userID, task.Name, task.SourceType, task.Mode, task.Status, task.FileName, task.TotalCount, task.ValidCount, task.InvalidCount, task.DuplicateInFileCount, task.DuplicateExistingCount, task.CreatedCount, task.MergedCount, task.SkippedCount, task.FailedCount, meta, now)
+	_, err = tx.Exec(ctx, `insert into import_tasks (id,user_id,name,source_type,mode,status,file_name,total_count,valid_count,invalid_count,duplicate_in_file_count,duplicate_existing_count,created_count,merged_count,skipped_count,failed_count,archive_queued_count,archive_success_count,archive_failed_count,source_meta_json,created_at,updated_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,0,0,0,0,0,0,0,$13::jsonb,$14,$14)`, task.ID, userID, task.Name, task.SourceType, task.Mode, task.Status, task.FileName, task.TotalCount, task.ValidCount, task.InvalidCount, task.DuplicateInFileCount, task.DuplicateExistingCount, meta, now)
 	if err != nil {
 		return domain.ImportTaskDetailResponse{}, err
 	}
@@ -137,7 +81,106 @@ func (r *PostgresRepository) CreateImportTask(ctx context.Context, userID string
 	if err := tx.Commit(ctx); err != nil {
 		return domain.ImportTaskDetailResponse{}, err
 	}
+
+	for i, p := range input.Items {
+		item := &items[i]
+		item.UpdatedAt = time.Now().UTC()
+		if !p.Valid {
+			item.Status = "skipped"
+			item.DedupeResult = "invalid_input"
+			item.Reason = p.Reason
+			task.SkippedCount++
+		} else if p.DuplicateInFile {
+			item.Status = "skipped"
+			item.DedupeResult = "skipped_duplicate"
+			item.Reason = p.Reason
+			task.SkippedCount++
+		} else {
+			var existing *domain.ImportBookmarkMatch
+			if p.NormalizedURLHash != nil {
+				if x, ok := byHash[*p.NormalizedURLHash]; ok {
+					existing = &x
+				}
+			}
+			if existing != nil {
+				item.BookmarkID = &existing.BookmarkID
+				item.ArchivedVersionID = existing.LatestVersionID
+				item.HasArchive = existing.HasArchive
+				if input.Options.DedupeStrategy == "skip" {
+					item.Status = "skipped"
+					item.DedupeResult = "skipped_existing"
+					x := "站内已存在同一链接，按当前策略跳过。"
+					item.Reason = &x
+					task.SkippedCount++
+				} else {
+					item.Status = "deduplicated"
+					item.DedupeResult = "merged_existing"
+					x := "已合并到现有书签。"
+					if existing.HasArchive {
+						x = "已合并到现有书签，且该书签已有归档。"
+					}
+					item.Reason = &x
+					task.MergedCount++
+					if input.Options.DedupeStrategy == "update_metadata" {
+						_, _ = r.IngestBookmark(ctx, userID, postgresImportIngest(p, input.Options))
+					}
+				}
+			} else {
+				result, e := r.IngestBookmark(ctx, userID, postgresImportIngest(p, input.Options))
+				if e != nil {
+					item.Status = "failed"
+					item.DedupeResult = "none"
+					x := e.Error()
+					item.Reason = &x
+					task.FailedCount++
+				} else {
+					item.Status = "created_bookmark"
+					item.DedupeResult = "created_bookmark"
+					x := "已完成轻导入。"
+					item.Reason = &x
+					item.BookmarkID = &result.Bookmark.ID
+					task.CreatedCount++
+				}
+			}
+		}
+		if err := r.updateImportItem(ctx, userID, *item); err != nil {
+			return domain.ImportTaskDetailResponse{}, err
+		}
+	}
+
+	task.Status = "completed"
+	if task.FailedCount > 0 || task.InvalidCount > 0 {
+		task.Status = "partial_failed"
+	}
+	completedAt := time.Now().UTC()
+	task.CompletedAt = &completedAt
+	task.UpdatedAt = completedAt
+	if err := r.finalizeImportTask(ctx, userID, task); err != nil {
+		return domain.ImportTaskDetailResponse{}, err
+	}
 	return domain.ImportTaskDetailResponse{Task: task, Items: items}, nil
+}
+
+func inputTaskID() string {
+	return newPgImportID("imp_")
+}
+
+func (r *PostgresRepository) updateImportItem(ctx context.Context, userID string, item domain.ImportTaskItem) error {
+	_, err := r.pool.Exec(ctx, `
+		update import_items
+		set status=$4, dedupe_result=$5, reason=$6, bookmark_id=$7, archived_version_id=$8, has_archive=$9, updated_at=$10
+		where id=$1 and task_id=$2 and user_id=$3
+	`, item.ID, item.TaskID, userID, item.Status, item.DedupeResult, item.Reason, item.BookmarkID, item.ArchivedVersionID, item.HasArchive, item.UpdatedAt)
+	return err
+}
+
+func (r *PostgresRepository) finalizeImportTask(ctx context.Context, userID string, task domain.ImportTask) error {
+	_, err := r.pool.Exec(ctx, `
+		update import_tasks
+		set status=$3, created_count=$4, merged_count=$5, skipped_count=$6, failed_count=$7, updated_at=$8, completed_at=$9
+		where id=$1 and user_id=$2
+	`, task.ID, userID, task.Status, task.CreatedCount, task.MergedCount, task.SkippedCount, task.FailedCount, task.UpdatedAt, task.CompletedAt)
+	return err
 }
 func postgresImportIngest(i domain.PreparedImportItem, o domain.ImportExecutionOptions) domain.IngestBookmarkRequest {
 	path := ""

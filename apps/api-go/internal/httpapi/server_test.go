@@ -165,6 +165,165 @@ func TestAPITokenCanIngestBookmark(t *testing.T) {
 	}
 }
 
+func TestUserIsolationForBookmarks(t *testing.T) {
+	server := newTestServer()
+	alice := registerTestUser(t, server, "alice@example.com")
+	bob := registerTestUser(t, server, "bob@example.com")
+
+	createRequest := httptest.NewRequest(http.MethodPost, "/bookmarks", bytes.NewBufferString(`{"url":"https://alice.example/private","title":"Alice Only"}`))
+	createRequest.Header.Set("authorization", "Bearer "+alice)
+	createResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(createResponse, createRequest)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createResponse.Code, createResponse.Body.String())
+	}
+	var created struct {
+		Bookmark struct {
+			ID string `json:"id"`
+		} `json:"bookmark"`
+	}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Bookmark.ID == "" {
+		// ingest/create may wrap differently
+		var alt map[string]any
+		_ = json.Unmarshal(createResponse.Body.Bytes(), &alt)
+		if bookmark, ok := alt["bookmark"].(map[string]any); ok {
+			if id, ok := bookmark["id"].(string); ok {
+				created.Bookmark.ID = id
+			}
+		}
+	}
+
+	// Bob must not see Alice's bookmark in list.
+	listRequest := httptest.NewRequest(http.MethodGet, "/bookmarks?limit=20", nil)
+	listRequest.Header.Set("authorization", "Bearer "+bob)
+	listResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(listResponse, listRequest)
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listResponse.Code, listResponse.Body.String())
+	}
+	if bytes.Contains(listResponse.Body.Bytes(), []byte("Alice Only")) {
+		t.Fatalf("bob listed alice bookmark: %s", listResponse.Body.String())
+	}
+
+	if created.Bookmark.ID != "" {
+		detailRequest := httptest.NewRequest(http.MethodGet, "/bookmarks/"+created.Bookmark.ID, nil)
+		detailRequest.Header.Set("authorization", "Bearer "+bob)
+		detailResponse := httptest.NewRecorder()
+		server.Router().ServeHTTP(detailResponse, detailRequest)
+		if detailResponse.Code == http.StatusOK {
+			t.Fatalf("bob should not read alice bookmark detail: %s", detailResponse.Body.String())
+		}
+	}
+}
+
+func TestPrivateModeRequiresUnlock(t *testing.T) {
+	server := newTestServer()
+	token := registerTestUser(t, server, "private@example.com")
+
+	// Without private token, private bookmarks must be locked.
+	listRequest := httptest.NewRequest(http.MethodGet, "/private/bookmarks", nil)
+	listRequest.Header.Set("authorization", "Bearer "+token)
+	listResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(listResponse, listRequest)
+	if listResponse.Code == http.StatusOK {
+		t.Fatalf("expected private mode lock, got 200: %s", listResponse.Body.String())
+	}
+	if !bytes.Contains(listResponse.Body.Bytes(), []byte("PrivateModeLocked")) && listResponse.Code != http.StatusUnauthorized && listResponse.Code != http.StatusForbidden {
+		// Accept locked/unauthorized responses.
+		t.Fatalf("expected private lock response, got %d %s", listResponse.Code, listResponse.Body.String())
+	}
+
+	setupRequest := httptest.NewRequest(http.MethodPost, "/private-mode/setup", bytes.NewBufferString(`{"password":"super-secret"}`))
+	setupRequest.Header.Set("authorization", "Bearer "+token)
+	setupResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(setupResponse, setupRequest)
+	if setupResponse.Code != http.StatusOK && setupResponse.Code != http.StatusCreated {
+		t.Fatalf("setup status = %d, body = %s", setupResponse.Code, setupResponse.Body.String())
+	}
+	var unlock struct {
+		PrivateToken string `json:"privateToken"`
+	}
+	_ = json.Unmarshal(setupResponse.Body.Bytes(), &unlock)
+	if unlock.PrivateToken == "" {
+		// some responses nest under summary
+		var alt map[string]any
+		_ = json.Unmarshal(setupResponse.Body.Bytes(), &alt)
+		if tokenValue, ok := alt["privateToken"].(string); ok {
+			unlock.PrivateToken = tokenValue
+		}
+	}
+	if unlock.PrivateToken == "" {
+		t.Fatalf("missing private token: %s", setupResponse.Body.String())
+	}
+
+	lockedAgain := httptest.NewRequest(http.MethodGet, "/private/bookmarks", nil)
+	lockedAgain.Header.Set("authorization", "Bearer "+token)
+	lockedResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(lockedResponse, lockedAgain)
+	if lockedResponse.Code == http.StatusOK {
+		t.Fatal("session auth alone should not unlock private bookmarks")
+	}
+
+	unlockedRequest := httptest.NewRequest(http.MethodGet, "/private/bookmarks", nil)
+	unlockedRequest.Header.Set("authorization", "Bearer "+token)
+	unlockedRequest.Header.Set("x-keeppage-private-token", unlock.PrivateToken)
+	unlockedResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(unlockedResponse, unlockedRequest)
+	if unlockedResponse.Code != http.StatusOK {
+		t.Fatalf("unlocked private list status = %d, body = %s", unlockedResponse.Code, unlockedResponse.Body.String())
+	}
+}
+
+func TestExtensionConnectCodeRedeem(t *testing.T) {
+	server := newTestServer()
+	token := registerTestUser(t, server, "ext@example.com")
+	connectRequest := httptest.NewRequest(http.MethodPost, "/extension/connect", bytes.NewBufferString(`{"deviceName":"Chrome","platform":"chrome"}`))
+	connectRequest.Header.Set("authorization", "Bearer "+token)
+	connectResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(connectResponse, connectRequest)
+	if connectResponse.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d, body = %s", connectResponse.Code, connectResponse.Body.String())
+	}
+	var connect struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(connectResponse.Body.Bytes(), &connect); err != nil {
+		t.Fatal(err)
+	}
+	if connect.Code == "" {
+		t.Fatalf("missing code: %s", connectResponse.Body.String())
+	}
+	redeemRequest := httptest.NewRequest(http.MethodPost, "/extension/connect/redeem", bytes.NewBufferString(`{"code":"`+connect.Code+`"}`))
+	redeemResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(redeemResponse, redeemRequest)
+	if redeemResponse.Code != http.StatusOK && redeemResponse.Code != http.StatusCreated {
+		t.Fatalf("redeem status = %d, body = %s", redeemResponse.Code, redeemResponse.Body.String())
+	}
+	// Second redeem must fail.
+	redeemAgain := httptest.NewRequest(http.MethodPost, "/extension/connect/redeem", bytes.NewBufferString(`{"code":"`+connect.Code+`"}`))
+	againResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(againResponse, redeemAgain)
+	if againResponse.Code == http.StatusOK || againResponse.Code == http.StatusCreated {
+		t.Fatal("connect code should be single-use")
+	}
+}
+
+func TestAPITokenRejectsUnsupportedScopes(t *testing.T) {
+	server := newTestServer()
+	session := registerTestUser(t, server, "scope@example.com")
+	// Only bookmark:create is allowed; unrelated scopes must be rejected at create time.
+	createRequest := httptest.NewRequest(http.MethodPost, "/api-tokens", bytes.NewBufferString(`{"name":"Admin","scopes":["admin:all"]}`))
+	createRequest.Header.Set("authorization", "Bearer "+session)
+	createResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(createResponse, createRequest)
+	if createResponse.Code == http.StatusCreated || createResponse.Code == http.StatusOK {
+		t.Fatalf("unsupported scopes should be rejected: %d %s", createResponse.Code, createResponse.Body.String())
+	}
+}
+
 func TestTaxonomyAndWorkspaceBootstrap(t *testing.T) {
 	server := newTestServer()
 	token := registerTestUser(t, server, "taxonomy@example.com")
@@ -254,6 +413,7 @@ func newTestServer() *Server {
 		StorageDriver:       "memory",
 		ObjectStorageDriver: "localfs",
 		AuthTokenSecret:     "keeppage-dev-secret",
+		AuthTokenTTLDays:    30,
 		UploadBodyLimitMB:   32,
 	}
 	repo := repository.NewMemoryRepository()

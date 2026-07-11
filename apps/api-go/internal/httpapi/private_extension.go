@@ -161,7 +161,7 @@ func (s *Server) handleExtensionConnect(w http.ResponseWriter, r *http.Request) 
 		writeError(s.logger, w, err)
 		return
 	}
-	response, err := privateService.CreateExtensionConnectCode(user.ID, input)
+	response, err := privateService.CreateExtensionConnectCode(r.Context(), user.ID, input)
 	if err != nil {
 		writeError(s.logger, w, err)
 		return

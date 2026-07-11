@@ -16,17 +16,19 @@ type memoryExtensionDevice struct {
 }
 
 type memoryPrivateExtensionState struct {
-	mu      sync.RWMutex
-	configs map[string]domain.PrivateModeConfig
-	devices map[string]memoryExtensionDevice
+	mu           sync.RWMutex
+	configs      map[string]domain.PrivateModeConfig
+	devices      map[string]memoryExtensionDevice
+	connectCodes map[string]ExtensionConnectCode
 }
 
 var memoryPrivateExtensionStates sync.Map // map[*MemoryRepository]*memoryPrivateExtensionState
 
 func memoryPrivateExtensionStateFor(r *MemoryRepository) *memoryPrivateExtensionState {
 	state, _ := memoryPrivateExtensionStates.LoadOrStore(r, &memoryPrivateExtensionState{
-		configs: map[string]domain.PrivateModeConfig{},
-		devices: map[string]memoryExtensionDevice{},
+		configs:      map[string]domain.PrivateModeConfig{},
+		devices:      map[string]memoryExtensionDevice{},
+		connectCodes: map[string]ExtensionConnectCode{},
 	})
 	return state.(*memoryPrivateExtensionState)
 }
@@ -131,6 +133,35 @@ func (r *MemoryRepository) RevokeExtensionDevice(_ context.Context, userID strin
 		state.devices[deviceID] = device
 	}
 	return true, nil
+}
+
+func (r *MemoryRepository) SaveExtensionConnectCode(_ context.Context, code ExtensionConnectCode) error {
+	state := memoryPrivateExtensionStateFor(r)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	now := time.Now()
+	for k, pending := range state.connectCodes {
+		if !pending.ExpiresAt.After(now) {
+			delete(state.connectCodes, k)
+		}
+	}
+	state.connectCodes[code.Code] = code
+	return nil
+}
+
+func (r *MemoryRepository) TakeExtensionConnectCode(_ context.Context, code string) (*ExtensionConnectCode, error) {
+	state := memoryPrivateExtensionStateFor(r)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	pending, ok := state.connectCodes[code]
+	if !ok {
+		return nil, nil
+	}
+	delete(state.connectCodes, code)
+	if !pending.ExpiresAt.After(time.Now()) {
+		return nil, nil
+	}
+	return &pending, nil
 }
 
 // MemoryDeviceAuthRecord and TouchMemoryDevice are used by the existing auth
