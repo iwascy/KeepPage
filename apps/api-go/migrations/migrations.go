@@ -96,6 +96,9 @@ func Apply(ctx context.Context, databaseURL string) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate applied migrations: %w", err)
 	}
+	if len(applied) == 0 {
+		adoptExistingKeepPageSchema(ctx, pool, applied)
+	}
 
 	names, err := listMigrationFiles()
 	if err != nil {
@@ -135,6 +138,46 @@ func Apply(ctx context.Context, databaseURL string) error {
 		}
 	}
 	return nil
+}
+
+// adoptExistingKeepPageSchema lets the Go migrator take ownership of a database
+// created by the TypeScript migrator. The numbered migrations 0001-0013 are
+// the shared baseline; only migrations introduced after the cutover run.
+func adoptExistingKeepPageSchema(ctx context.Context, pool *pgxpool.Pool, applied map[string]bool) {
+	var exists bool
+	if err := pool.QueryRow(ctx, `
+		select exists(
+			select 1 from information_schema.tables
+			where table_schema = 'public' and table_name = 'users'
+		) and exists(
+			select 1 from information_schema.tables
+			where table_schema = 'public' and table_name = 'bookmarks'
+		) and exists(
+			select 1 from information_schema.tables
+			where table_schema = 'public' and table_name = 'shares'
+		)
+	`).Scan(&exists); err != nil || !exists {
+		return
+	}
+	for _, filename := range []string{
+		"0001_initial.sql",
+		"0002_capture_uploads_unique.sql",
+		"0003_auth_and_capture_user_scope.sql",
+		"0004_batch_import_mvp.sql",
+		"0005_folder_parent_hierarchy.sql",
+		"0006_reader_archive.sql",
+		"0007_bookmark_favorites.sql",
+		"0008_api_tokens.sql",
+		"0009_private_mode_v1.sql",
+		"0010_bookmark_icons.sql",
+		"0011_performance_indexes.sql",
+		"0012_extension_devices.sql",
+		"0013_shares.sql",
+	} {
+		if _, err := pool.Exec(ctx, `insert into schema_migrations (filename) values ($1) on conflict do nothing`, filename); err == nil {
+			applied[filename] = true
+		}
+	}
 }
 
 func listMigrationFiles() ([]string, error) {
