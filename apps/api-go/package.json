@@ -1,0 +1,12 @@
+{
+  "name": "@keeppage/api-go",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "go run ./cmd/server",
+    "build": "go build ./cmd/server && go build ./cmd/migrate",
+    "db:init": "go run ./cmd/migrate",
+    "typecheck": "go test ./..."
+  }
+}
