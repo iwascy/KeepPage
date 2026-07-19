@@ -19,6 +19,7 @@ import {
 } from "../../src/lib/domain-runtime";
 import {
   clearStoredAuthSession,
+  normalizeApiBaseUrl,
   openExtensionAuthPage,
   openSidePanelForCurrentWindow,
   validateStoredAuthSession,
@@ -1124,11 +1125,6 @@ export function App() {
       {error && <footer className="error-banner">{error}</footer>}
     </div>
   );
-}
-
-function normalizeApiBaseUrl(input: string) {
-  const normalized = input.trim();
-  return (normalized || DEFAULT_API_BASE_URL).replace(/\/$/, "");
 }
 
 function parseSaveModeIntent(input: unknown): SaveMode | null {

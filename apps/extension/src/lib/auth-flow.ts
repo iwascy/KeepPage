@@ -52,6 +52,13 @@ export async function getConfiguredApiBaseUrl() {
   const result = await chrome.storage.local.get("apiBaseUrl");
   const configured = typeof result.apiBaseUrl === "string" ? result.apiBaseUrl.trim() : "";
   const apiBaseUrl = normalizeApiBaseUrl(configured || DEFAULT_API_BASE_URL);
+  if (configured && configured !== apiBaseUrl) {
+    await chrome.storage.local.set({ apiBaseUrl });
+    logger.info("Migrated legacy API base URL.", {
+      configured,
+      apiBaseUrl,
+    });
+  }
   logger.debug("Resolved configured API base URL.", {
     configured: configured || undefined,
     apiBaseUrl,
@@ -300,8 +307,12 @@ async function buildWebExtensionConnectUrl(reason: string, connectNonce: string)
   return authPageUrl.toString();
 }
 
-function normalizeApiBaseUrl(input: string) {
-  return input.trim().replace(/\/$/, "");
+export function normalizeApiBaseUrl(input: string) {
+  const normalized = input.trim().replace(/\/+$/, "");
+  if (normalized === DEFAULT_WEB_BASE_URL) {
+    return DEFAULT_API_BASE_URL;
+  }
+  return normalized || DEFAULT_API_BASE_URL;
 }
 
 async function fetchCurrentAccount(apiBaseUrl: string, authToken: string) {
