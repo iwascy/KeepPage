@@ -18,7 +18,10 @@ import {
 import { createLogger } from "../src/lib/logger";
 import { getFetchChunkSize } from "../src/lib/singlefile-fetch";
 import { refreshAllBookmarkIcons } from "../src/lib/sync-api";
-import { fetchBookmarkStatus } from "../src/lib/bookmark-metadata-api";
+import {
+  createLinkBookmark,
+  fetchBookmarkStatus,
+} from "../src/lib/bookmark-metadata-api";
 import {
   captureProfileSchema,
   captureScopeSchema,
@@ -56,6 +59,11 @@ export default defineBackground(() => {
         contexts: ["page", "action"],
       });
       chrome.contextMenus.create({
+        id: "keeppage-save-link",
+        title: "仅保存为书签（不存档）",
+        contexts: ["page", "action"],
+      });
+      chrome.contextMenus.create({
         id: "keeppage-save-page-private",
         title: "保存到 KP 私密模式",
         contexts: ["page", "action"],
@@ -74,11 +82,19 @@ export default defineBackground(() => {
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (
       info.menuItemId !== "keeppage-save-page" &&
+      info.menuItemId !== "keeppage-save-link" &&
       info.menuItemId !== "keeppage-save-page-private"
     ) {
       return;
     }
     if (!tab?.id) {
+      return;
+    }
+    if (info.menuItemId === "keeppage-save-link") {
+      if (!await ensureAuthenticated("context-menu-link-bookmark")) {
+        return;
+      }
+      await saveTabAsLinkBookmark(tab);
       return;
     }
     const saveMode = info.menuItemId === "keeppage-save-page-private" ? "private" : "standard";
@@ -383,6 +399,34 @@ async function attemptQuickCapture(windowId: number | undefined, saveMode: "stan
     if (windowId != null) {
       await openSidePanelForWindow(windowId);
     }
+  }
+}
+
+async function saveTabAsLinkBookmark(tab: chrome.tabs.Tab) {
+  if (typeof tab.id !== "number" || !isBookmarkablePageUrl(tab.url)) {
+    logger.warn("Link bookmark skipped for unsupported page.", {
+      tabId: tab.id,
+      url: tab.url,
+    });
+    return;
+  }
+
+  try {
+    const result = await createLinkBookmark(tab.url, tab.title);
+    logger.info("Link bookmark saved without archive.", {
+      tabId: tab.id,
+      bookmarkId: result.bookmarkId,
+      status: result.status,
+      deduplicated: result.deduplicated,
+    });
+  } catch (error) {
+    logger.warn("Link bookmark save failed.", {
+      tabId: tab.id,
+      url: tab.url,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    await refreshTabBookmarkBadge(tab.id, tab.url);
   }
 }
 

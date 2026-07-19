@@ -1,5 +1,7 @@
 import {
   bookmarkDetailResponseSchema,
+  ingestBookmarkRequestSchema,
+  ingestBookmarkResponseSchema,
   bookmarkMetadataUpdateRequestSchema,
   bookmarkSchema,
   bookmarkStatusResponseSchema,
@@ -7,6 +9,7 @@ import {
   tagListResponseSchema,
   type Bookmark,
   type BookmarkMetadataUpdateRequest,
+  type IngestBookmarkResponse,
   type BookmarkStatusResponse,
   type Folder,
   type Tag,
@@ -37,6 +40,21 @@ export async function fetchBookmarkStatus(url: string): Promise<BookmarkStatusRe
     `/bookmarks/status?url=${encodeURIComponent(url)}`,
     bookmarkStatusResponseSchema,
   );
+}
+
+export async function createLinkBookmark(
+  url: string,
+  title?: string,
+): Promise<IngestBookmarkResponse> {
+  const payload = ingestBookmarkRequestSchema.parse({
+    url,
+    title: title?.trim() || undefined,
+    dedupeStrategy: "merge",
+  });
+  return requestJson("/bookmarks", ingestBookmarkResponseSchema, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function fetchFolders(): Promise<Folder[]> {
