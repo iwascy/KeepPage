@@ -128,15 +128,15 @@ Chrome MV3 扩展，职责：
 - 站点适配已经部分拆到 `src/lib/sites/**`。
 - `content.content.ts` 已退化为 1 行入口导出，真实 content 主体迁入 `src/lib/content/content-main.ts`，共享类型与常量在 `src/lib/content/types.ts`。
 - `legacy-reader.ts`、`sync-api.ts`、`capture-pipeline.ts` 已退化为外观导出，历史实现分别迁入 `*.impl.ts`。
-- popup/sidepanel 已共享任务状态、profile/scope、私密同步和质量文案，仍可继续拆 UI view-model。
-- 扩展当前版本为 `0.1.41`，本轮结构调整后已执行 extension build。
+- popup 点击工具栏图标后仅创建链接书签，不进入抓取任务；sidepanel 继续负责完整存档、私密模式、任务状态、质量诊断和预览。
+- 扩展当前版本为 `0.1.45`，本轮行为调整后已执行 extension build。
 
 扩展边界规则：
 
 - `entrypoints/*` 只保留入口注册和消息分发。
 - 站点适配放到 `src/lib/sites/<site>/`。
 - content 侧 bridge / signals / selection / toast / capture 分模块维护。
-- popup 与 sidepanel 共享的 task 状态、preview、auth view-model 不要重复实现。
+- popup 的书签保存状态与 sidepanel 的归档任务状态保持独立；auth 和书签元数据访问继续复用 `src/lib` 能力。
 
 ## 当前阶段约定
 

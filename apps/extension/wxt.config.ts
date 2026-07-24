@@ -4,7 +4,7 @@ import { defineConfig } from "wxt";
 const extensionPackage = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
 ) as { version: string };
-const extensionManifestVersion = "0.1.44";
+const extensionManifestVersion = "0.1.45";
 
 if (extensionPackage.version !== extensionManifestVersion) {
   throw new Error("Extension package version and manifest version must stay in sync.");
@@ -29,7 +29,7 @@ export default defineConfig({
     ],
     host_permissions: ["<all_urls>"],
     action: {
-      default_title: "保存当前页面到 KeepPage",
+      default_title: "将当前页面保存为 KeepPage 书签",
       default_popup: "popup.html",
     },
     side_panel: {

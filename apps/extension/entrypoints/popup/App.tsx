@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Bookmark, CaptureTask, Folder, Tag } from "@keeppage/domain";
+import type { Bookmark, Folder, Tag } from "@keeppage/domain";
 import {
   MESSAGE_TYPE,
-  type TaskUpdatedEvent,
-  type TriggerCaptureActiveTabResponse,
+  type SaveActiveTabAsBookmarkResponse,
 } from "../../src/lib/messages";
 import {
   fetchBookmark,
@@ -16,36 +15,25 @@ import {
   openSidePanelForCurrentWindow,
 } from "../../src/lib/auth-flow";
 import {
-  getTaskProgressValue,
-  getTaskStepDescription,
-  getTaskStepLabel,
-  isSuccessStatus,
   looksLikeAuthError,
 } from "../../src/lib/ui-shared/capture-status";
 
-const TASK_MATCH_GRACE_MS = 10_000;
 const FOLDER_SUGGESTION_LIMIT = 6;
 const TAG_SUGGESTION_LIMIT = 12;
 
 type MetadataState = "idle" | "loading" | "saving" | "saved" | "error";
+type BookmarkSaveState = "saving" | "success" | "error";
 
 export function App() {
-  const captureStartedRef = useRef(false);
-  const trackedTaskIdRef = useRef<string | null>(null);
+  const saveStartedRef = useRef(false);
   const folderPickerRef = useRef<HTMLDivElement | null>(null);
   const tagPickerRef = useRef<HTMLDivElement | null>(null);
-  const captureContextRef = useRef<{
-    sourceUrl: string | null;
-    startedAt: number;
-  }>({
-    sourceUrl: null,
-    startedAt: 0,
-  });
   const metadataLoadedBookmarkIdRef = useRef<string | null>(null);
 
-  const [captureTask, setCaptureTask] = useState<CaptureTask | null>(null);
-  const [captureRequestDone, setCaptureRequestDone] = useState(false);
-  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<BookmarkSaveState>("saving");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [bookmarkId, setBookmarkId] = useState<string | null>(null);
+  const [page, setPage] = useState<{ url: string; title: string } | null>(null);
 
   const [folders, setFolders] = useState<Folder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -58,57 +46,12 @@ export function App() {
   const [metadataState, setMetadataState] = useState<MetadataState>("idle");
   const [metadataMessage, setMetadataMessage] = useState<string | null>(null);
 
-  const captureState = useMemo(() => {
-    if (captureError) {
-      return "error" as const;
-    }
-    if (!captureTask) {
-      return "saving" as const;
-    }
-    if (isSuccessStatus(captureTask.status)) {
-      return "success" as const;
-    }
-    if (captureTask.status === "failed") {
-      return "error" as const;
-    }
-    if (captureRequestDone && captureTask.status === "upload_pending" && captureTask.failureReason) {
-      return "error" as const;
-    }
-    return "saving" as const;
-  }, [captureError, captureRequestDone, captureTask]);
-
   useEffect(() => {
-    const listener = (
-      message: unknown,
-      _sender: chrome.runtime.MessageSender,
-      _sendResponse: (response?: unknown) => void,
-    ) => {
-      const event = message as Partial<TaskUpdatedEvent>;
-      if (event.type !== MESSAGE_TYPE.TaskUpdated || !event.task) {
-        return false;
-      }
-
-      if (!shouldTrackTask(event.task, trackedTaskIdRef.current, captureContextRef.current)) {
-        return false;
-      }
-
-      trackedTaskIdRef.current = event.task.id;
-      setCaptureTask(event.task);
-      return false;
-    };
-
-    chrome.runtime.onMessage.addListener(listener);
-    return () => {
-      chrome.runtime.onMessage.removeListener(listener);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (captureStartedRef.current) {
+    if (saveStartedRef.current) {
       return;
     }
-    captureStartedRef.current = true;
-    void startCapture();
+    saveStartedRef.current = true;
+    void saveBookmark();
   }, []);
 
   useEffect(() => {
@@ -132,23 +75,22 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const bookmarkId = captureTask?.bookmarkId;
-    if (!bookmarkId || captureState !== "success") {
+    if (!bookmarkId || saveState !== "success") {
       return;
     }
     if (metadataLoadedBookmarkIdRef.current === bookmarkId) {
       return;
     }
     void loadMetadataOptions(bookmarkId);
-  }, [captureTask?.bookmarkId, captureState]);
+  }, [bookmarkId, saveState]);
 
-  const statusTitle = captureState === "success"
-    ? "保存完成"
-    : captureState === "error"
-    ? "保存失败"
-    : "保存中";
-  const statusDescription = getStatusDescription(captureTask, captureState, captureError);
-  const progressValue = getTaskProgressValue(captureTask, captureState);
+  const statusTitle = saveState === "success"
+    ? "书签保存完成"
+    : saveState === "error"
+    ? "书签保存失败"
+    : "正在保存书签";
+  const statusDescription = getStatusDescription(saveState, saveError);
+  const progressValue = saveState === "success" ? 100 : saveState === "error" ? 0 : 45;
   const normalizedFolderInput = normalizeFolderPath(folderInput);
   const suggestedFolders = useMemo(
     () => filterFolders(folders, folderInput).slice(0, FOLDER_SUGGESTION_LIMIT),
@@ -170,10 +112,11 @@ export function App() {
   const showFolderMenu = isFolderMenuOpen && (suggestedFolders.length > 0 || canCreateFolder || folderInput.trim().length > 0);
   const showTagMenu = isTagMenuOpen && (filteredTagSuggestions.length > 0 || canCreateTag || tagInput.trim().length > 0);
 
-  async function startCapture() {
+  async function saveBookmark() {
     try {
-      setCaptureError(null);
-      setCaptureRequestDone(false);
+      setSaveState("saving");
+      setSaveError(null);
+      setBookmarkId(null);
       setMetadataState("idle");
       setMetadataMessage(null);
 
@@ -181,30 +124,31 @@ export function App() {
         active: true,
         lastFocusedWindow: true,
       });
-      captureContextRef.current = {
-        sourceUrl: tab?.url ?? null,
-        startedAt: Date.now(),
-      };
+      if (tab?.url) {
+        setPage({
+          url: tab.url,
+          title: tab.title?.trim() || tab.url,
+        });
+      }
 
       const response = await chrome.runtime.sendMessage({
-        type: MESSAGE_TYPE.TriggerCaptureActiveTab,
-        profile: "complete",
-        saveMode: "standard",
-        captureScope: "page",
-      }) as TriggerCaptureActiveTabResponse;
+        type: MESSAGE_TYPE.SaveActiveTabAsBookmark,
+      }) as SaveActiveTabAsBookmarkResponse;
 
-      setCaptureRequestDone(true);
-      if (!response.ok || !response.task) {
-        setCaptureError(response.error ?? "保存失败，请稍后重试。");
+      if (!response.ok || !response.bookmarkId) {
+        setSaveState("error");
+        setSaveError(response.error ?? "书签保存失败，请稍后重试。");
         return;
       }
 
-      trackedTaskIdRef.current = response.task.id;
-      setCaptureTask(response.task);
+      if (response.source) {
+        setPage(response.source);
+      }
+      setBookmarkId(response.bookmarkId);
+      setSaveState("success");
     } catch (error) {
-      setCaptureRequestDone(true);
-      setCaptureError(error instanceof Error ? error.message : "保存失败，请稍后重试。");
-      return;
+      setSaveState("error");
+      setSaveError(error instanceof Error ? error.message : "书签保存失败，请稍后重试。");
     }
   }
 
@@ -236,7 +180,6 @@ export function App() {
   }
 
   async function handleSubmitMetadata() {
-    const bookmarkId = captureTask?.bookmarkId;
     if (!bookmarkId) {
       return;
     }
@@ -367,12 +310,12 @@ export function App() {
 
   return (
     <main className="popup-shell">
-      <section className={`status-card ${captureState}`}>
+      <section className={`status-card ${saveState}`}>
         <div className="status-copy">
           <p className="eyebrow">KeepPage</p>
           <div className="status-pill">
             <span className="status-dot" aria-hidden="true" />
-            <span>{captureState === "success" ? "保存成功" : captureState === "error" ? "保存失败" : "保存进行中"}</span>
+            <span>{saveState === "success" ? "书签已保存" : saveState === "error" ? "保存失败" : "保存进行中"}</span>
           </div>
           <h1>{statusTitle}</h1>
           <p className="status-description">{statusDescription}</p>
@@ -381,7 +324,7 @@ export function App() {
               <span style={{ width: `${progressValue}%` }} />
             </div>
             <div className="status-progress-meta">
-              <span>{captureTask ? getTaskStepLabel(captureTask.status) : "准备开始"}</span>
+              <span>{saveState === "success" ? "已写入书签" : saveState === "error" ? "写入失败" : "正在写入书签"}</span>
               <span>{progressValue}%</span>
             </div>
           </div>
@@ -391,20 +334,20 @@ export function App() {
       <section className="summary-card">
         <div className="summary-row">
           <span>页面</span>
-          <strong title={captureTask?.source.title ?? undefined}>
-            {captureTask?.source.title ?? "正在识别当前页面..."}
+          <strong title={page?.title}>
+            {page?.title ?? "正在识别当前页面..."}
           </strong>
         </div>
         <div className="summary-row">
-          <span>状态</span>
-          <strong>{captureTask ? getTaskStepLabel(captureTask.status) : "准备开始"}</strong>
+          <span>模式</span>
+          <strong>书签（不存档）</strong>
         </div>
-        {captureTask?.failureReason ? (
-          <p className="inline-message error-text">{captureTask.failureReason}</p>
+        {saveError ? (
+          <p className="inline-message error-text">{saveError}</p>
         ) : null}
       </section>
 
-      {captureState === "success" && captureTask?.bookmarkId ? (
+      {saveState === "success" && bookmarkId ? (
         <section className="editor-card">
           <div className="section-heading">
             <h2>保存后整理</h2>
@@ -592,9 +535,9 @@ export function App() {
         </section>
       ) : null}
 
-      {captureState !== "success" ? (
+      {saveState !== "success" ? (
         <div className="actions">
-          {captureState === "error" ? (
+          {saveState === "error" ? (
             <button type="button" onClick={() => window.location.reload()}>
               重新保存
             </button>
@@ -602,7 +545,7 @@ export function App() {
           <button type="button" className="ghost" onClick={handleOpenWorkspace}>
             打开工作台
           </button>
-          {captureState === "error" && looksLikeAuthError(captureError ?? captureTask?.failureReason) ? (
+          {saveState === "error" && looksLikeAuthError(saveError) ? (
             <button type="button" className="ghost" onClick={handleOpenLogin}>
               去登录
             </button>
@@ -613,42 +556,17 @@ export function App() {
   );
 }
 
-function shouldTrackTask(
-  task: CaptureTask,
-  trackedTaskId: string | null,
-  context: { sourceUrl: string | null; startedAt: number },
-) {
-  if ((task.saveMode ?? "standard") !== "standard") {
-    return false;
-  }
-  if (trackedTaskId) {
-    return task.id === trackedTaskId;
-  }
-  if (!context.sourceUrl || task.source.url !== context.sourceUrl) {
-    return false;
-  }
-  const createdAt = Date.parse(task.createdAt);
-  if (!Number.isFinite(createdAt)) {
-    return false;
-  }
-  return createdAt >= context.startedAt - TASK_MATCH_GRACE_MS;
-}
-
 function getStatusDescription(
-  task: CaptureTask | null,
-  captureState: "saving" | "success" | "error",
-  captureError: string | null,
+  saveState: BookmarkSaveState,
+  saveError: string | null,
 ) {
-  if (captureState === "error") {
-    return captureError ?? task?.failureReason ?? "这次保存没有完成，请重试。";
+  if (saveState === "error") {
+    return saveError ?? "这次书签保存没有完成，请重试。";
   }
-  if (!task) {
-    return "正在准备当前标签页的归档任务。";
+  if (saveState === "success") {
+    return "网页链接已保存，不会生成页面存档；现在可以继续整理收藏夹和 tag。";
   }
-  if (captureState === "success") {
-    return "页面已保存到 KeepPage，现在可以继续整理收藏夹和 tag。";
-  }
-  return getTaskStepDescription(task.status);
+  return "正在保存当前网页链接，不会抓取或上传页面内容。";
 }
 
 function parseTagNames(input: string) {

@@ -17,6 +17,7 @@ export const MESSAGE_TYPE = {
   ShowInPageToast: "keeppage/show-in-page-toast",
   ListTasks: "keeppage/list-tasks",
   StartSelectionCapture: "keeppage/start-selection-capture",
+  SaveActiveTabAsBookmark: "keeppage/save-active-tab-as-bookmark",
   TriggerCaptureActiveTab: "keeppage/trigger-capture-active-tab",
   EnqueueLocalArchiveQueue: "keeppage/enqueue-local-archive-queue",
   RedeemExtensionConnectCode: "keeppage/redeem-extension-connect-code",
@@ -105,6 +106,20 @@ export interface TriggerCaptureActiveTabResponse {
   error?: string;
 }
 
+export interface SaveActiveTabAsBookmarkRequest {
+  type: typeof MESSAGE_TYPE.SaveActiveTabAsBookmark;
+}
+
+export interface SaveActiveTabAsBookmarkResponse {
+  ok: boolean;
+  bookmarkId?: string;
+  source?: {
+    url: string;
+    title: string;
+  };
+  error?: string;
+}
+
 export interface EnqueueLocalArchiveQueueRequest {
   type: typeof MESSAGE_TYPE.EnqueueLocalArchiveQueue;
   items: Array<{
@@ -185,6 +200,7 @@ export type ContentRequest =
 export type BackgroundRequest =
   | ListTasksRequest
   | StartSelectionCaptureRequest
+  | SaveActiveTabAsBookmarkRequest
   | TriggerCaptureActiveTabRequest
   | EnqueueLocalArchiveQueueRequest
   | RedeemExtensionConnectCodeRequest
@@ -225,6 +241,7 @@ export function isBackgroundRequest(message: unknown): message is BackgroundRequ
   return (
     maybe.type === MESSAGE_TYPE.ListTasks ||
     maybe.type === MESSAGE_TYPE.StartSelectionCapture ||
+    maybe.type === MESSAGE_TYPE.SaveActiveTabAsBookmark ||
     maybe.type === MESSAGE_TYPE.TriggerCaptureActiveTab ||
     maybe.type === MESSAGE_TYPE.EnqueueLocalArchiveQueue ||
     maybe.type === MESSAGE_TYPE.RedeemExtensionConnectCode ||

@@ -291,7 +291,7 @@ npm run zip -w @keeppage/extension
 
 当前插件支持以下入口：
 
-- 点击扩展图标，保存当前页
+- 点击扩展图标，仅保存当前页为书签（不生成页面存档）
 - 右键菜单中的“保存到 KeepPage”
 - 快捷键 `Ctrl+Shift+Y`：保存当前页
 - 快捷键 `Ctrl+Shift+O`：打开 Side Panel

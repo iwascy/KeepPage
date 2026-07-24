@@ -201,6 +201,23 @@ export default defineBackground(() => {
         sendResponse(response);
         return;
       }
+      if (message.type === MESSAGE_TYPE.SaveActiveTabAsBookmark) {
+        if (!await ensureAuthenticated("toolbar-bookmark")) {
+          sendResponse({ ok: false, error: "请先登录 KeepPage。" });
+          return;
+        }
+        const [activeTab] = await chrome.tabs.query({
+          active: true,
+          lastFocusedWindow: true,
+        });
+        if (!activeTab) {
+          sendResponse({ ok: false, error: "当前没有可操作的标签页。" });
+          return;
+        }
+        const result = await createBookmarkForTab(activeTab);
+        sendResponse({ ok: true, ...result });
+        return;
+      }
       if (message.type === MESSAGE_TYPE.TriggerCaptureActiveTab) {
         const saveMode = saveModeSchema.parse(message.saveMode ?? "standard");
         if (!await ensureAuthenticated("sidepanel-capture")) {
@@ -403,31 +420,42 @@ async function attemptQuickCapture(windowId: number | undefined, saveMode: "stan
 }
 
 async function saveTabAsLinkBookmark(tab: chrome.tabs.Tab) {
-  if (typeof tab.id !== "number" || !isBookmarkablePageUrl(tab.url)) {
-    logger.warn("Link bookmark skipped for unsupported page.", {
-      tabId: tab.id,
-      url: tab.url,
-    });
-    return;
-  }
-
   try {
-    const result = await createLinkBookmark(tab.url, tab.title);
-    logger.info("Link bookmark saved without archive.", {
-      tabId: tab.id,
-      bookmarkId: result.bookmarkId,
-      status: result.status,
-      deduplicated: result.deduplicated,
-    });
+    await createBookmarkForTab(tab);
   } catch (error) {
     logger.warn("Link bookmark save failed.", {
       tabId: tab.id,
       url: tab.url,
       error: error instanceof Error ? error.message : String(error),
     });
-  } finally {
-    await refreshTabBookmarkBadge(tab.id, tab.url);
   }
+}
+
+async function createBookmarkForTab(tab: chrome.tabs.Tab) {
+  if (typeof tab.id !== "number" || !isBookmarkablePageUrl(tab.url)) {
+    logger.warn("Link bookmark skipped for unsupported page.", {
+      tabId: tab.id,
+      url: tab.url,
+    });
+    throw new Error("当前页面不支持保存为书签。");
+  }
+
+  const title = tab.title?.trim() || tab.url;
+  const result = await createLinkBookmark(tab.url, title);
+  logger.info("Link bookmark saved without archive.", {
+    tabId: tab.id,
+    bookmarkId: result.bookmarkId,
+    status: result.status,
+    deduplicated: result.deduplicated,
+  });
+  await refreshTabBookmarkBadge(tab.id, tab.url);
+  return {
+    bookmarkId: result.bookmarkId,
+    source: {
+      url: tab.url,
+      title,
+    },
+  };
 }
 
 async function refreshActiveTabBookmarkBadge() {
@@ -470,7 +498,7 @@ async function refreshTabBookmarkBadge(tabId: number, tabUrl?: string) {
 
 async function clearBookmarkBadge(tabId: number) {
   await chrome.action.setBadgeText({ tabId, text: "" });
-  await chrome.action.setTitle({ tabId, title: "保存当前页面到 KeepPage" });
+  await chrome.action.setTitle({ tabId, title: "将当前页面保存为 KeepPage 书签" });
 }
 
 function isBookmarkablePageUrl(url: string | undefined): url is string {
