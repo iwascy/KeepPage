@@ -271,7 +271,7 @@ V1 的分享是一套 **「多选书签 → 生成公开只读链接 → 访客�
 - 不出现登录墙、不出现「请登录后查看」。  
 - 不出现所有者邮箱；仅展示 **公开昵称**（见 11.3）。  
 - 页头可保留 KeepPage 品牌 +「复制链接」+ 公开只读说明。  
-- 视觉对齐 Demo 与 `docs/ui-guide`。
+- 视觉沿用 KeepPage 现有设计语言，并与 Demo 保持一致。
 
 ### 9.3 管理分享（所有者 · 需登录）
 
@@ -624,7 +624,7 @@ V1 无分析系统时可先打服务端 access log。
 
 ### 17.2 体验
 
-- [ ] 公开页视觉与 Demo / ui-guide 一致（毛玻璃、大圆角、卡片 hover）  
+- [ ] 公开页视觉与 Demo 一致（毛玻璃、大圆角、卡片 hover）
 - [ ] 移动端单列可用  
 - [ ] 创建成功态复制反馈明确  
 
@@ -689,7 +689,7 @@ V1 无分析系统时可先打服务端 access log。
 ### B. 相关文件（实现时）
 
 - Demo：`docs/mockups/share-list-demo.html`  
-- UI 规范：`docs/ui-guide/`  
+- UI 实现：`apps/web/src/styles/`
 - 路由：`apps/web/src/app/routes.ts`  
 - 多选：`apps/web/src/App.tsx`、`features/bookmarks/list`  
 - 契约：`packages/domain`  
