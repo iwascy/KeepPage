@@ -4,6 +4,7 @@ export type IconName =
   | "add"
   | "arrow_back"
   | "arrow_outward"
+  | "auto_awesome"
   | "book_open"
   | "bookmark"
   | "bookmarks"
@@ -77,6 +78,14 @@ function renderIcon(name: IconName) {
       return <path {...strokeProps} d="M19 12H5m7-7-7 7 7 7" />;
     case "arrow_outward":
       return <path {...strokeProps} d="M7 17 17 7M9 7h8v8" />;
+    case "auto_awesome":
+      return (
+        <>
+          <path {...strokeProps} d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Z" />
+          <path {...strokeProps} d="m18.5 13 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" />
+          <path {...strokeProps} d="m5.5 13 .7 2.3 2.3.7-2.3.7L5.5 19l-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" />
+        </>
+      );
     case "book_open":
       return (
         <>

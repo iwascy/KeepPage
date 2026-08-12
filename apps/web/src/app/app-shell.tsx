@@ -42,6 +42,7 @@ export function AppShell({
   onCreateTag,
   onOpenPrivateMode,
   onOpenApiTokens,
+  onOpenAIOrganize,
   onOpenShares,
   onOpenExtensionDevices,
   onOpenImportNew,
@@ -78,6 +79,7 @@ export function AppShell({
   onCreateTag: () => void;
   onOpenPrivateMode: () => void;
   onOpenApiTokens: () => void;
+  onOpenAIOrganize: () => void;
   onOpenShares: () => void;
   onOpenExtensionDevices: () => void;
   onOpenImportNew: () => void;
@@ -324,6 +326,17 @@ export function AppShell({
                 <Icon name="lock" />
                 <span>私密模式</span>
                 <small className="home-settings-status">{privateModeStateLabel}</small>
+              </button>
+              <button
+                className={routePage === "settings-ai-organize" ? "home-settings-item is-active" : "home-settings-item"}
+                type="button"
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  onOpenAIOrganize();
+                }}
+              >
+                <Icon name="auto_awesome" />
+                <span>AI 整理</span>
               </button>
               <button
                 className={routePage === "settings-api-tokens" ? "home-settings-item is-active" : "home-settings-item"}

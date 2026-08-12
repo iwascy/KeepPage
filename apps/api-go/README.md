@@ -31,6 +31,8 @@ filename is applied at most once.
 | --- | --- |
 | `AUTH_TOKEN_SECRET` | Required non-default value when `NODE_ENV=production` |
 | `BACKUP_R2_ENABLED` | Enables scheduled per-user R2 bookmark backups |
+| `AI_CREDENTIAL_ENCRYPTION_KEY` | Required to save AI provider API keys; use a stable high-entropy secret |
+| `AI_ALLOW_PRIVATE_BASE_URL` | Allows HTTP/private-network AI endpoints for trusted self-hosted deployments; defaults to `false` |
 | `UPLOAD_BODY_LIMIT_MB` | Caps raw, gzip-decompressed, and chunked uploads |
 | Share rate limits | Stored in Postgres fixed-window buckets; memory mode is process-local for development |
 

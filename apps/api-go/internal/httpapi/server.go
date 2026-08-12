@@ -31,6 +31,7 @@ type Server struct {
 	bookmarks      *service.BookmarkService
 	bookmarkExtras *service.BookmarkExtrasService
 	backups        *service.BackupService
+	aiOrganization *service.AIOrganizationService
 	objects        storage.ObjectStorage
 	tokens         *access.TokenService
 	startedAt      time.Time
@@ -50,6 +51,9 @@ func NewServer(
 		panic("repository must implement taxonomy operations")
 	}
 	bookmarkExtras := service.NewBookmarkExtrasService(repo, objectStorage)
+	if err := repo.FailInterruptedAIOrganizationJobs(context.Background()); err != nil {
+		logger.Error("failed to recover interrupted AI organization jobs", "err", err)
+	}
 	return &Server{
 		cfg:            cfg,
 		logger:         logger,
@@ -59,6 +63,7 @@ func NewServer(
 		bookmarks:      bookmarkService,
 		bookmarkExtras: bookmarkExtras,
 		backups:        service.NewBackupService(repo, bookmarkService, bookmarkExtras, objectStorage),
+		aiOrganization: service.NewAIOrganizationService(cfg, repo, taxonomy),
 		objects:        objectStorage,
 		tokens:         tokenService,
 		startedAt:      time.Now(),
@@ -85,6 +90,14 @@ func (s *Server) Router() http.Handler {
 	router.Get("/api-tokens", s.handleListAPITokens)
 	router.Post("/api-tokens", s.handleCreateAPIToken)
 	router.Delete("/api-tokens/{tokenID}", s.handleRevokeAPIToken)
+	router.Get("/ai/settings", s.handleGetAISettings)
+	router.Put("/ai/settings", s.handleSaveAISettings)
+	router.Post("/ai/settings/test", s.handleTestAISettings)
+	router.Post("/ai/organization-jobs", s.handleCreateAIOrganizationJob)
+	router.Get("/ai/organization-jobs/current", s.handleGetCurrentAIOrganizationJob)
+	router.Get("/ai/organization-jobs/{jobID}", s.handleGetAIOrganizationJob)
+	router.Get("/ai/organization-jobs/{jobID}/items", s.handleListAIOrganizationJobItems)
+	router.Post("/ai/organization-jobs/{jobID}/cancel", s.handleCancelAIOrganizationJob)
 	router.Get("/workspace/bootstrap", s.handleWorkspaceBootstrap)
 	router.Get("/folders", s.handleListFolders)
 	router.Post("/folders", s.handleCreateFolder)

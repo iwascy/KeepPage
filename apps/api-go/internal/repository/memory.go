@@ -13,14 +13,17 @@ import (
 )
 
 type MemoryRepository struct {
-	mu        sync.RWMutex
-	bookmarks map[string][]domain.Bookmark
-	users     map[string]auth.UserAuthRecord
-	emailIDs  map[string]string
-	apiTokens map[string]memoryAPIToken
-	folders   map[string]map[string]domain.Folder
-	tags      map[string]map[string]domain.Tag
-	rateLimit map[string]memoryRateLimitBucket
+	mu         sync.RWMutex
+	bookmarks  map[string][]domain.Bookmark
+	users      map[string]auth.UserAuthRecord
+	emailIDs   map[string]string
+	apiTokens  map[string]memoryAPIToken
+	folders    map[string]map[string]domain.Folder
+	tags       map[string]map[string]domain.Tag
+	rateLimit  map[string]memoryRateLimitBucket
+	aiSettings map[string]domain.AIProviderSettingRecord
+	aiJobs     map[string]domain.AIOrganizationJob
+	aiJobItems map[string][]domain.AIOrganizationJobItem
 }
 
 type memoryAPIToken struct {
@@ -42,11 +45,14 @@ func NewMemoryRepository() *MemoryRepository {
 				},
 			},
 		},
-		emailIDs:  map[string]string{"dev@keeppage.local": "dev-user"},
-		apiTokens: map[string]memoryAPIToken{},
-		folders:   map[string]map[string]domain.Folder{},
-		tags:      map[string]map[string]domain.Tag{},
-		rateLimit: map[string]memoryRateLimitBucket{},
+		emailIDs:   map[string]string{"dev@keeppage.local": "dev-user"},
+		apiTokens:  map[string]memoryAPIToken{},
+		folders:    map[string]map[string]domain.Folder{},
+		tags:       map[string]map[string]domain.Tag{},
+		rateLimit:  map[string]memoryRateLimitBucket{},
+		aiSettings: map[string]domain.AIProviderSettingRecord{},
+		aiJobs:     map[string]domain.AIOrganizationJob{},
+		aiJobItems: map[string][]domain.AIOrganizationJobItem{},
 	}
 }
 

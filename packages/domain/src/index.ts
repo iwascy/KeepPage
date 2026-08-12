@@ -1,4 +1,5 @@
 export * from "./api-access";
+export * from "./ai-organize";
 export * from "./archive-html";
 export * from "./capture";
 export * from "./extension-device";

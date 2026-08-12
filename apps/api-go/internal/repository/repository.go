@@ -13,6 +13,7 @@ var ErrNotFound = errors.New("repository record not found")
 
 type Repository interface {
 	auth.CredentialsStore
+	AIOrganizationRepository
 	Kind() string
 	Close()
 	ListUsersForBackup(ctx context.Context) ([]domain.AuthUser, error)

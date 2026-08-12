@@ -19,31 +19,33 @@ const (
 )
 
 type Config struct {
-	NodeEnv             Environment
-	APIHost             string
-	APIPort             int
-	APIPublicBaseURL    string
-	WebPublicBaseURL    string
-	StorageDriver       string
-	ObjectStorageDriver string
-	ObjectStorageRoot   string
-	R2Endpoint          string
-	R2Bucket            string
-	R2PublicBucket      string
-	R2AccessKeyID       string
-	R2SecretAccessKey   string
-	R2PublicBaseURL     string
-	R2Region            string
-	BackupR2Enabled     bool
-	BackupR2Prefix      string
-	BackupR2Time        string
-	BackupR2RunOnStart  bool
-	AuthTokenSecret     string
-	AuthTokenTTLDays    int
-	UploadBodyLimitMB   int
-	DebugMode           bool
-	LogLevel            slog.Level
-	DatabaseURL         string
+	NodeEnv                   Environment
+	APIHost                   string
+	APIPort                   int
+	APIPublicBaseURL          string
+	WebPublicBaseURL          string
+	StorageDriver             string
+	ObjectStorageDriver       string
+	ObjectStorageRoot         string
+	R2Endpoint                string
+	R2Bucket                  string
+	R2PublicBucket            string
+	R2AccessKeyID             string
+	R2SecretAccessKey         string
+	R2PublicBaseURL           string
+	R2Region                  string
+	BackupR2Enabled           bool
+	BackupR2Prefix            string
+	BackupR2Time              string
+	BackupR2RunOnStart        bool
+	AuthTokenSecret           string
+	AuthTokenTTLDays          int
+	UploadBodyLimitMB         int
+	DebugMode                 bool
+	LogLevel                  slog.Level
+	DatabaseURL               string
+	AICredentialEncryptionKey string
+	AIAllowPrivateBaseURL     bool
 }
 
 func Read() (Config, error) {
@@ -58,31 +60,33 @@ func Read() (Config, error) {
 	}
 
 	cfg := Config{
-		NodeEnv:             Environment(readString("NODE_ENV", string(Development))),
-		APIHost:             readString("API_HOST", "127.0.0.1"),
-		APIPort:             readInt("API_PORT", 8787),
-		APIPublicBaseURL:    readString("API_PUBLIC_BASE_URL", ""),
-		WebPublicBaseURL:    readString("WEB_PUBLIC_BASE_URL", ""),
-		StorageDriver:       readString("STORAGE_DRIVER", "memory"),
-		ObjectStorageDriver: readString("OBJECT_STORAGE_DRIVER", "localfs"),
-		ObjectStorageRoot:   readString("OBJECT_STORAGE_ROOT", defaultObjectRoot),
-		R2Endpoint:          readString("R2_ENDPOINT", ""),
-		R2Bucket:            readString("R2_BUCKET", ""),
-		R2PublicBucket:      readString("R2_PUBLIC_BUCKET", ""),
-		R2AccessKeyID:       readString("R2_ACCESS_KEY_ID", ""),
-		R2SecretAccessKey:   readString("R2_SECRET_ACCESS_KEY", ""),
-		R2PublicBaseURL:     readString("R2_PUBLIC_BASE_URL", ""),
-		R2Region:            readString("R2_REGION", "auto"),
-		BackupR2Enabled:     readBool("BACKUP_R2_ENABLED", false),
-		BackupR2Prefix:      strings.TrimSpace(readString("BACKUP_R2_PREFIX", "keeppage-backups/bookmarks")),
-		BackupR2Time:        readString("BACKUP_R2_TIME", "03:30"),
-		BackupR2RunOnStart:  readBool("BACKUP_R2_RUN_ON_STARTUP", false),
-		AuthTokenSecret:     readString("AUTH_TOKEN_SECRET", "keeppage-dev-secret"),
-		AuthTokenTTLDays:    readInt("AUTH_TOKEN_TTL_DAYS", 30),
-		UploadBodyLimitMB:   readInt("UPLOAD_BODY_LIMIT_MB", 32),
-		DebugMode:           debugMode,
-		LogLevel:            logLevel,
-		DatabaseURL:         readString("DATABASE_URL", ""),
+		NodeEnv:                   Environment(readString("NODE_ENV", string(Development))),
+		APIHost:                   readString("API_HOST", "127.0.0.1"),
+		APIPort:                   readInt("API_PORT", 8787),
+		APIPublicBaseURL:          readString("API_PUBLIC_BASE_URL", ""),
+		WebPublicBaseURL:          readString("WEB_PUBLIC_BASE_URL", ""),
+		StorageDriver:             readString("STORAGE_DRIVER", "memory"),
+		ObjectStorageDriver:       readString("OBJECT_STORAGE_DRIVER", "localfs"),
+		ObjectStorageRoot:         readString("OBJECT_STORAGE_ROOT", defaultObjectRoot),
+		R2Endpoint:                readString("R2_ENDPOINT", ""),
+		R2Bucket:                  readString("R2_BUCKET", ""),
+		R2PublicBucket:            readString("R2_PUBLIC_BUCKET", ""),
+		R2AccessKeyID:             readString("R2_ACCESS_KEY_ID", ""),
+		R2SecretAccessKey:         readString("R2_SECRET_ACCESS_KEY", ""),
+		R2PublicBaseURL:           readString("R2_PUBLIC_BASE_URL", ""),
+		R2Region:                  readString("R2_REGION", "auto"),
+		BackupR2Enabled:           readBool("BACKUP_R2_ENABLED", false),
+		BackupR2Prefix:            strings.TrimSpace(readString("BACKUP_R2_PREFIX", "keeppage-backups/bookmarks")),
+		BackupR2Time:              readString("BACKUP_R2_TIME", "03:30"),
+		BackupR2RunOnStart:        readBool("BACKUP_R2_RUN_ON_STARTUP", false),
+		AuthTokenSecret:           readString("AUTH_TOKEN_SECRET", "keeppage-dev-secret"),
+		AuthTokenTTLDays:          readInt("AUTH_TOKEN_TTL_DAYS", 30),
+		UploadBodyLimitMB:         readInt("UPLOAD_BODY_LIMIT_MB", 32),
+		DebugMode:                 debugMode,
+		LogLevel:                  logLevel,
+		DatabaseURL:               readString("DATABASE_URL", ""),
+		AICredentialEncryptionKey: readString("AI_CREDENTIAL_ENCRYPTION_KEY", ""),
+		AIAllowPrivateBaseURL:     readBool("AI_ALLOW_PRIVATE_BASE_URL", false),
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
