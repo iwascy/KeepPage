@@ -111,6 +111,9 @@ func (r *PostgresRepository) UpdateBookmarkMetadata(ctx context.Context, userID,
 		}
 	}
 	if input.Tags != nil || input.TagIDs != nil {
+		if _, err = tx.Exec(ctx, `update bookmarks set updated_at=now() where id=$1 and user_id=$2`, bookmarkID, userID); err != nil {
+			return nil, err
+		}
 		if _, err = tx.Exec(ctx, `delete from bookmark_tags where bookmark_id=$1`, bookmarkID); err != nil {
 			return nil, err
 		}

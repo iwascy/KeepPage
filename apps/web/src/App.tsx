@@ -50,6 +50,7 @@ import {
   buildDetailHash,
   buildPrivateDetailHash,
   goToApiTokens,
+  goToAIOrganize,
   goToExtensionDevices,
   goToImportList,
   goToImportNew,
@@ -118,6 +119,11 @@ const PrivateDetailPage = lazy(async () => {
 const ApiTokensPanel = lazy(async () => {
   const module = await import("./features/api-tokens");
   return { default: module.ApiTokensPanel };
+});
+
+const AIOrganizePanel = lazy(async () => {
+  const module = await import("./features/ai-organize");
+  return { default: module.AIOrganizePanel };
 });
 
 const ExtensionDevicesPanel = lazy(async () => {
@@ -285,6 +291,7 @@ export function App({
   const [listError, setListError] = useState<string | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [dataRevision, setDataRevision] = useState(0);
   const [detail, setDetail] = useState<BookmarkDetailResult | null>(null);
   const [detailLoadState, setDetailLoadState] = useState<DetailLoadState>("idle");
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -769,7 +776,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken]);
+  }, [appDataSource, authToken, dataRevision]);
 
   useEffect(() => {
     if (!authToken) {
@@ -834,7 +841,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, bookmarkView, deferredSearch, qualityFilter, selectedFolderId, selectedTagId]);
+  }, [appDataSource, authToken, bookmarkView, dataRevision, deferredSearch, qualityFilter, selectedFolderId, selectedTagId]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
@@ -2203,6 +2210,7 @@ export function App({
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
         onOpenPrivateMode={goToPrivateMode}
         onOpenApiTokens={goToApiTokens}
+        onOpenAIOrganize={goToAIOrganize}
         onOpenShares={goToShares}
         onOpenExtensionDevices={goToExtensionDevices}
         onOpenImportNew={goToImportNew}
@@ -2448,6 +2456,19 @@ export function App({
               dataSource={appDataSource}
               onApiError={handleProtectedApiError}
               onBack={goToList}
+            />
+          </Suspense>
+        ) : route.page === "settings-ai-organize" ? (
+          <Suspense fallback={<section className="loading preview-empty">正在加载 AI 整理...</section>}>
+            <AIOrganizePanel
+              token={session.token}
+              folders={folders}
+              tags={tags}
+              onApiError={handleProtectedApiError}
+              onBack={goToList}
+              onOrganized={() => {
+                setDataRevision((current) => current + 1);
+              }}
             />
           </Suspense>
         ) : route.page === "settings-shares" ? (

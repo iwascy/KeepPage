@@ -7,6 +7,7 @@ export type ViewRoute =
   | { page: "imports-list" }
   | { page: "imports-detail"; taskId: string }
   | { page: "settings-api-tokens" }
+  | { page: "settings-ai-organize" }
   | { page: "settings-extension-devices" }
   | { page: "settings-shares" }
   | { page: "extension-connect" };
@@ -30,6 +31,9 @@ export function parseRoute(hash: string): ViewRoute {
   }
   if (path === "/settings/api-tokens") {
     return { page: "settings-api-tokens" };
+  }
+  if (path === "/settings/ai-organize") {
+    return { page: "settings-ai-organize" };
   }
   if (path === "/settings/shares") {
     return { page: "settings-shares" };
@@ -109,6 +113,10 @@ export function goToImportList() {
 
 export function goToApiTokens() {
   window.location.hash = "#/settings/api-tokens";
+}
+
+export function goToAIOrganize() {
+  window.location.hash = "#/settings/ai-organize";
 }
 
 export function goToShares() {

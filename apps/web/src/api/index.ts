@@ -1,4 +1,9 @@
 import {
+  aiOrganizationJobItemListSchema,
+  aiOrganizationJobSchema,
+  aiSettingsSchema,
+  aiSettingsTestResponseSchema,
+  aiSettingsUpdateRequestSchema,
   apiTokenCreateRequestSchema,
   apiTokenCreateResponseSchema,
   apiTokenListResponseSchema,
@@ -26,6 +31,11 @@ import {
   extensionConnectInitResponseSchema,
   extensionDeviceListResponseSchema,
   type ApiToken,
+  type AiOrganizationJob,
+  type AiOrganizationJobItemList,
+  type AiSettings,
+  type AiSettingsUpdateRequest,
+  type AiSettingsTestResponse,
   type ApiTokenCreateRequest,
   type ApiTokenCreateResponse,
   type AuthLoginRequest,
@@ -233,6 +243,59 @@ export type ImportTaskDetailResult = {
 
 export type ApiTokenItem = ApiToken;
 export type ExtensionDeviceItem = ExtensionDevice;
+
+export async function fetchAISettings(token: string): Promise<AiSettings> {
+  return requestJson("/ai/settings", aiSettingsSchema, { token });
+}
+
+export async function saveAISettings(input: AiSettingsUpdateRequest, token: string): Promise<AiSettings> {
+  return requestJson("/ai/settings", aiSettingsSchema, {
+    method: "PUT",
+    token,
+    body: aiSettingsUpdateRequestSchema.parse(input),
+  });
+}
+
+export async function testAISettings(input: AiSettingsUpdateRequest, token: string): Promise<AiSettingsTestResponse> {
+  return requestJson("/ai/settings/test", aiSettingsTestResponseSchema, {
+    method: "POST",
+    token,
+    body: aiSettingsUpdateRequestSchema.parse(input),
+  });
+}
+
+export async function createAIOrganizationJob(token: string): Promise<AiOrganizationJob> {
+  return requestJson("/ai/organization-jobs", aiOrganizationJobSchema, {
+    method: "POST",
+    token,
+    body: { scope: "all_normal_bookmarks" },
+  });
+}
+
+export async function fetchCurrentAIOrganizationJob(token: string): Promise<AiOrganizationJob | null> {
+  const response = await request("/ai/organization-jobs/current", { token });
+  const payload = await response.json();
+  return payload === null ? null : aiOrganizationJobSchema.parse(payload);
+}
+
+export async function fetchAIOrganizationJob(jobId: string, token: string): Promise<AiOrganizationJob> {
+  return requestJson(`/ai/organization-jobs/${encodeURIComponent(jobId)}`, aiOrganizationJobSchema, { token });
+}
+
+export async function cancelAIOrganizationJob(jobId: string, token: string): Promise<AiOrganizationJob> {
+  return requestJson(`/ai/organization-jobs/${encodeURIComponent(jobId)}/cancel`, aiOrganizationJobSchema, {
+    method: "POST",
+    token,
+  });
+}
+
+export async function fetchAIOrganizationJobItems(jobId: string, token: string): Promise<AiOrganizationJobItemList> {
+  return requestJson(
+    `/ai/organization-jobs/${encodeURIComponent(jobId)}/items?limit=100&offset=0`,
+    aiOrganizationJobItemListSchema,
+    { token },
+  );
+}
 
 type RequestOptions = {
   method?: string;
