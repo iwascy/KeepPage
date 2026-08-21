@@ -57,6 +57,12 @@ export async function createLinkBookmark(
   });
 }
 
+export async function deleteBookmark(bookmarkId: string): Promise<void> {
+  await request(`/bookmarks/${encodeURIComponent(bookmarkId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function fetchFolders(): Promise<Folder[]> {
   const payload = await requestJson("/folders", folderListResponseSchema);
   return payload.items;
@@ -87,6 +93,14 @@ async function requestJson<T>(
   schema: { parse: (input: unknown) => T },
   init: RequestInit = {},
 ): Promise<T> {
+  const response = await request(path, init);
+  return schema.parse(await response.json());
+}
+
+async function request(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
   const [apiBaseUrl, token] = await Promise.all([
     getConfiguredApiBaseUrl(),
     getStoredSyncToken(),
@@ -115,7 +129,7 @@ async function requestJson<T>(
     throw new ExtensionApiError(response.status, message);
   }
 
-  return schema.parse(await response.json());
+  return response;
 }
 
 async function readApiErrorMessage(response: Response) {

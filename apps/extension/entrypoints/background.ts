@@ -20,6 +20,7 @@ import { getFetchChunkSize } from "../src/lib/singlefile-fetch";
 import { refreshAllBookmarkIcons } from "../src/lib/sync-api";
 import {
   createLinkBookmark,
+  deleteBookmark,
   fetchBookmarkStatus,
 } from "../src/lib/bookmark-metadata-api";
 import {
@@ -201,7 +202,7 @@ export default defineBackground(() => {
         sendResponse(response);
         return;
       }
-      if (message.type === MESSAGE_TYPE.SaveActiveTabAsBookmark) {
+      if (message.type === MESSAGE_TYPE.ToggleActiveTabBookmark) {
         if (!await ensureAuthenticated("toolbar-bookmark")) {
           sendResponse({ ok: false, error: "请先登录 KeepPage。" });
           return;
@@ -214,7 +215,7 @@ export default defineBackground(() => {
           sendResponse({ ok: false, error: "当前没有可操作的标签页。" });
           return;
         }
-        const result = await createBookmarkForTab(activeTab);
+        const result = await toggleBookmarkForTab(activeTab);
         sendResponse({ ok: true, ...result });
         return;
       }
@@ -450,10 +451,39 @@ async function createBookmarkForTab(tab: chrome.tabs.Tab) {
   });
   await refreshTabBookmarkBadge(tab.id, tab.url);
   return {
+    action: "saved" as const,
     bookmarkId: result.bookmarkId,
     source: {
       url: tab.url,
       title,
+    },
+  };
+}
+
+async function toggleBookmarkForTab(tab: chrome.tabs.Tab) {
+  if (typeof tab.id !== "number" || !isBookmarkablePageUrl(tab.url)) {
+    throw new Error("当前页面不支持收藏。");
+  }
+
+  const status = await fetchBookmarkStatus(tab.url);
+  if (!status.exists) {
+    return createBookmarkForTab(tab);
+  }
+  if (!status.bookmark) {
+    throw new Error("已收藏页面缺少书签记录，请刷新后重试。");
+  }
+
+  await deleteBookmark(status.bookmark.id);
+  logger.info("Link bookmark removed.", {
+    tabId: tab.id,
+    bookmarkId: status.bookmark.id,
+  });
+  await refreshTabBookmarkBadge(tab.id, tab.url);
+  return {
+    action: "removed" as const,
+    source: {
+      url: tab.url,
+      title: tab.title?.trim() || status.bookmark.title || tab.url,
     },
   };
 }
@@ -481,7 +511,7 @@ async function refreshTabBookmarkBadge(tabId: number, tabUrl?: string) {
       await chrome.action.setBadgeTextColor?.({ tabId, color: "#ffffff" });
       await chrome.action.setTitle({
         tabId,
-        title: `已保存到 KeepPage：${status.bookmark?.title ?? url}`,
+        title: `已保存到 KeepPage：${status.bookmark?.title ?? url}；点击取消收藏`,
       });
       return;
     }

@@ -55,7 +55,7 @@ func (s *Server) handleBookmarkDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 func (s *Server) handleDeleteBookmark(w http.ResponseWriter, r *http.Request) {
-	u, e := s.requireUser(r, auth.RequireOptions{})
+	u, e := s.requireUser(r, auth.RequireOptions{AllowExtensionDevice: true})
 	if e != nil {
 		writeError(s.logger, w, e)
 		return

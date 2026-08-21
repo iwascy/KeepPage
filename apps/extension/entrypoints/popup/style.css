@@ -93,6 +93,11 @@ select {
     linear-gradient(135deg, rgba(15, 118, 110, 0.98), rgba(15, 23, 42, 0.98));
 }
 
+.status-card.removed {
+  border-color: rgba(148, 163, 184, 0.28);
+  background: linear-gradient(135deg, rgba(71, 85, 105, 0.98), rgba(30, 41, 59, 0.98));
+}
+
 .status-card.error {
   border-color: rgba(248, 113, 113, 0.24);
   background:
@@ -142,6 +147,11 @@ select {
   box-shadow: 0 0 0 6px rgba(110, 231, 183, 0.18);
 }
 
+.status-card.removed .status-dot {
+  background: #cbd5e1;
+  box-shadow: 0 0 0 6px rgba(203, 213, 225, 0.16);
+}
+
 .status-card.error .status-dot {
   background: #fda4a4;
   box-shadow: 0 0 0 6px rgba(253, 164, 164, 0.16);
@@ -184,6 +194,10 @@ select {
 
 .status-card.success .status-progress-track > span {
   background: linear-gradient(90deg, rgba(110, 231, 183, 0.95), rgba(220, 252, 231, 0.98));
+}
+
+.status-card.removed .status-progress-track > span {
+  background: linear-gradient(90deg, rgba(203, 213, 225, 0.95), rgba(241, 245, 249, 0.98));
 }
 
 .status-card.error .status-progress-track > span {

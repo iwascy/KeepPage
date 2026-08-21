@@ -311,6 +311,74 @@ func TestExtensionConnectCodeRedeem(t *testing.T) {
 	}
 }
 
+func TestExtensionDeviceCanCreateAndDeleteBookmark(t *testing.T) {
+	server := newTestServer()
+	sessionToken := registerTestUser(t, server, "ext-toggle@example.com")
+
+	connectRequest := httptest.NewRequest(http.MethodPost, "/extension/connect", bytes.NewBufferString(`{"deviceName":"Chrome","platform":"chrome"}`))
+	connectRequest.Header.Set("authorization", "Bearer "+sessionToken)
+	connectResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(connectResponse, connectRequest)
+	if connectResponse.Code != http.StatusCreated {
+		t.Fatalf("connect status = %d, body = %s", connectResponse.Code, connectResponse.Body.String())
+	}
+	var connect struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(connectResponse.Body.Bytes(), &connect); err != nil {
+		t.Fatal(err)
+	}
+
+	redeemRequest := httptest.NewRequest(http.MethodPost, "/extension/connect/redeem", bytes.NewBufferString(`{"code":"`+connect.Code+`"}`))
+	redeemResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(redeemResponse, redeemRequest)
+	if redeemResponse.Code != http.StatusOK {
+		t.Fatalf("redeem status = %d, body = %s", redeemResponse.Code, redeemResponse.Body.String())
+	}
+	var deviceSession struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(redeemResponse.Body.Bytes(), &deviceSession); err != nil {
+		t.Fatal(err)
+	}
+	if deviceSession.Token == "" {
+		t.Fatalf("missing extension device token: %s", redeemResponse.Body.String())
+	}
+
+	createRequest := httptest.NewRequest(http.MethodPost, "/bookmarks", bytes.NewBufferString(`{"url":"https://example.com/extension-toggle","title":"Toggle"}`))
+	createRequest.Header.Set("authorization", "Bearer "+deviceSession.Token)
+	createResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(createResponse, createRequest)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createResponse.Code, createResponse.Body.String())
+	}
+	var created struct {
+		BookmarkID string `json:"bookmarkId"`
+	}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.BookmarkID == "" {
+		t.Fatalf("missing bookmark id: %s", createResponse.Body.String())
+	}
+
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/bookmarks/"+created.BookmarkID, nil)
+	deleteRequest.Header.Set("authorization", "Bearer "+deviceSession.Token)
+	deleteResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(deleteResponse, deleteRequest)
+	if deleteResponse.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, body = %s", deleteResponse.Code, deleteResponse.Body.String())
+	}
+
+	statusRequest := httptest.NewRequest(http.MethodGet, "/bookmarks/status?url=https%3A%2F%2Fexample.com%2Fextension-toggle", nil)
+	statusRequest.Header.Set("authorization", "Bearer "+deviceSession.Token)
+	statusResponse := httptest.NewRecorder()
+	server.Router().ServeHTTP(statusResponse, statusRequest)
+	if statusResponse.Code != http.StatusOK || !bytes.Contains(statusResponse.Body.Bytes(), []byte(`"exists":false`)) {
+		t.Fatalf("unexpected status after delete: %d %s", statusResponse.Code, statusResponse.Body.String())
+	}
+}
+
 func TestAPITokenRejectsUnsupportedScopes(t *testing.T) {
 	server := newTestServer()
 	session := registerTestUser(t, server, "scope@example.com")

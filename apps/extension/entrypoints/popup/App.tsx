@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Bookmark, Folder, Tag } from "@keeppage/domain";
 import {
   MESSAGE_TYPE,
-  type SaveActiveTabAsBookmarkResponse,
+  type ToggleActiveTabBookmarkResponse,
 } from "../../src/lib/messages";
 import {
   fetchBookmark,
@@ -22,7 +22,7 @@ const FOLDER_SUGGESTION_LIMIT = 6;
 const TAG_SUGGESTION_LIMIT = 12;
 
 type MetadataState = "idle" | "loading" | "saving" | "saved" | "error";
-type BookmarkSaveState = "saving" | "success" | "error";
+type BookmarkSaveState = "saving" | "success" | "removed" | "error";
 
 export function App() {
   const saveStartedRef = useRef(false);
@@ -86,11 +86,13 @@ export function App() {
 
   const statusTitle = saveState === "success"
     ? "书签保存完成"
+    : saveState === "removed"
+    ? "已取消收藏"
     : saveState === "error"
-    ? "书签保存失败"
-    : "正在保存书签";
+    ? "收藏操作失败"
+    : "正在检查收藏状态";
   const statusDescription = getStatusDescription(saveState, saveError);
-  const progressValue = saveState === "success" ? 100 : saveState === "error" ? 0 : 45;
+  const progressValue = saveState === "success" || saveState === "removed" ? 100 : saveState === "error" ? 0 : 45;
   const normalizedFolderInput = normalizeFolderPath(folderInput);
   const suggestedFolders = useMemo(
     () => filterFolders(folders, folderInput).slice(0, FOLDER_SUGGESTION_LIMIT),
@@ -132,23 +134,27 @@ export function App() {
       }
 
       const response = await chrome.runtime.sendMessage({
-        type: MESSAGE_TYPE.SaveActiveTabAsBookmark,
-      }) as SaveActiveTabAsBookmarkResponse;
+        type: MESSAGE_TYPE.ToggleActiveTabBookmark,
+      }) as ToggleActiveTabBookmarkResponse;
 
-      if (!response.ok || !response.bookmarkId) {
+      if (!response.ok || !response.action || (response.action === "saved" && !response.bookmarkId)) {
         setSaveState("error");
-        setSaveError(response.error ?? "书签保存失败，请稍后重试。");
+        setSaveError(response.error ?? "收藏操作失败，请稍后重试。");
         return;
       }
 
       if (response.source) {
         setPage(response.source);
       }
-      setBookmarkId(response.bookmarkId);
+      if (response.action === "removed") {
+        setSaveState("removed");
+        return;
+      }
+      setBookmarkId(response.bookmarkId ?? null);
       setSaveState("success");
     } catch (error) {
       setSaveState("error");
-      setSaveError(error instanceof Error ? error.message : "书签保存失败，请稍后重试。");
+      setSaveError(error instanceof Error ? error.message : "收藏操作失败，请稍后重试。");
     }
   }
 
@@ -315,7 +321,7 @@ export function App() {
           <p className="eyebrow">KeepPage</p>
           <div className="status-pill">
             <span className="status-dot" aria-hidden="true" />
-            <span>{saveState === "success" ? "书签已保存" : saveState === "error" ? "保存失败" : "保存进行中"}</span>
+            <span>{saveState === "success" ? "书签已保存" : saveState === "removed" ? "已取消收藏" : saveState === "error" ? "保存失败" : "保存进行中"}</span>
           </div>
           <h1>{statusTitle}</h1>
           <p className="status-description">{statusDescription}</p>
@@ -324,7 +330,7 @@ export function App() {
               <span style={{ width: `${progressValue}%` }} />
             </div>
             <div className="status-progress-meta">
-              <span>{saveState === "success" ? "已写入书签" : saveState === "error" ? "写入失败" : "正在写入书签"}</span>
+              <span>{saveState === "success" ? "已写入书签" : saveState === "removed" ? "书签已移除" : saveState === "error" ? "写入失败" : "正在检查收藏状态"}</span>
               <span>{progressValue}%</span>
             </div>
           </div>
@@ -566,7 +572,10 @@ function getStatusDescription(
   if (saveState === "success") {
     return "网页链接已保存，不会生成页面存档；现在可以继续整理收藏夹和 tag。";
   }
-  return "正在保存当前网页链接，不会抓取或上传页面内容。";
+  if (saveState === "removed") {
+    return "当前网页已从 KeepPage 中移除，再点一次插件即可重新收藏。";
+  }
+  return "正在检查当前网页的收藏状态。";
 }
 
 function parseTagNames(input: string) {
