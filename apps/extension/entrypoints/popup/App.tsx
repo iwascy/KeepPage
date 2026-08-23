@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Bookmark, Folder, Tag } from "@keeppage/domain";
 import {
   MESSAGE_TYPE,
+  type SaveActiveTabAsBookmarkResponse,
   type ToggleActiveTabBookmarkResponse,
 } from "../../src/lib/messages";
 import {
@@ -17,6 +18,7 @@ import {
 import {
   looksLikeAuthError,
 } from "../../src/lib/ui-shared/capture-status";
+import { isMissingReceiverError } from "../../src/lib/extension-errors";
 
 const FOLDER_SUGGESTION_LIMIT = 6;
 const TAG_SUGGESTION_LIMIT = 12;
@@ -133,13 +135,11 @@ export function App() {
         });
       }
 
-      const response = await chrome.runtime.sendMessage({
-        type: MESSAGE_TYPE.ToggleActiveTabBookmark,
-      }) as ToggleActiveTabBookmarkResponse;
+      const response = await requestBookmarkToggle();
 
-      if (!response.ok || !response.action || (response.action === "saved" && !response.bookmarkId)) {
+      if (!response?.ok || !response.action || (response.action === "saved" && !response.bookmarkId)) {
         setSaveState("error");
-        setSaveError(response.error ?? "收藏操作失败，请稍后重试。");
+        setSaveError(response?.error ?? "扩展后台没有响应，请重新加载 KeepPage 扩展后再试。");
         return;
       }
 
@@ -560,6 +560,37 @@ export function App() {
       ) : null}
     </main>
   );
+}
+
+async function requestBookmarkToggle(): Promise<ToggleActiveTabBookmarkResponse | undefined> {
+  const response = await sendRuntimeMessage<ToggleActiveTabBookmarkResponse>({
+    type: MESSAGE_TYPE.ToggleActiveTabBookmark,
+  });
+  if (response) {
+    return response;
+  }
+
+  const legacyResponse = await sendRuntimeMessage<SaveActiveTabAsBookmarkResponse>({
+    type: MESSAGE_TYPE.SaveActiveTabAsBookmark,
+  });
+  if (!legacyResponse) {
+    return undefined;
+  }
+  return {
+    ...legacyResponse,
+    action: legacyResponse.ok ? "saved" : undefined,
+  };
+}
+
+async function sendRuntimeMessage<TResponse>(message: unknown): Promise<TResponse | undefined> {
+  try {
+    return await chrome.runtime.sendMessage(message) as TResponse | undefined;
+  } catch (error) {
+    if (isMissingReceiverError(error)) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 function getStatusDescription(

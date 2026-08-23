@@ -17,6 +17,7 @@ export const MESSAGE_TYPE = {
   ShowInPageToast: "keeppage/show-in-page-toast",
   ListTasks: "keeppage/list-tasks",
   StartSelectionCapture: "keeppage/start-selection-capture",
+  SaveActiveTabAsBookmark: "keeppage/save-active-tab-as-bookmark",
   ToggleActiveTabBookmark: "keeppage/toggle-active-tab-bookmark",
   TriggerCaptureActiveTab: "keeppage/trigger-capture-active-tab",
   EnqueueLocalArchiveQueue: "keeppage/enqueue-local-archive-queue",
@@ -110,6 +111,20 @@ export interface ToggleActiveTabBookmarkRequest {
   type: typeof MESSAGE_TYPE.ToggleActiveTabBookmark;
 }
 
+export interface SaveActiveTabAsBookmarkRequest {
+  type: typeof MESSAGE_TYPE.SaveActiveTabAsBookmark;
+}
+
+export interface SaveActiveTabAsBookmarkResponse {
+  ok: boolean;
+  bookmarkId?: string;
+  source?: {
+    url: string;
+    title: string;
+  };
+  error?: string;
+}
+
 export interface ToggleActiveTabBookmarkResponse {
   ok: boolean;
   action?: "saved" | "removed";
@@ -201,6 +216,7 @@ export type ContentRequest =
 export type BackgroundRequest =
   | ListTasksRequest
   | StartSelectionCaptureRequest
+  | SaveActiveTabAsBookmarkRequest
   | ToggleActiveTabBookmarkRequest
   | TriggerCaptureActiveTabRequest
   | EnqueueLocalArchiveQueueRequest
@@ -242,6 +258,7 @@ export function isBackgroundRequest(message: unknown): message is BackgroundRequ
   return (
     maybe.type === MESSAGE_TYPE.ListTasks ||
     maybe.type === MESSAGE_TYPE.StartSelectionCapture ||
+    maybe.type === MESSAGE_TYPE.SaveActiveTabAsBookmark ||
     maybe.type === MESSAGE_TYPE.ToggleActiveTabBookmark ||
     maybe.type === MESSAGE_TYPE.TriggerCaptureActiveTab ||
     maybe.type === MESSAGE_TYPE.EnqueueLocalArchiveQueue ||

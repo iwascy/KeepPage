@@ -202,7 +202,10 @@ export default defineBackground(() => {
         sendResponse(response);
         return;
       }
-      if (message.type === MESSAGE_TYPE.ToggleActiveTabBookmark) {
+      if (
+        message.type === MESSAGE_TYPE.SaveActiveTabAsBookmark ||
+        message.type === MESSAGE_TYPE.ToggleActiveTabBookmark
+      ) {
         if (!await ensureAuthenticated("toolbar-bookmark")) {
           sendResponse({ ok: false, error: "请先登录 KeepPage。" });
           return;
@@ -215,7 +218,9 @@ export default defineBackground(() => {
           sendResponse({ ok: false, error: "当前没有可操作的标签页。" });
           return;
         }
-        const result = await toggleBookmarkForTab(activeTab);
+        const result = message.type === MESSAGE_TYPE.ToggleActiveTabBookmark
+          ? await toggleBookmarkForTab(activeTab)
+          : await createBookmarkForTab(activeTab);
         sendResponse({ ok: true, ...result });
         return;
       }
