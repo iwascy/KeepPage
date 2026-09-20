@@ -1,161 +1,63 @@
 # KeepPage 架构基线
 
-> 更新日期：2026-05-21
+核对日期：2026-09-20。UI 入口与功能回归范围见 [UI 重构功能基线](ui-refactor-baseline.md)。
 
-## 产品原则
+## 产品与数据边界
 
-1. `archive.html` 是主档，截图、缩略图、PDF、纯文本都属于派生物。
-2. 保存质量是一级产品能力，不是后台日志。
-3. 本地先成功，再异步同步上云。
-4. 共享协议优先沉到 `packages/domain`，三端不要各自维护一套平行规则。
+- `archive.html` 是归档主档；截图、封面和文本是派生信息。仅保存链接的书签可以没有归档版本。
+- 浏览器本地完成归档后异步同步；队列与恢复状态需要持久化。
+- 普通内容与私密内容使用独立查询和访问控制；私密模式不承诺端到端加密。
+- 共享请求、响应和领域约定由 `packages/domain` 维护。
 
-## 仓库边界
+## 仓库职责
 
-KeepPage 当前采用 npm workspaces，仓库级结构是合理的，可以继续沿用：
+| 目录 | 当前职责 |
+| --- | --- |
+| `apps/web` | React + Vite 管理端与公开分享页 |
+| `apps/extension` | WXT Chrome MV3 扩展；Popup 保存链接，Side Panel 管理归档、队列与私密内容 |
+| `apps/api-go` | 生产默认 Go API，chi + pgx，支持 memory / postgres 仓储 |
+| `apps/api` | TypeScript/Fastify 回滚实现，不能据此判断生产后端结构 |
+| `packages/domain` | 共享领域类型、状态机、质量规则和 API schema |
+| `packages/db` | TypeScript/Drizzle schema 与回滚后端的 SQL migrations |
+| `docs` | 当前操作文档、功能需求与有日期的迁移背景 |
 
-- `apps/api-go`：Go 后端，当前生产默认入口。
-- `apps/api`：Fastify/TypeScript 兼容后端，仅作为回滚入口保留。
-- `apps/web`：React + Vite Web 管理端。
-- `apps/extension`：WXT Chrome MV3 扩展。
-- `packages/domain`：三端共享领域契约。
-- `packages/db`：Drizzle schema 与 SQL migrations。
-- `docs`：架构、部署、使用、PRD 与 mockup 文档。
+## Go API
 
-当前主要风险不在 monorepo 边界，而在各 app 内部仍存在历史实现文件、大状态机和大实现类。当前阶段已经完成多处入口收口，下一阶段应继续从 `*-impl.ts`、content 主体和 feature 单文件中做方法体级拆分，不需要急着拆更多 workspace。
+实际分层位于 `apps/api-go/internal/`：
 
-## 代码结构
+- `httpapi/`：HTTP 路由与请求响应适配。
+- `service/`：书签、归档、导入、分享、备份、AI 整理等业务流程。
+- `repository/`：memory / postgres 存储实现。
+- `domain/`：Go 领域与传输结构。
+- `auth/`、`access/`、`middleware/`：鉴权、API Token 权限与请求中间件。
+- `storage/`：本地文件和 R2 对象存储。
+- `jobs/`：定时备份等后台工作。
 
-### `packages/domain`
+启动入口是 `cmd/server`；生产数据库迁移来自 `apps/api-go/migrations/`，由 `cmd/migrate` 执行。不要只修改 `packages/db` 后就认为 Go 生产迁移已经覆盖；跨运行时 schema 变更需要核对两端兼容性。
 
-共享领域契约，包含：
+对象存储通过 `OBJECT_STORAGE_DRIVER` 与相关配置显式选择。本地默认目录为 `./data/object-storage`，旧 TS 运行时目录不是 Go 数据源。具体环境变量见 [部署说明](deployment.md)。
 
-- capture 状态机。
-- capture profile 定义。
-- 质量评分与原因结构。
-- API request/response schema。
-- Bookmark / BookmarkVersion / Folder / Tag 类型。
-- 私密模式、扩展设备、导入任务、API Token 等跨端类型。
+## Web
 
-当前状态：
+- `src/App.tsx` 负责会话、路由及多项业务编排，仍需逐步按功能拆分。
+- `src/app/` 放应用壳、菜单、全局弹窗与路由辅助代码。
+- `src/features/` 放书签、导入、私密、分享、设置等模块。
+- `src/data-sources/` 适配 live / demo；`src/features/demo/` 是当前 UI 的演示数据与行为适配，不是旧 UI。
+- `src/api/index.ts` 维护 Web API 调用；根 `src/api.ts` 为兼容导出。
+- `src/styles.css` 是样式入口，具体样式按区域放在 `src/styles/`。
 
-- 作为共享契约层的定位正确。
-- `capture.ts`、`capture/index.ts`、`capture/contracts.ts` 已退化为外观导出，真实历史契约暂存 `capture/contracts.full.ts`。
-- `capture/contracts.full.ts` 仍约 600 行，后续应继续按 source/signals/quality/media/request-response 等业务边界细拆。
-- 对外仍通过 `src/index.ts` 提供稳定公共出口，不急着拆 package。
+正式入口与演示入口复用组件。静态导出属于生成产物，不是另一套设计基线。重构可改变视觉与布局，同时应覆盖功能基线中的行为。
 
-### `packages/db`
+## 扩展
 
-Postgres schema 的唯一来源，当前使用 Drizzle schema + SQL migration 双轨描述：
+- `entrypoints/` 注册 background、content scripts、Popup 与 Side Panel。
+- `src/lib/content/` 放内容脚本主体；`src/lib/sites/` 放站点适配。
+- `src/lib/extension-db.ts` 与队列模块管理本地持久化；同步和抓取分别沿对应 pipeline/API 模块执行。
+- `src/lib/ui-shared/` 放 UI 共用状态展示逻辑。
+- SingleFile 使用 MV3 注入模型；修改时需要核对 frame、world、document_start 等注入条件。
 
-- 方便本地代码直接引用表结构。
-- 方便服务端初期快速落表。
+名称带 `legacy` 或 `impl` 的模块仍可能处于归档链路中，不能仅凭名称删除。扩展版本以 `package.json` 和 `wxt.config.ts` 为准；改动时同步升版并重新构建。
 
-约定：
+## 文档与生成产物
 
-- 表结构变更必须同步 schema 与 migration。
-- 三端业务类型不要绕过 `packages/domain` 直接复制数据库结构。
-
-### `apps/api-go`
-
-生产同步后端，职责：
-
-- 用户、API Token、扩展设备鉴权。
-- capture init / complete。
-- 私密模式 capture / bookmark。
-- 书签元数据查询与更新。
-- 文件夹、标签、导入任务。
-- 对象读写、上传、分片上传。
-- 图标刷新与对象存储适配。
-
-Go API 采用 chi + pgx，数据库迁移由 `cmd/migrate` 执行；`apps/api` 保留用于回滚和迁移期间的行为对照。
-
-当前状态：
-
-- `routes/*`、`services/*`、`repositories/*`、`storage/*` 的分层已经形成。
-- 仓储接口已经切成多个窄接口，但 `BookmarkRepository` 仍作为交叉类型兼容现有装配。
-- postgres / memory 已补齐 extension-devices、private-mode、private-captures、private-bookmarks 等 capability 文件，外层 repository 不再散落直连 `this.core.*`。
-- `postgres/core.ts` 和 `memory/core.ts` 已退化为外观导出，历史实现迁入 `core-impl.ts`；后续要把 impl 中的真实实现继续下沉到各能力文件。
-
-API 边界规则：
-
-- `routes/*` 只做 HTTP 协议适配、鉴权上下文提取、schema 校验和响应格式化。
-- `services/*` 负责用例编排，不暴露 HTTP 细节。
-- `repositories/*` 只负责持久化和查询，不承担跨能力状态机决策。
-- `lib/*` 只放通用工具，不再吸纳事实 service。
-
-### `apps/web`
-
-Web 管理端，职责：
-
-- 登录注册与 session restore。
-- 收藏列表、搜索、筛选。
-- 书签详情与 reader/original 预览。
-- 文件夹、标签、批量管理。
-- 导入新建、历史、详情。
-- API Token、扩展设备、私密模式设置。
-- Live / Demo 数据源适配。
-
-当前状态：
-
-- 已有 `features/bookmarks/list`、`features/bookmarks/detail`、`features/imports`、`features/private`、`features/api-tokens` 等 feature 目录。
-- `use-app-data-source.ts` 已把 live/demo 两种模式收口成统一接口。
-- `App.tsx` 已将 route、session token/error、预览选择、剪贴板与用户展示格式迁入 `src/app/**`，并迁出 app shell、manager dialog、context menu、本地归档弹窗 UI；仍承担私密模式、批量操作等编排。
-- `styles.css` 已完成第一阶段拆分，原文件只保留 `@import`，实际样式按区域迁入 `src/styles/**`。
-- imports 实现已迁入 `features/imports/index.tsx`，demo workspace/mock 数据已迁入 `features/demo/**`；根目录兼容文件只保留 re-export。
-- `src/api.ts` 已退化为外观导出，真实 API client 暂存 `src/api/index.ts`，后续按领域继续细拆。
-
-Web 边界规则：
-
-- app 层只保留路由、session、全局 feedback/dialog 挂载。
-- 页面状态归 feature。
-- demo/live 差异归 `data-sources` 和 `features/demo`。
-- 大块 JSX、表单、弹窗、列表状态不要继续回流到 `App.tsx`。
-
-### `apps/extension`
-
-Chrome MV3 扩展，职责：
-
-- 触发保存。
-- 本地抓取与质量评估。
-- IndexedDB 持久化队列。
-- Content script 页面信号采集、选区捕获、SingleFile 适配。
-- Popup / Side Panel 展示、连接配置与本地预览。
-- 同步上传调度。
-
-当前状态：
-
-- 运行时入口边界清楚：`background`、`content`、`popup`、`sidepanel`。
-- 站点适配已经部分拆到 `src/lib/sites/**`。
-- `content.content.ts` 已退化为 1 行入口导出，真实 content 主体迁入 `src/lib/content/content-main.ts`，共享类型与常量在 `src/lib/content/types.ts`。
-- `legacy-reader.ts`、`sync-api.ts`、`capture-pipeline.ts` 已退化为外观导出，历史实现分别迁入 `*.impl.ts`。
-- popup 点击工具栏图标后仅创建链接书签，不进入抓取任务；sidepanel 继续负责完整存档、私密模式、任务状态、质量诊断和预览。
-- 扩展当前版本为 `0.1.45`，本轮行为调整后已执行 extension build。
-
-扩展边界规则：
-
-- `entrypoints/*` 只保留入口注册和消息分发。
-- 站点适配放到 `src/lib/sites/<site>/`。
-- content 侧 bridge / signals / selection / toast / capture 分模块维护。
-- popup 的书签保存状态与 sidepanel 的归档任务状态保持独立；auth 和书签元数据访问继续复用 `src/lib` 能力。
-
-## 当前阶段约定
-
-1. API 可以同时保留 memory 与 postgres 两套存储实现，但对外必须走共享 repository 接口。
-2. 扩展必须按 MV3 方式组织，关键状态全部落 IndexedDB，不依赖 service worker 内存。
-3. SingleFile 当前按官方 MV3 注入模型组织：
-   - `document_start`
-   - `<all_urls>`
-   - `all_frames`
-   - `match_about_blank`
-   - `match_origin_as_fallback`
-   - `MAIN` world hook
-4. 修改 `apps/extension` 时，必须同步 bump `apps/extension/package.json` 和 `apps/extension/wxt.config.ts`，并执行 `npm run build -w @keeppage/extension`。
-5. 非生成源码超过 1000 行视为主动拆解信号；UI 入口超过 400 行、业务编排文件超过 600 行时，评审中需要说明保留原因。
-
-## 下一阶段治理重点
-
-1. Web：`App.tsx` 继续只允许做顶层 session / route / 全局挂载；新需求优先落到 feature 或 `src/api/*` 领域文件。
-2. API：禁止把新真实实现写回 `core.ts`；从 `core-impl.ts` 逐领域迁移到 capability 文件。
-3. Extension：入口文件保持薄导出；从 `content-main.ts`、`legacy-reader.impl.ts`、`sync-api.impl.ts`、`capture-pipeline.impl.ts` 继续做方法体级拆分。
-4. Domain：保持外观导出兼容，从 `capture/contracts.full.ts` 继续拆 source/signals/quality/media/request-response。
-5. Docs：维护 `docs/architecture-review.md` 作为活的架构看板，记录已完成、剩余工作和验证范围。
+[文档导航](README.md) 区分当前操作说明和历史需求。历史方案、旧截图和设计 Skill 不构成新 UI 的默认规范。构建输出保持在被忽略的目录内，通过构建命令生成，不手工修改。

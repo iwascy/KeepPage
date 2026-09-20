@@ -1,5 +1,7 @@
 # Go API Cutover Design
 
+> 历史迁移记录：生产默认入口现为 Go API。本文仅用于追溯，不作为当前待执行计划；当前结构见 [架构说明](../../architecture.md)。
+
 ## Goal
 
 Make `apps/api-go` the production KeepPage API while preserving the existing TypeScript API as an explicit rollback path.

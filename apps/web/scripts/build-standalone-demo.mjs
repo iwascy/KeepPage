@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(__dirname, "..");
 const standaloneDir = path.join(webDir, "dist-standalone");
 const sourceHtmlPath = path.join(standaloneDir, "demo.html");
-const outputHtmlPath = path.resolve(webDir, "../../docs/mockups/keeppage-full-frontend-demo.html");
+const outputHtmlPath = path.join(standaloneDir, "keeppage-demo.html");
 
 function escapeScriptContent(source) {
   return source.replace(/<\/script/gi, "<\\/script");

@@ -10,6 +10,8 @@ dist/
 **/.wxt/
 **/.output/
 *.tsbuildinfo
+/output/
+/tmp-ui-*/
 single-file-core-*.tgz
 tasks/cron_tasks/FeishuApprovalPull/output/
 data/

@@ -69,8 +69,9 @@ npm run dev -w @keeppage/api-go
 
 - 归档列表浏览
 - 关键词搜索
-- 质量等级筛选
-- 统计概览
+- 收藏夹与标签筛选
+- 全部、星标和最近视图
+- 多选批量操作、导入、分享与设置
 - 书签详情查看
 - 版本切换
 - iframe 预览归档 HTML
@@ -96,6 +97,10 @@ export KEEPPAGE_API_PROXY_TARGET='http://127.0.0.1:8787'
 npm run dev -w @keeppage/web
 ```
 
+### UI 开发预览
+
+`npm run dev:web:mock` 和 `npm run dev:demo` 复用正式 UI，只切换数据源。单文件预览使用 `npm run build:demo:html` 生成到 `apps/web/dist-standalone/keeppage-demo.html`，不作为文档中的固定设计稿。功能回归范围见 [UI 重构功能基线](ui-refactor-baseline.md)。
+
 ### 生产访问地址配置
 
 前端运行时会读取：
@@ -108,16 +113,16 @@ npm run dev -w @keeppage/web
 
 ### 使用方式
 
-1. 打开首页后，先查看归档列表和统计区块
+1. 登录后查看书签列表，按全部、星标或最近视图浏览
 2. 使用搜索框按标题、URL、域名、备注或标签检索
-3. 使用质量筛选查看高/中/低质量归档
-4. 点击卡片进入详情页
+3. 使用收藏夹、标签进一步筛选
+4. 点击卡片打开原网页；使用存档按钮或菜单进入归档详情页
 5. 在详情页切换版本，查看质量诊断与归档预览
 6. 必要时下载归档 HTML 进行本地核验
 
 ### 常见现象
 
-- 如果 API 不可用，前端会退回到 mock 数据源
+- 正式模式中 API 不可用会显示错误，不会自动切换为 Mock；无后端预览请运行 `npm run dev:web:mock` 或 `npm run dev:demo`
 - 如果对象文件不存在，详情页会展示缺失状态，而不是直接白屏
 - 如果要访问真实数据，请优先确认 `/health`、`/bookmarks` 和 `/objects/*` 都可用
 

@@ -1,5 +1,7 @@
 # Go API Cutover Implementation Plan
 
+> 历史迁移记录：生产默认入口现为 Go API。本文仅用于追溯，不作为当前待执行计划；当前结构见 [架构说明](../../architecture.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `apps/api-go` the default production API, close the two documented parity gaps, and safely cut over the Singapore service.

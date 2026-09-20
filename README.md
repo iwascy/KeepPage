@@ -7,7 +7,7 @@ KeepPage 是一个 archive-first 的网页收藏系统。
 - `apps/extension`: Chrome MV3 扩展，已接入 SingleFile MV3 注入模型，支持本地归档、质量评估、IndexedDB 队列、Side Panel 预览与同步
 - `apps/api-go`: Go 同步后端，生产默认入口，覆盖认证、书签、归档上传、私密模式、导入、分享、备份和对象读写，并支持 `memory` / `postgres` 双仓储
 - `apps/api`: Fastify/TypeScript 兼容后端，仅作为迁移回滚入口保留
-- `apps/web`: Web 管理端，已提供归档列表、搜索、质量筛选、统计概览，以及归档查看页、版本切换、iframe 预览和归档下载
+- `apps/web`: Web 管理端，已提供归档列表、搜索、收藏夹/标签筛选、批量操作，以及归档查看页、版本切换、iframe 预览和归档下载
 - `packages/domain`: 共享领域模型、状态机、质量评估规则与 API schema
 - `packages/db`: Postgres/Drizzle schema 与初始化 migration
 
@@ -24,7 +24,7 @@ npm run dev:extension
 
 ```bash
 export STORAGE_DRIVER=postgres
-export DATABASE_URL='postgresql://cyan:144125236@127.0.0.1:5432/keeppage'
+export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 npm run db:init -w @keeppage/api-go
 npm run dev -w @keeppage/api-go
 ```
@@ -37,15 +37,16 @@ export KEEPPAGE_API_PROXY_TARGET='http://127.0.0.1:8787'
 
 ## 文档
 
+- 文档导航：[docs/README.md](docs/README.md)
+- UI 重构功能基线：[docs/ui-refactor-baseline.md](docs/ui-refactor-baseline.md)
 - 使用文档：`docs/usage.md`
 - 部署文档：`docs/deployment.md`
 - 架构基线：`docs/architecture.md`
-- 架构评审与拆解建议：`docs/architecture-review.md`
 - 私密模式 PRD：`docs/private-mode-prd.md`
 
 ## 当前约束
 
 - `single-file-core` 使用 AGPL-3.0-or-later，产品许可证策略需要在项目早期确定
 - 扩展已按 MV3 官方注入模型接入 SingleFile，归档优先走 `singlefile.getPageData()`，失败时回退到 DOM 序列化
-- 当前对象存储仍以开发态本地文件存储为主，S3 / R2 / OSS / MinIO 兼容实现仍在后续迭代范围
+- Go API 已支持本地文件与 R2 对象存储，通过部署环境变量显式选择
 - 站点级兼容规则、真实浏览器联调和多端同步仍在后续迭代范围

@@ -12,6 +12,9 @@ Whenever you modify code or configuration under `apps/extension`, you must do al
 - Run `npm run build -w @keeppage/extension` to generate fresh extension artifacts.
 - Never hand-edit generated directories such as `apps/extension/.output` or `apps/extension/.wxt`; regenerate them through the build command instead.
 
+## UI Refactoring Sources
+Read `docs/README.md` and `docs/ui-refactor-baseline.md` for current source entrypoints and functional regression coverage. Web production and mock preview share `apps/web/src/App.tsx` and feature components; maintain one UI implementation. Product PRDs describe behavior and proposal history, not a binding visual design system or current completion status. For an explicitly requested redesign, follow the user's new direction; do not infer required colors, typography, glass effects, radii, or layout from historical assets or skills. Generate previews from current source into ignored build directories; do not commit exported HTML or screenshots as UI specifications.
+
 ## Coding Style & Naming Conventions
 Use strict TypeScript and ESM modules. Match the existing style: 2-space indentation, double quotes, semicolons, and small focused files. Use `PascalCase` for React components, `camelCase` for functions and variables, and kebab-case for utility or route filenames such as `singlefile-fetch.ts`. Keep shared contracts in `packages/domain` and public entrypoints in `src/index.ts`. No repo-wide ESLint or Prettier config is committed, so follow surrounding code closely.
 

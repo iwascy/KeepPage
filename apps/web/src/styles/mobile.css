@@ -144,21 +144,8 @@
 
   .home-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 0.85rem;
-  }
-
-  .home-grid.is-brand {
     grid-template-columns: 1fr;
     gap: 0.85rem;
-  }
-
-  .home-bookmark-card {
-    min-height: 150px;
-  }
-
-  .home-bookmark-title {
-    font-size: 13px;
   }
 
   .home-footer {
@@ -517,27 +504,6 @@
 
   .home-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .home-bookmark-card {
-    gap: 0.7rem;
-    padding: 0.72rem 0.78rem;
-  }
-
-  .home-bookmark-card .home-bookmark-thumb {
-    width: 4rem;
-    height: 4rem;
-    border-radius: 14px;
-  }
-
-  .home-bookmark-card .home-bookmark-thumb-icon {
-    width: 2.4rem;
-    height: 2.4rem;
-  }
-
-  .home-bookmark-card .default-site-icon {
-    width: 2.8rem;
-    height: 2.8rem;
   }
 
   .home-mobile-fab {

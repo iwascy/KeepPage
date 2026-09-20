@@ -71,11 +71,6 @@ import {
   type SessionState,
   toErrorMessage,
 } from "./app/session";
-import {
-  getStoredListUiVersion,
-  setStoredListUiVersion,
-  type ListUiVersion,
-} from "./app/list-ui-preference";
 import type { ImportPanelAdapter } from "./features/imports";
 import { BookmarksListRoute } from "./features/bookmarks/list";
 import { useDebouncedValue } from "./hooks/use-debounced-value";
@@ -345,18 +340,7 @@ export function App({
   const [localArchiveDialog, setLocalArchiveDialog] = useState<LocalArchiveDialogState>({ step: "closed" });
   const [localArchiveBusy, setLocalArchiveBusy] = useState(false);
   const [localArchiveError, setLocalArchiveError] = useState<string | null>(null);
-  const [listUiVersion, setListUiVersion] = useState<ListUiVersion>(() => {
-    if (typeof window === "undefined") {
-      return "brand";
-    }
-    return getStoredListUiVersion();
-  });
   const [isPending, startTransition] = useTransition();
-
-  const handleListUiVersionChange = useCallback((version: ListUiVersion) => {
-    setListUiVersion(version);
-    setStoredListUiVersion(version);
-  }, []);
 
   const debouncedSearch = useDebouncedValue(searchInput, 200);
   const deferredSearch = useDeferredValue(debouncedSearch);
@@ -2215,8 +2199,6 @@ export function App({
         onOpenExtensionDevices={goToExtensionDevices}
         onOpenImportNew={goToImportNew}
         onOpenImportHistory={goToImportList}
-        listUiVersion={listUiVersion}
-        onListUiVersionChange={handleListUiVersionChange}
         onLogout={() => logout()}
         contextMenuFolderId={activeFolderContextId}
         onFolderContextMenu={openFolderContextMenu}
@@ -2241,7 +2223,6 @@ export function App({
             items={items}
             totalItems={listTotal}
             bookmarkView={bookmarkView}
-            listUiVersion={listUiVersion}
             loadState={loadState}
             listError={listError}
             loadMoreError={loadMoreError}

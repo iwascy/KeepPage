@@ -10,7 +10,8 @@ apps/extension/.output
 apps/extension/.wxt
 apps/extension/dist
 docs
-expert-ui
-stitch-keeppage-ui
+output
+.agents
+apps/web/dist-standalone
 single-file-core-1.5.84.tgz
 *.log
