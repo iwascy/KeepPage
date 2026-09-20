@@ -530,6 +530,7 @@ func parseBookmarkSearchQuery(r *http.Request) (domain.BookmarkSearchQuery, erro
 		return domain.BookmarkSearchQuery{}, err
 	}
 	query := domain.BookmarkSearchQuery{
+		Sort:     values.Get("sort"),
 		Q:        values.Get("q"),
 		Quality:  values.Get("quality"),
 		View:     values.Get("view"),
@@ -538,6 +539,11 @@ func parseBookmarkSearchQuery(r *http.Request) (domain.BookmarkSearchQuery, erro
 		TagID:    values.Get("tagId"),
 		Limit:    limit,
 		Offset:   offset,
+	}
+	switch query.Sort {
+	case "", "created", "updated", "title", "relevance":
+	default:
+		return domain.BookmarkSearchQuery{}, httperror.BadRequest("ValidationError", "sort must be created, updated, title, or relevance.", nil)
 	}
 	if query.View == "" {
 		query.View = "all"

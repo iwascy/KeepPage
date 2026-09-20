@@ -1,3 +1,4 @@
+import { useDialogFocus } from "./use-dialog-focus";
 import type { FormEvent } from "react";
 import type {
   Bookmark,
@@ -78,27 +79,27 @@ export function ManagerDialog({
   onPathChange: (value: string) => void;
   onColorChange: (value: string) => void;
 }) {
+  const dialogRef = useDialogFocus(state.kind !== "closed", onClose, busy);
   if (state.kind === "closed") {
     return null;
   }
 
   if (state.kind === "create-folder" || state.kind === "create-tag") {
     const isCreateFolder = state.kind === "create-folder";
-    const createTitle = isCreateFolder ? "New Collection" : "New Tag";
+    const createTitle = isCreateFolder ? "新建收藏夹" : "新建标签";
     const createDescription = isCreateFolder
       ? (state.parent
-        ? "Organize your bookmarks inside a focused parent collection."
-        : "Organize your bookmarks with a custom style.")
-      : "Keep related bookmarks grouped under a concise label.";
-    const fieldLabel = isCreateFolder ? "Collection Name" : "Tag Name";
-    const placeholder = isCreateFolder ? "e.g. Design Inspiration" : "e.g. Read Later";
+        ? "在当前收藏夹内创建子收藏夹。"
+        : "用收藏夹整理相关书签。")
+      : "添加简洁的标签，方便以后查找。";
+    const fieldLabel = isCreateFolder ? "收藏夹名称" : "标签名称";
+    const placeholder = isCreateFolder ? "例如：设计灵感" : "例如：稍后阅读";
     const submitLabel = busy
-      ? (isCreateFolder ? "Creating..." : "Saving...")
-      : "Create";
+      ? (isCreateFolder ? "创建中…" : "保存中…")
+      : "创建";
 
     return (
       <div
-        aria-hidden="true"
         className="manager-dialog-backdrop is-create-folder"
         onClick={() => {
           if (!busy) {
@@ -111,6 +112,8 @@ export function ManagerDialog({
           aria-modal="true"
           className="create-folder-dialog"
           role="dialog"
+          ref={dialogRef}
+          tabIndex={-1}
           onClick={(event) => event.stopPropagation()}
         >
           <div className="create-folder-dialog-shell">
@@ -133,7 +136,7 @@ export function ManagerDialog({
             <form className="create-folder-dialog-form" onSubmit={onSubmit}>
               {isCreateFolder && state.parent ? (
                 <div className="create-folder-parent-pill">
-                  <span>Parent</span>
+                  <span>上级收藏夹</span>
                   <strong>{state.parent.path}</strong>
                 </div>
               ) : null}
@@ -154,7 +157,7 @@ export function ManagerDialog({
 
               <div className="create-folder-dialog-actions">
                 <button className="create-folder-action-button is-secondary" type="button" onClick={onClose} disabled={busy}>
-                  Cancel
+                  取消
                 </button>
                 <button className="create-folder-action-button is-primary" type="submit" disabled={busy}>
                   {submitLabel}
@@ -184,32 +187,32 @@ export function ManagerDialog({
   let submitLabel = "";
 
   if (state.kind === "edit-folder") {
-    eyebrow = "Edit Folder Path";
+    eyebrow = "编辑收藏夹路径";
     title = "调整收藏夹路径";
     description = "直接改完整路径，系统会自动识别父级并把它移动到正确位置。";
     submitLabel = "保存路径";
   } else if (state.kind === "delete-bookmark") {
-    eyebrow = "Delete Bookmark";
+    eyebrow = "删除书签";
     title = "删除这条书签？";
     description = "它会从归档列表中移除，关联的版本记录也会一起删除。";
     submitLabel = "删除";
   } else if (state.kind === "delete-bookmarks-batch") {
-    eyebrow = "Batch Delete";
+    eyebrow = "批量删除";
     title = `确认删除 ${state.count} 个书签？`;
     description = "所选书签将从归档列表中移除，关联的版本记录也会一起删除。此操作不可撤销。";
     submitLabel = `删除 ${state.count} 个`;
   } else if (state.kind === "delete-folder") {
-    eyebrow = "Delete Folder";
+    eyebrow = "删除收藏夹";
     title = "删除这个收藏夹？";
     description = "它会从收藏夹列表中移除，子收藏夹会上移一层，当前文件夹下的网页会解除归档。";
     submitLabel = "删除";
   } else if (state.kind === "edit-tag") {
-    eyebrow = "Edit Tag";
+    eyebrow = "编辑标签";
     title = "调整标签名称和颜色";
     description = "标签名保持简短就好，颜色可以写成 `blue`、`#1d4ed8` 这类值。";
     submitLabel = "保存标签";
   } else {
-    eyebrow = "Delete Tag";
+    eyebrow = "删除标签";
     title = "确认删除这个标签";
     description = "已经挂载到网页上的这个标签也会一起解除，但不会删除网页本身。";
     submitLabel = "删除标签";
@@ -217,7 +220,6 @@ export function ManagerDialog({
 
   return (
     <div
-      aria-hidden="true"
       className={useBookmarkDeleteStyle ? "manager-dialog-backdrop is-bookmark-delete" : "manager-dialog-backdrop"}
       onClick={() => {
         if (!busy) {
@@ -230,6 +232,8 @@ export function ManagerDialog({
         aria-modal="true"
         className={useBookmarkDeleteStyle ? "manager-dialog bookmark-delete-dialog" : isDeleteDialog ? "manager-dialog is-danger" : "manager-dialog"}
         role="dialog"
+          ref={dialogRef}
+          tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         {isBatchDeleteDialog ? (
@@ -383,7 +387,7 @@ export function ManagerDialog({
             </div>
 
             <section className="manager-dialog-hero">
-              <div className="manager-dialog-mark is-tag">TAG</div>
+              <div className="manager-dialog-mark is-tag">标签</div>
               <div className="manager-dialog-hero-copy">
                 <strong>{`#${tagDeleteTarget.name}`}</strong>
                 <span>删除后，这个标签会从所有相关网页上解绑。</span>
@@ -420,7 +424,7 @@ export function ManagerDialog({
             <form className="manager-dialog-form" onSubmit={onSubmit}>
               <section className="manager-dialog-hero">
                 <div className={isFolderDialog ? "manager-dialog-mark is-folder" : "manager-dialog-mark is-tag"}>
-                  {isFolderDialog ? "DIR" : "TAG"}
+                  {isFolderDialog ? "目录" : "标签"}
                 </div>
                 <div className="manager-dialog-hero-copy">
                   <strong>

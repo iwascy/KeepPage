@@ -265,6 +265,7 @@ export const bookmarkVersionSchema = z.object({
 });
 
 export const bookmarkSchema = z.object({
+  searchSnippet: z.string().optional(),
   id: z.string().min(1),
   sourceUrl: z.url(),
   canonicalUrl: z.url().optional(),

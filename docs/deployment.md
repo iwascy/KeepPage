@@ -239,6 +239,10 @@ export VITE_API_BASE_URL='https://api.example.com'
 
 如果使用静态托管平台，仍建议在网关层把 `/api` 代理回 KeepPage API。
 
+当前容器配置 `deploy/web.nginx.conf` 对文本资源启用 gzip，对带 hash 的 `/assets/` 设置一年 immutable 缓存，对 HTML 设置 `no-cache`。上线后应同时检查容器入口与 HTTPS 网关响应，避免外层代理覆盖压缩或缓存头。新版本发布时保留上一版本的 hash 资源，以便已经打开的页面继续加载旧版本懒加载模块。
+
+内存与磁盘有限的主机可使用预构建产物发布：本机构建 Web，并按服务器架构交叉编译 Go 服务及迁移工具，再构建运行镜像。切换前保存旧镜像引用、Compose 配置及数据库备份；使用独立版本标签更新 API/Web，不重建 PostgreSQL 或对象存储目录。API 就绪后验证首页、查询和上传鉴权路由，再通过真实站点验收界面。回滚切换旧镜像即可；已应用的向后兼容新增表无需在回滚时删除。
+
 ### 3.4 Nginx 同域代理示例
 
 ```nginx

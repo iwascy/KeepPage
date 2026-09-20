@@ -87,12 +87,29 @@ export function ContextMenu({
     };
   }, [onClose]);
 
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    return () => { if (opener?.isConnected) opener.focus(); };
+  }, [state.kind, state.x, state.y]);
+
   return (
     <div className="context-menu-layer">
       <div
         ref={menuRef}
         className="context-menu"
         role="menu"
+        onKeyDown={(event) => {
+          const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+          const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          if (event.key === "Tab") { event.preventDefault(); onClose(); return; }
+          if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || buttons.length === 0) return;
+          event.preventDefault();
+          const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+          buttons[next]?.focus();
+        }}
         aria-label={state.kind === "bookmark" ? `${state.bookmark.title} 的右键菜单` : state.kind === "folder" ? `${state.folder.name} 的右键菜单` : `${state.tag.name} 的右键菜单`}
         style={{
           left: `${position.left}px`,

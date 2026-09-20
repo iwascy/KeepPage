@@ -279,9 +279,12 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 			where bt.bookmark_id = b.id and bt.tag_id = $%d
 		)`, len(args)))
 	}
+	searchPlaceholder := ""
+	snippetSelect := "''"
 	if strings.TrimSpace(query.Q) != "" {
-		args = append(args, "%"+strings.TrimSpace(query.Q)+"%")
+		args = append(args, "%"+escapeSearchLike(strings.TrimSpace(query.Q))+"%")
 		placeholder := fmt.Sprintf("$%d", len(args))
+		searchPlaceholder = placeholder
 		conditions = append(conditions, fmt.Sprintf(`(
 			b.title ilike %[1]s or b.source_url ilike %[1]s or b.domain ilike %[1]s or b.note ilike %[1]s
 			or f.path ilike %[1]s
@@ -304,6 +307,11 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 		return domain.BookmarkSearchResponse{Items: []domain.Bookmark{}, Total: 0}, nil
 	}
 
+	if searchPlaceholder != "" {
+		args = append(args, strings.TrimSpace(query.Q))
+		literal := fmt.Sprintf("$%d", len(args))
+		snippetSelect = "case when strpos(lower(coalesce(bv.extracted_text, '')), lower(" + literal + ")) > 0 then substring(bv.extracted_text from greatest(1, strpos(lower(bv.extracted_text), lower(" + literal + ")) - 60) for 220) else '' end"
+	}
 	args = append(args, query.Limit, query.Offset)
 	rows, err := r.pool.Query(ctx, `
 		select
@@ -328,12 +336,13 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 				select count(*)
 				from bookmark_versions count_bv
 				where count_bv.bookmark_id = b.id
-			)::int
+			)::int,
+			`+snippetSelect+`
 		from bookmarks b
 	`+joins+`
 		left join bookmark_icons bi on bi.hostname = b.domain
 		where `+whereClause+`
-		order by b.updated_at desc
+		order by `+bookmarkOrderSQL("b.", query.Sort, searchPlaceholder)+`
 		limit $`+fmt.Sprint(len(args)-1)+` offset $`+fmt.Sprint(len(args))+`
 	`, args...)
 	if err != nil {
@@ -343,10 +352,12 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 
 	items := []domain.Bookmark{}
 	for rows.Next() {
-		bookmark, err := scanBookmark(rows)
+		var extractedSnippet string
+		bookmark, err := scanBookmark(rows, &extractedSnippet)
 		if err != nil {
 			return domain.BookmarkSearchResponse{}, err
 		}
+		bookmark.SearchSnippet = plainSearchSnippet(extractedSnippet, query.Q)
 		items = append(items, bookmark)
 	}
 	if err := rows.Err(); err != nil {
@@ -355,6 +366,11 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 	if len(items) > 0 {
 		if err := r.attachTags(ctx, items); err != nil {
 			return domain.BookmarkSearchResponse{}, err
+		}
+	}
+	for i := range items {
+		if items[i].SearchSnippet == "" {
+			items[i].SearchSnippet = bookmarkSearchSnippet(items[i], query.Q, "")
 		}
 	}
 	return domain.BookmarkSearchResponse{Items: items, Total: total}, nil
@@ -511,12 +527,12 @@ type bookmarkScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanBookmark(row bookmarkScanner) (domain.Bookmark, error) {
+func scanBookmark(row bookmarkScanner, extra ...any) (domain.Bookmark, error) {
 	var bookmark domain.Bookmark
 	var folderID, folderName, folderPath, folderParentID *string
 	var latestQualityJSON, sourceMetaJSON []byte
 	var iconURL *string
-	err := row.Scan(
+	destinations := []any{
 		&bookmark.ID,
 		&bookmark.SourceURL,
 		&bookmark.CanonicalURL,
@@ -535,7 +551,8 @@ func scanBookmark(row bookmarkScanner) (domain.Bookmark, error) {
 		&sourceMetaJSON,
 		&iconURL,
 		&bookmark.VersionCount,
-	)
+	}
+	err := row.Scan(append(destinations, extra...)...)
 	if err != nil {
 		return domain.Bookmark{}, err
 	}

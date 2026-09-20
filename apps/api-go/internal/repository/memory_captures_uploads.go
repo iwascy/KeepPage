@@ -14,13 +14,14 @@ import (
 )
 
 type memoryCaptureVersion struct {
-	userID     string
-	bookmarkID string
-	versionID  string
-	hash       string
-	objectKey  string
-	objects    map[string]struct{}
-	mediaFiles []domain.CaptureMediaFile
+	extractedText string
+	userID        string
+	bookmarkID    string
+	versionID     string
+	hash          string
+	objectKey     string
+	objects       map[string]struct{}
+	mediaFiles    []domain.CaptureMediaFile
 }
 
 type memoryCaptureState struct {
@@ -156,7 +157,7 @@ func (r *MemoryRepository) completeMemoryCapture(userID string, input domain.Cap
 		objects[file.ObjectKey] = struct{}{}
 	}
 	versionID := auth.NewUUID()
-	versions[input.ObjectKey] = memoryCaptureVersion{userID: userID, bookmarkID: bookmark.ID, versionID: versionID, hash: input.HTMLSHA256, objectKey: input.ObjectKey, objects: objects, mediaFiles: append([]domain.CaptureMediaFile(nil), input.MediaFiles...)}
+	versions[input.ObjectKey] = memoryCaptureVersion{extractedText: derefString(input.ExtractedText), userID: userID, bookmarkID: bookmark.ID, versionID: versionID, hash: input.HTMLSHA256, objectKey: input.ObjectKey, objects: objects, mediaFiles: append([]domain.CaptureMediaFile(nil), input.MediaFiles...)}
 	delete(pending, input.ObjectKey)
 	r.updateMemoryCaptureBookmark(bookmark, input)
 	bookmark.LatestVersionID = &versionID

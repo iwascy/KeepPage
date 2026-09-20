@@ -8,6 +8,7 @@ import {
   lazy,
   useMemo,
   useState,
+  useRef,
   useTransition,
 } from "react";
 import type {
@@ -20,6 +21,7 @@ import type {
 } from "@keeppage/domain";
 import {
   ApiError,
+  clearApiResponseCache,
   type BookmarkDetailResult,
 } from "./api";
 import {
@@ -48,6 +50,9 @@ import {
 } from "./app/manager-dialog";
 import {
   buildDetailHash,
+  buildListHash,
+  parseListFilters,
+  type ListFilters,
   buildPrivateDetailHash,
   goToApiTokens,
   goToAIOrganize,
@@ -76,9 +81,14 @@ import { BookmarksListRoute } from "./features/bookmarks/list";
 import { useDebouncedValue } from "./hooks/use-debounced-value";
 import {
   readCachedBookmarkList,
+  clearBookmarkListCache,
+  buildBookmarkListCacheKey,
   writeCachedBookmarkList,
 } from "./lib/bookmark-list-cache";
 import { type AppDataSource, useAppDataSource } from "./data-sources/use-app-data-source";
+import { updateScopedSearch } from "./app/search-scope";
+import { fetchBookmarkWindow } from "./lib/bookmark-window";
+import { runBoundedBatch, mergeTagIds } from "./lib/batch-actions";
 import { Icon } from "./components/Icon";
 
 const BookmarkDetailRoute = lazy(async () => {
@@ -272,11 +282,14 @@ export function App({
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
-  const [searchInput, setSearchInput] = useState("");
-  const [bookmarkView, setBookmarkView] = useState<BookmarkListView>("all");
-  const [qualityFilter, setQualityFilter] = useState<QualityFilter>("all");
-  const [selectedFolderId, setSelectedFolderId] = useState("");
-  const [selectedTagId, setSelectedTagId] = useState("");
+  const initialFilters = useMemo(() => parseListFilters(window.location.hash), []);
+  const [searchInput, setSearchInput] = useState(initialFilters.search);
+  const [privateSearchInput, setPrivateSearchInput] = useState("");
+  const [sort, setSort] = useState<ListFilters["sort"]>(initialFilters.sort);
+  const [bookmarkView, setBookmarkView] = useState<BookmarkListView>(initialFilters.view);
+  const [qualityFilter, setQualityFilter] = useState<QualityFilter>(initialFilters.quality);
+  const [selectedFolderId, setSelectedFolderId] = useState(initialFilters.folderId);
+  const [selectedTagId, setSelectedTagId] = useState(initialFilters.tagId);
   const [items, setItems] = useState<Bookmark[]>([]);
   const [listTotal, setListTotal] = useState(0);
   const [sidebarFolderCounts, setSidebarFolderCounts] = useState<Record<string, number>>({});
@@ -332,7 +345,7 @@ export function App({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   /** Survives list filters so share create keeps full multi-select set. */
   const [selectionCatalog, setSelectionCatalog] = useState<
-    Map<string, { id: string; title: string; domain: string; sourceUrl: string }>
+    Map<string, Bookmark>
   >(() => new Map());
   const [selectionBusy, setSelectionBusy] = useState(false);
   const [batchDropdown, setBatchDropdown] = useState<"closed" | "folder" | "tag">("closed");
@@ -344,7 +357,12 @@ export function App({
 
   const debouncedSearch = useDebouncedValue(searchInput, 200);
   const deferredSearch = useDeferredValue(debouncedSearch);
+  const debouncedPrivateSearch = useDebouncedValue(privateSearchInput, 200);
+  const deferredPrivateSearch = useDeferredValue(debouncedPrivateSearch);
+  const isPrivateSearchScope = route.page === "private-mode" || route.page === "private-detail";
   const authToken = session.status === "authenticated" ? session.token : null;
+  const activeToken = useRef(authToken);
+  activeToken.current = authToken;
   const logoutLabel = appDataSource.logoutLabel;
   const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
   const activeBookmarkContextId = contextMenu.kind === "bookmark" ? contextMenu.bookmark.id : null;
@@ -352,8 +370,84 @@ export function App({
   const activeTagContextId = contextMenu.kind === "tag" ? contextMenu.tag.id : null;
   const hasMoreItems = items.length < listTotal;
   const importAdapter = appDataSource.importAdapter;
+  const accountId = session.user?.id ?? "anonymous";
+  const query = useMemo(() => ({ search: deferredSearch, quality: qualityFilter, view: bookmarkView,
+    folderId: selectedFolderId || undefined, tagId: selectedTagId || undefined,
+    sort, limit: BOOKMARKS_PAGE_SIZE, offset: 0 }),
+  [deferredSearch, qualityFilter, bookmarkView, selectedFolderId, selectedTagId, sort]);
+  const queryKey = buildBookmarkListCacheKey(query, accountId);
+  const activeQueryKey = useRef(queryKey);
+  activeQueryKey.current = queryKey;
+  const [loadedQueryKey, setLoadedQueryKey] = useState("");
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  const listController = useRef<AbortController | null>(null);
+  const pageController = useRef<AbortController | null>(null);
+  const favoritePending = useRef(new Set<string>());
+  const prefetchRequests = useRef(new Map<string, AbortController>());
+  const prefetchTimer = useRef<number | undefined>(undefined);
+  const prefetchLastStarted = useRef(0);
+  const [retryFailed, setRetryFailed] = useState<(() => void) | null>(null);
+  const listScrollPositions = useRef(new Map<string, number>());
+  const listSnapshots = useRef(new Map<string, { items: Bookmark[]; total: number; source: "api"; storedAt: number }>());
+  const restoreScroll = useRef<number | null>(null);
+  const listHash = buildListHash({ search: searchInput, view: bookmarkView, quality: qualityFilter,
+    folderId: selectedFolderId, tagId: selectedTagId, sort });
+  const lastListHash = useRef(listHash);
+  if (route.page === "list") lastListHash.current = listHash;
+
+  function navigateList(changes: Partial<ListFilters> = {}, replace = false) {
+    const next = { search: searchInput, view: bookmarkView, quality: qualityFilter,
+      folderId: selectedFolderId, tagId: selectedTagId, sort, ...changes };
+    if (!next.search.trim() && next.sort === "relevance") next.sort = "created";
+    const hash = buildListHash(next);
+    setSearchInput(next.search); setBookmarkView(next.view); setQualityFilter(next.quality);
+    setSelectedFolderId(next.folderId); setSelectedTagId(next.tagId); setSort(next.sort);
+    setRoute({ page: "list" });
+    if (replace) window.history.replaceState(null, "", hash);
+    else if (window.location.hash !== hash) window.location.hash = hash;
+  }
+  function cancelPrefetchIntent() {
+    window.clearTimeout(prefetchTimer.current);
+  }
+  function invalidateLists() {
+    clearBookmarkListCache(accountId);
+    listSnapshots.current.clear();
+    cancelPrefetchIntent();
+    for (const controller of prefetchRequests.current.values()) controller.abort();
+    prefetchRequests.current.clear();
+  }
+  function prefetchFolder(folderId: string) {
+    cancelPrefetchIntent();
+    if (!authToken || appDataSource.kind !== "live") return;
+    const prefetchQuery = { ...query, folderId: folderId || undefined, view: "all" as const };
+    const key = buildBookmarkListCacheKey(prefetchQuery, accountId);
+    if (readCachedBookmarkList(prefetchQuery, accountId) || prefetchRequests.current.has(key)) return;
+    prefetchTimer.current = window.setTimeout(() => {
+      if (prefetchRequests.current.size >= 2 || Date.now() - prefetchLastStarted.current < 500) return;
+      prefetchLastStarted.current = Date.now();
+      const controller = new AbortController();
+      prefetchRequests.current.set(key, controller);
+      void appDataSource.searchBookmarks(prefetchQuery, authToken, controller.signal).then((result) => {
+        if (!controller.signal.aborted && activeToken.current === authToken) writeCachedBookmarkList(prefetchQuery, result, accountId);
+      }).catch(() => { /* Navigation owns visible errors; prefetch is best effort. */ }).finally(() => {
+        if (prefetchRequests.current.get(key) === controller) prefetchRequests.current.delete(key);
+      });
+    }, 180);
+  }
+  useEffect(() => () => {
+    window.clearTimeout(prefetchTimer.current);
+    for (const controller of prefetchRequests.current.values()) controller.abort();
+    prefetchRequests.current.clear();
+  }, [authToken, queryKey]);
+
+  function returnToList() {
+    window.location.hash = lastListHash.current;
+  }
+
 
   function clearPrivateState() {
+    setPrivateSearchInput("");
+    clearApiResponseCache();
     setPrivateToken(null);
     setPrivateSummary(null);
     setPrivateItems([]);
@@ -371,6 +465,14 @@ export function App({
   }
 
   function logout(message?: string) {
+    activeToken.current = null;
+    clearBookmarkListCache();
+    listSnapshots.current.clear();
+    exitSelectionMode();
+    setSelectionBusy(false);
+    setRetryFailed(null);
+    listController.current?.abort();
+    pageController.current?.abort();
     if (isDemoMode) {
       const nextSession = appDataSource.resetSession();
       goToList();
@@ -452,12 +554,7 @@ export function App({
     setSelectionCatalog((prev) => {
       const next = new Map(prev);
       for (const bookmark of bookmarks) {
-        next.set(bookmark.id, {
-          id: bookmark.id,
-          title: bookmark.title,
-          domain: bookmark.domain.replace(/^www\./i, ""),
-          sourceUrl: bookmark.sourceUrl,
-        });
+        next.set(bookmark.id, bookmark);
       }
       return next;
     });
@@ -505,19 +602,14 @@ export function App({
       }
       const bookmark = items.find((item) => item.id === bookmarkId);
       if (bookmark) {
-        next.set(bookmark.id, {
-          id: bookmark.id,
-          title: bookmark.title,
-          domain: bookmark.domain.replace(/^www\./i, ""),
-          sourceUrl: bookmark.sourceUrl,
-        });
+        next.set(bookmark.id, bookmark);
       }
       return next;
     });
   }, [items]);
 
   function selectAllBookmarks() {
-    setSelectedIds(new Set(items.map((b) => b.id)));
+    setSelectedIds((current) => new Set([...current, ...items.map((b) => b.id)]));
     rememberSelectionCatalog(items);
   }
 
@@ -657,7 +749,14 @@ export function App({
     }
 
     const handleHashChange = () => {
-      setRoute(parseRoute(window.location.hash));
+      const next = parseRoute(window.location.hash);
+      setRoute(next);
+      if (next.page === "list") {
+        const filters = parseListFilters(window.location.hash);
+        setSearchInput(filters.search); setBookmarkView(filters.view); setQualityFilter(filters.quality);
+        setSelectedFolderId(filters.folderId); setSelectedTagId(filters.tagId); setSort(filters.sort);
+        restoreScroll.current = listScrollPositions.current.get(window.location.hash) ?? 0;
+      }
     };
 
     window.addEventListener("hashchange", handleHashChange);
@@ -665,6 +764,20 @@ export function App({
       window.removeEventListener("hashchange", handleHashChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (route.page !== "list") return;
+    const remember = () => listScrollPositions.current.set(listHash, window.scrollY);
+    window.addEventListener("scroll", remember, { passive: true });
+    return () => window.removeEventListener("scroll", remember);
+  }, [route.page, listHash]);
+
+  useEffect(() => {
+    if (route.page !== "list" || loadState !== "ready" || loadedQueryKey !== queryKey || restoreScroll.current === null) return;
+    const top = restoreScroll.current;
+    const frame = requestAnimationFrame(() => { window.scrollTo({ top }); restoreScroll.current = null; });
+    return () => cancelAnimationFrame(frame);
+  }, [route.page, loadState, loadedQueryKey, queryKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -763,69 +876,44 @@ export function App({
   }, [appDataSource, authToken, dataRevision]);
 
   useEffect(() => {
+    if (loadedQueryKey === queryKey && loadState === "ready") {
+      listSnapshots.current.set(queryKey, { items, total: listTotal, source: "api", storedAt: Date.now() });
+      if (listSnapshots.current.size > 30) listSnapshots.current.delete(listSnapshots.current.keys().next().value!);
+    }
+  }, [items, listTotal, loadedQueryKey, queryKey, loadState]);
+
+  useEffect(() => {
+    listController.current?.abort();
+    pageController.current?.abort();
+    pageController.current = null;
     if (!authToken) {
-      setItems([]);
-      setListTotal(0);
-      setLoadState("idle");
-      setListError(null);
-      setLoadMoreError(null);
-      setLoadingMore(false);
+      setItems([]); setListTotal(0); setLoadState("idle"); setLoadedQueryKey("");
       return;
     }
-
-    let cancelled = false;
-    setListError(null);
-    setLoadMoreError(null);
-    setLoadingMore(false);
-
-    const query = {
-      search: deferredSearch,
-      quality: qualityFilter,
-      view: bookmarkView,
-      folderId: selectedFolderId || undefined,
-      tagId: selectedTagId || undefined,
-      limit: BOOKMARKS_PAGE_SIZE,
-      offset: 0,
-    };
-    const cached = appDataSource.kind === "live" ? readCachedBookmarkList(query) : null;
+    const controller = new AbortController();
+    listController.current = controller;
+    setListError(null); setLoadMoreError(null); setLoadingMore(false); setShowSkeleton(false);
+    const snapshot = listSnapshots.current.get(queryKey);
+    const cached = snapshot && Date.now() - snapshot.storedAt < 5 * 60 * 1000 ? snapshot
+      : appDataSource.kind === "live" ? readCachedBookmarkList(query, accountId) : null;
+    const sameQuery = loadedQueryKey === queryKey;
     if (cached) {
-      setItems(cached.items);
-      setListTotal(cached.total);
-      setLoadState("ready");
-    } else {
-      setLoadState("loading");
+      setItems(cached.items); setListTotal(cached.total); setLoadState("ready"); setLoadedQueryKey(queryKey);
+    } else if (!sameQuery || loadState !== "ready") {
+      setItems([]); setListTotal(0); setLoadState("loading"); setLoadedQueryKey(queryKey);
     }
-
-    appDataSource.searchBookmarks(query, authToken)
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-        if (appDataSource.kind === "live") {
-          writeCachedBookmarkList(query, result);
-        }
-        startTransition(() => {
-          setItems(result.items);
-          setListTotal(result.total);
-          setLoadState("ready");
-        });
-      })
-      .catch((error) => {
-        if (cancelled || handleProtectedApiError(error)) {
-          return;
-        }
-        startTransition(() => {
-          setItems([]);
-          setListTotal(0);
-          setLoadState("error");
-          setListError(toErrorMessage(error));
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appDataSource, authToken, bookmarkView, dataRevision, deferredSearch, qualityFilter, selectedFolderId, selectedTagId]);
+    const skeletonTimer = window.setTimeout(() => setShowSkeleton(true), 180);
+    fetchBookmarkWindow(appDataSource.searchBookmarks, query, authToken, cached?.items.length ?? BOOKMARKS_PAGE_SIZE, controller.signal).then((result) => {
+      if (controller.signal.aborted || activeQueryKey.current !== queryKey) return;
+      if (appDataSource.kind === "live") writeCachedBookmarkList(query, result, accountId);
+      setItems(result.items); setListTotal(result.total); setLoadState("ready"); setLoadedQueryKey(queryKey);
+    }).catch((error) => {
+      if (controller.signal.aborted || activeQueryKey.current !== queryKey || handleProtectedApiError(error)) return;
+      setLoadState(cached || (sameQuery && loadState === "ready") ? "ready" : "error");
+      setListError(toErrorMessage(error));
+    });
+    return () => { controller.abort(); window.clearTimeout(skeletonTimer); };
+  }, [appDataSource, authToken, queryKey, dataRevision]);
 
   useEffect(() => {
     if (!authToken || route.page !== "detail") {
@@ -883,7 +971,7 @@ export function App({
 
     appDataSource.searchPrivateBookmarks(
       {
-        search: deferredSearch,
+        search: deferredPrivateSearch,
         quality: qualityFilter,
         view: bookmarkView,
         limit: BOOKMARKS_PAGE_SIZE,
@@ -915,7 +1003,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, bookmarkView, deferredSearch, privateToken, qualityFilter, route.page]);
+  }, [appDataSource, authToken, bookmarkView, deferredPrivateSearch, privateToken, qualityFilter, route.page]);
 
   useEffect(() => {
     if (!authToken || route.page !== "private-detail" || !privateToken) {
@@ -1233,66 +1321,67 @@ export function App({
   }
 
   async function refreshBookmarksList(currentToken: string) {
-    const limit = Math.max(items.length, BOOKMARKS_PAGE_SIZE);
-    const result = await appDataSource.searchBookmarks(
-      {
-        search: deferredSearch,
-        quality: qualityFilter,
-        view: bookmarkView,
-        folderId: selectedFolderId || undefined,
-        tagId: selectedTagId || undefined,
-        limit,
-        offset: 0,
-      },
-      currentToken,
-    );
-    setListError(null);
-    setLoadMoreError(null);
-    setItems(result.items);
-    setListTotal(result.total);
-    setLoadingMore(false);
-    setLoadState("ready");
+    invalidateLists();
+    if (activeQueryKey.current !== queryKey) {
+      setDataRevision((revision) => revision + 1);
+      return;
+    }
+    listController.current?.abort(); pageController.current?.abort();
+    pageController.current = null; setLoadingMore(false);
+    const controller = new AbortController();
+    listController.current = controller;
+    const requestedKey = queryKey;
+    try {
+      const result = await fetchBookmarkWindow(appDataSource.searchBookmarks, query, currentToken, items.length, controller.signal);
+      if (controller.signal.aborted || activeQueryKey.current !== requestedKey) return;
+      setListError(null); setLoadMoreError(null); setItems(result.items); setListTotal(result.total);
+      setLoadedQueryKey(requestedKey); setLoadingMore(false); setLoadState("ready");
+      writeCachedBookmarkList(query, { ...result, items: result.items.slice(0, BOOKMARKS_PAGE_SIZE) }, accountId);
+    } catch (error) {
+      if (controller.signal.aborted || activeQueryKey.current !== requestedKey) return;
+      if (!handleProtectedApiError(error)) setListError(`更新失败，已保留当前内容。${toErrorMessage(error)}`);
+    }
   }
 
   async function loadMoreBookmarks() {
-    if (loadingMore || loadState !== "ready" || !hasMoreItems) {
-      return;
-    }
-
-    setLoadMoreError(null);
-    setLoadingMore(true);
-
-    if (!authToken) {
-      setLoadingMore(false);
-      return;
-    }
-
+    if (pageController.current || loadingMore || loadState !== "ready" || !hasMoreItems || !authToken) return;
+    const requestedKey = queryKey;
+    const controller = new AbortController(); pageController.current = controller;
+    setLoadMoreError(null); setLoadingMore(true);
     try {
-      const result = await appDataSource.searchBookmarks(
-        {
-          search: deferredSearch,
-          quality: qualityFilter,
-          view: bookmarkView,
-          folderId: selectedFolderId || undefined,
-          tagId: selectedTagId || undefined,
-          limit: BOOKMARKS_PAGE_SIZE,
-          offset: items.length,
-        },
-        authToken,
-      );
+      const result = await appDataSource.searchBookmarks({ ...query, offset: items.length }, authToken, controller.signal);
+      if (controller.signal.aborted || activeQueryKey.current !== requestedKey) return;
       setItems((current) => {
-        const existingIds = new Set(current.map((item) => item.id));
-        const nextItems = result.items.filter((item) => !existingIds.has(item.id));
-        return [...current, ...nextItems];
+        const existing = new Set(current.map((item) => item.id));
+        return [...current, ...result.items.filter((item) => !existing.has(item.id))];
       });
       setListTotal(result.total);
     } catch (error) {
-      if (!handleProtectedApiError(error)) {
-        setLoadMoreError(toErrorMessage(error));
-      }
+      if (!controller.signal.aborted && activeQueryKey.current === requestedKey && !handleProtectedApiError(error)) setLoadMoreError(toErrorMessage(error));
     } finally {
-      setLoadingMore(false);
+      if (pageController.current === controller) pageController.current = null;
+      if (activeQueryKey.current === requestedKey) setLoadingMore(false);
     }
+  }
+
+  async function selectAllResults() {
+    if (!authToken || selectionBusy) return;
+    const requestedKey = queryKey;
+    setSelectionBusy(true);
+    try {
+      const all: Bookmark[] = [];
+      let total = Infinity;
+      while (all.length < total) {
+        const result = await appDataSource.searchBookmarks({ ...query, offset: all.length, limit: 100 }, authToken);
+        if (activeQueryKey.current !== requestedKey) return;
+        total = result.total;
+        if (!result.items.length) break;
+        all.push(...result.items);
+      }
+      rememberSelectionCatalog(all);
+      setSelectedIds((current) => new Set([...current, ...all.map((bookmark) => bookmark.id)]));
+    } catch (error) { if (!handleProtectedApiError(error)) pushHomeFeedback("error", toErrorMessage(error)); }
+    finally { setSelectionBusy(false); }
   }
 
   async function refreshBookmarkDetail(currentToken: string, bookmarkId: string) {
@@ -1315,7 +1404,7 @@ export function App({
     const limit = Math.max(privateItems.length, BOOKMARKS_PAGE_SIZE);
     const result = await appDataSource.searchPrivateBookmarks(
       {
-        search: deferredSearch,
+        search: deferredPrivateSearch,
         quality: qualityFilter,
         view: bookmarkView,
         limit,
@@ -1412,6 +1501,8 @@ export function App({
     setPrivateError(null);
     try {
       const summary = await appDataSource.lockPrivateMode(authToken);
+      setPrivateSearchInput("");
+      clearApiResponseCache();
       setPrivateSummary(summary);
       setPrivateToken(null);
       setPrivateItems([]);
@@ -1489,9 +1580,8 @@ export function App({
     setManagerFeedback(null);
     try {
       const message = await action();
-      await refreshCatalogs(authToken);
-      await refreshSidebarFolderCounts(authToken);
-      await refreshBookmarksList(authToken);
+      invalidateLists();
+      await Promise.all([refreshCatalogs(authToken), refreshSidebarFolderCounts(authToken), refreshBookmarksList(authToken)]);
       if (route.page === "detail") {
         await refreshBookmarkDetail(authToken, route.bookmarkId);
       }
@@ -1524,69 +1614,48 @@ export function App({
     });
   }
 
-  async function handleBatchDelete(ids: Set<string>) {
-    if (ids.size === 0) return;
-    setSelectionBusy(true);
-    setManagerFeedback(null);
-    try {
-      const results = await Promise.allSettled(
-        [...ids].map((id) => appDataSource.deleteBookmark(id, authToken!)),
-      );
-      const failed = results.filter((r) => r.status === "rejected").length;
-      if (failed > 0) {
-        setManagerFeedback({
-          kind: "error",
-          message: `批量删除完成，但有 ${failed} 条失败。`,
-        });
-        await refreshSidebarFolderCounts(authToken!);
-        await refreshBookmarksList(authToken!);
-        exitSelectionMode();
-        return;
-      }
-      await refreshSidebarFolderCounts(authToken!);
-      await refreshBookmarksList(authToken!);
-      setManagerFeedback({
-        kind: "success",
-        message: `已删除 ${ids.size} 个书签。`,
-      });
-      exitSelectionMode();
-    } catch (error) {
+  async function runBatch(ids: Set<string>, label: string, action: (id: string) => Promise<unknown>, refreshCounts = false) {
+    if (!ids.size || !authToken || selectionBusy) return;
+    setSelectionBusy(true); setManagerFeedback(null); setRetryFailed(null);
+    const targets = [...ids];
+    const result = await runBoundedBatch(targets, action);
+    if (activeToken.current !== authToken) return;
+    for (const error of result.failures.values()) {
       if (handleProtectedApiError(error)) return;
-      setManagerFeedback({ kind: "error", message: toErrorMessage(error) });
-    } finally {
-      setSelectionBusy(false);
     }
+    const failed = new Set(result.failures.keys());
+    invalidateLists();
+    await Promise.allSettled([
+      refreshBookmarksList(authToken),
+      ...(refreshCounts ? [refreshSidebarFolderCounts(authToken)] : []),
+    ]);
+    if (activeToken.current !== authToken) return;
+    if (activeQueryKey.current !== queryKey) setDataRevision((revision) => revision + 1);
+    setSelectedIds(failed);
+    setSelectionMode(failed.size > 0);
+    setBatchDropdown("closed");
+    setSelectionBusy(false);
+    setManagerFeedback({ kind: failed.size ? "error" : "success",
+      message: `${label}：成功 ${targets.length - failed.size} 条${failed.size ? `，失败 ${failed.size} 条。失败项已保留，可重试。` : "。"}` });
+    if (failed.size) setRetryFailed(() => () => void runBatch(failed, label, action, refreshCounts));
+    else setSelectionCatalog(new Map());
+  }
+
+  async function handleBatchDelete(ids: Set<string>) {
+    await runBatch(ids, "删除", (id) => appDataSource.deleteBookmark(id, authToken!), true);
   }
 
   async function handleBatchToggleFavorite(ids: Set<string>, isFavorite: boolean) {
-    if (ids.size === 0) return;
-    setSelectionBusy(true);
-    setManagerFeedback(null);
-    try {
-      await Promise.allSettled(
-        [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { isFavorite }, authToken!)),
-      );
-      await refreshSidebarFolderCounts(authToken!);
-      await refreshBookmarksList(authToken!);
-      setManagerFeedback({
-        kind: "success",
-        message: isFavorite
-          ? `已将 ${ids.size} 个书签加入收藏。`
-          : `已取消 ${ids.size} 个书签的收藏。`,
-      });
-      exitSelectionMode();
-    } catch (error) {
-      if (handleProtectedApiError(error)) return;
-      setManagerFeedback({ kind: "error", message: toErrorMessage(error) });
-    } finally {
-      setSelectionBusy(false);
-    }
+    await runBatch(ids, isFavorite ? "加入星标" : "取消星标",
+      (id) => appDataSource.updateBookmarkMetadata(id, { isFavorite }, authToken!));
   }
 
   function handleBatchLocalArchive(ids: Set<string>) {
-    if (ids.size === 0) return;
-    const selectedBookmarks = items.filter((bookmark) => ids.has(bookmark.id));
-    openLocalArchiveDialog(selectedBookmarks);
+    if (!ids.size) return;
+    const selected = [...ids].map((id) => selectionCatalog.get(id) ?? items.find((item) => item.id === id))
+      .filter((bookmark): bookmark is Bookmark => Boolean(bookmark));
+    if (selected.length !== ids.size) { pushHomeFeedback("error", "部分选择已失效，请重新选择后存档。"); return; }
+    openLocalArchiveDialog(selected);
   }
 
   async function confirmLocalArchiveDialog() {
@@ -1616,53 +1685,18 @@ export function App({
   }
 
   async function handleBatchMoveTo(ids: Set<string>, folderId: string | null) {
-    if (ids.size === 0) return;
-    setSelectionBusy(true);
-    setManagerFeedback(null);
-    try {
-      await Promise.allSettled(
-        [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { folderId }, authToken!)),
-      );
-      await refreshSidebarFolderCounts(authToken!);
-      await refreshBookmarksList(authToken!);
-      const folderName = folderId
-        ? (folders.find((f) => f.id === folderId)?.name ?? "指定收藏夹")
-        : "未归类";
-      setManagerFeedback({
-        kind: "success",
-        message: `已将 ${ids.size} 个书签移动到「${folderName}」。`,
-      });
-      exitSelectionMode();
-    } catch (error) {
-      if (handleProtectedApiError(error)) return;
-      setManagerFeedback({ kind: "error", message: toErrorMessage(error) });
-    } finally {
-      setSelectionBusy(false);
-    }
+    await runBatch(ids, "移动收藏夹", (id) => appDataSource.updateBookmarkMetadata(id, { folderId }, authToken!), true);
   }
 
-  async function handleBatchSetTags(ids: Set<string>, tagIds: string[]) {
-    if (ids.size === 0) return;
-    setSelectionBusy(true);
-    setManagerFeedback(null);
-    try {
-      await Promise.allSettled(
-        [...ids].map((id) => appDataSource.updateBookmarkMetadata(id, { tagIds }, authToken!)),
-      );
-      await refreshSidebarFolderCounts(authToken!);
-      await refreshBookmarksList(authToken!);
-      const tagName = tags.find((t) => t.id === tagIds[0])?.name ?? "标签";
-      setManagerFeedback({
-        kind: "success",
-        message: `已为 ${ids.size} 个书签设置标签「${tagName}」。`,
-      });
-      exitSelectionMode();
-    } catch (error) {
-      if (handleProtectedApiError(error)) return;
-      setManagerFeedback({ kind: "error", message: toErrorMessage(error) });
-    } finally {
-      setSelectionBusy(false);
-    }
+  async function handleBatchSetTags(ids: Set<string>, tagIds: string[], mode: "append" | "remove" | "replace") {
+    await runBatch(ids, mode === "append" ? "追加标签" : mode === "remove" ? "移除标签" : "替换标签", async (id) => {
+      // Fetch current metadata so appending never replaces tags from stale selections.
+      const current = await appDataSource.fetchBookmarkDetail(id, authToken!);
+      if (!current) throw new Error("书签不存在");
+      const existing = current.bookmark.tags.map((tag) => tag.id);
+      const nextTags = mergeTagIds(existing, tagIds, mode);
+      return appDataSource.updateBookmarkMetadata(id, { tagIds: nextTags }, authToken!);
+    });
   }
 
   async function handleCreateFolder(name: string, parent?: Folder) {
@@ -1839,9 +1873,8 @@ export function App({
         },
         authToken,
       );
-      await refreshSidebarFolderCounts(authToken);
-      await refreshBookmarksList(authToken);
-      await refreshBookmarkDetail(authToken, updated.id);
+      invalidateLists();
+      await Promise.all([refreshSidebarFolderCounts(authToken), refreshBookmarksList(authToken), refreshBookmarkDetail(authToken, updated.id)]);
       setMetadataFeedback({
         kind: "success",
         message: "书签的收藏状态、收藏夹、标签和备注已经保存。",
@@ -1860,36 +1893,31 @@ export function App({
   }
 
   async function handleToggleFavorite(bookmark: Bookmark, isFavorite: boolean) {
-    if (!authToken) {
-      return;
-    }
-
-    setManagerBusy(true);
-    setManagerFeedback(null);
+    if (!authToken || favoritePending.current.has(bookmark.id)) return;
+    favoritePending.current.add(bookmark.id);
+    const requestedKey = queryKey;
+    listController.current?.abort();
+    pageController.current?.abort();
+    pageController.current = null;
+    setLoadingMore(false);
+    invalidateLists();
+    setItems((current) => current.map((item) => item.id === bookmark.id ? { ...item, isFavorite } : item));
+    setManagerFeedback(null); closeContextMenu();
     try {
-      await appDataSource.updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
-      await refreshSidebarFolderCounts(authToken);
-      await refreshBookmarksList(authToken);
-      if (route.page === "detail" && route.bookmarkId === bookmark.id) {
-        await refreshBookmarkDetail(authToken, bookmark.id);
+      const updated = await appDataSource.updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
+      invalidateLists();
+      if (activeQueryKey.current === requestedKey) {
+        setItems((current) => bookmarkView === "favorites" && !isFavorite
+          ? current.filter((item) => item.id !== bookmark.id)
+          : current.map((item) => item.id === bookmark.id ? { ...item, ...updated } : item));
+        if (bookmarkView === "favorites" && !isFavorite) setListTotal((total) => Math.max(0, total - 1));
       }
-
-      setManagerFeedback({
-        kind: "success",
-        message: isFavorite ? "已加入收藏。" : "已取消收藏。",
-      });
-      closeContextMenu();
+      if (activeQueryKey.current !== requestedKey) setDataRevision((revision) => revision + 1);
+      if (route.page === "detail" && route.bookmarkId === bookmark.id) await refreshBookmarkDetail(authToken, bookmark.id);
     } catch (error) {
-      if (handleProtectedApiError(error)) {
-        return;
-      }
-      setManagerFeedback({
-        kind: "error",
-        message: toErrorMessage(error),
-      });
-    } finally {
-      setManagerBusy(false);
-    }
+      if (activeQueryKey.current === requestedKey) setItems((current) => current.map((item) => item.id === bookmark.id ? { ...item, isFavorite: bookmark.isFavorite } : item));
+      if (!handleProtectedApiError(error)) setManagerFeedback({ kind: "error", message: `星标修改失败，已恢复。${toErrorMessage(error)}` });
+    } finally { favoritePending.current.delete(bookmark.id); }
   }
 
   const contextMenuGroups = useMemo<ContextMenuGroup[]>(() => {
@@ -2183,13 +2211,19 @@ export function App({
         bookmarkView={bookmarkView}
         selectedFolderId={selectedFolderId}
         selectedTagId={selectedTagId}
-        searchInput={searchInput}
-        onSearchChange={setSearchInput}
+        searchInput={isPrivateSearchScope ? privateSearchInput : searchInput}
+        onSearchChange={(search) => updateScopedSearch(route.page, search, {
+          setPrivateSearch: setPrivateSearchInput,
+          navigatePublicSearch: (value) => navigateList({ search: value }, true),
+          openPrivateList: goToPrivateMode,
+        })}
         managerBusy={managerBusy}
-        onSelectBookmarkView={setBookmarkView}
-        onSelectFolder={setSelectedFolderId}
-        onSelectTag={setSelectedTagId}
-        onGoHome={goToList}
+        onSelectBookmarkView={(view) => navigateList({ view, folderId: "", tagId: "" })}
+        onSelectFolder={(folderId) => navigateList({ folderId, view: "all" })}
+        onPrefetchFolder={prefetchFolder}
+        onCancelPrefetchFolder={cancelPrefetchIntent}
+        onSelectTag={(tagId) => navigateList({ tagId })}
+        onGoHome={() => navigateList({ search: "", view: "all", folderId: "", tagId: "", quality: "all" })}
         onCreateRootFolder={() => openManagerDialog({ kind: "create-folder" })}
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
         onOpenPrivateMode={goToPrivateMode}
@@ -2220,10 +2254,26 @@ export function App({
             selectionMode={selectionMode}
             selectedIds={selectedIds}
             selectionBusy={selectionBusy}
-            items={items}
-            totalItems={listTotal}
+            items={loadedQueryKey === queryKey ? items : []}
+            totalItems={loadedQueryKey === queryKey ? listTotal : 0}
+            title={selectedFolderId ? (folders.find((folder) => folder.id === selectedFolderId)?.path ?? "收藏夹") : bookmarkView === "favorites" ? "星标书签" : bookmarkView === "recent" ? "最近更新" : "全部书签"}
+            searchInput={searchInput}
+            selectedFolderId={selectedFolderId}
+            selectedTagId={selectedTagId}
+            sort={sort}
+            onSortChange={(sort) => navigateList({ sort })}
+            onClearFilters={() => navigateList({ search: "", tagId: "", quality: "all" })}
+            onClearTag={() => navigateList({ tagId: "" })}
+            onClearSearch={() => navigateList({ search: "" })}
+            onSearchGlobally={() => navigateList({ folderId: "", tagId: "", view: "all" })}
+            onRetry={() => setDataRevision((revision) => revision + 1)}
+            showSkeleton={showSkeleton && loadedQueryKey === queryKey}
+            onSelectAllResults={() => void selectAllResults()}
+            onRetryFailed={retryFailed ?? undefined}
+            onEnterSelection={() => enterSelectionMode()}
+            onCreateArchive={(bookmark) => openLocalArchiveDialog([bookmark])}
             bookmarkView={bookmarkView}
-            loadState={loadState}
+            loadState={loadedQueryKey === queryKey ? loadState : "loading"}
             listError={listError}
             loadMoreError={loadMoreError}
             hasActiveFilters={Boolean(
@@ -2246,7 +2296,7 @@ export function App({
             onBatchFavorite={(fav) => void handleBatchToggleFavorite(selectedIds, fav)}
             onBatchLocalArchive={() => void handleBatchLocalArchive(selectedIds)}
             onBatchMoveTo={(folderId) => void handleBatchMoveTo(selectedIds, folderId)}
-            onBatchSetTags={(tagIds) => void handleBatchSetTags(selectedIds, tagIds)}
+            onBatchSetTags={(tagIds, mode) => void handleBatchSetTags(selectedIds, tagIds, mode ?? "append")}
             onBatchShare={() => {
               if (selectedIds.size === 0) {
                 return;
@@ -2383,7 +2433,7 @@ export function App({
               metadataSaving={metadataSaving}
               metadataFeedback={metadataFeedback}
               isPending={isPending}
-              onGoBack={goToList}
+              onGoBack={returnToList}
               onSelectVersion={openBookmark}
               onMetadataNoteChange={setMetadataNote}
               onMetadataFolderChange={setMetadataFolderId}
@@ -2436,7 +2486,7 @@ export function App({
               userId={session.user.id}
               dataSource={appDataSource}
               onApiError={handleProtectedApiError}
-              onBack={goToList}
+              onBack={returnToList}
             />
           </Suspense>
         ) : route.page === "settings-ai-organize" ? (
@@ -2446,7 +2496,7 @@ export function App({
               folders={folders}
               tags={tags}
               onApiError={handleProtectedApiError}
-              onBack={goToList}
+              onBack={returnToList}
               onOrganized={() => {
                 setDataRevision((current) => current + 1);
               }}
@@ -2457,7 +2507,7 @@ export function App({
             <SharesPanel
               token={session.token}
               onApiError={handleProtectedApiError}
-              onBack={goToList}
+              onBack={returnToList}
             />
           </Suspense>
         ) : route.page === "settings-extension-devices" ? (
@@ -2466,7 +2516,7 @@ export function App({
               token={session.token}
               dataSource={appDataSource}
               onApiError={handleProtectedApiError}
-              onBack={goToList}
+              onBack={returnToList}
             />
           </Suspense>
         ) : null}

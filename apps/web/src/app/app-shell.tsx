@@ -14,6 +14,7 @@ import type {
   PrivateVaultSummary,
   Tag,
 } from "@keeppage/domain";
+import { useDialogFocus } from "./use-dialog-focus";
 import { Icon } from "../components/Icon";
 import type { ViewRoute } from "./routes";
 import { displayUserName, userInitials } from "./user-format";
@@ -35,6 +36,8 @@ export function AppShell({
   managerBusy,
   onSelectBookmarkView,
   onSelectFolder,
+  onPrefetchFolder,
+  onCancelPrefetchFolder,
   onSelectTag,
   onGoHome,
   onCreateRootFolder,
@@ -70,6 +73,8 @@ export function AppShell({
   managerBusy: boolean;
   onSelectBookmarkView: (view: BookmarkListView) => void;
   onSelectFolder: (folderId: string) => void;
+  onPrefetchFolder?: (folderId: string) => void;
+  onCancelPrefetchFolder?: () => void;
   onSelectTag: (tagId: string) => void;
   onGoHome: () => void;
   onCreateRootFolder: () => void;
@@ -92,18 +97,12 @@ export function AppShell({
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
   const [sidebarView, setSidebarView] = useState<"main" | "settings">("main");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [folderSearch, setFolderSearch] = useState("");
+  const sidebarRef = useDialogFocus<HTMLElement>(mobileSidebarOpen, () => setMobileSidebarOpen(false));
+  const folderListRef = useRef<HTMLDivElement | null>(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const activeNav = selectedFolderId || selectedTagId ? null : bookmarkView;
-  const selectedFolder = useMemo(
-    () => folders.find((folder) => folder.id === selectedFolderId) ?? null,
-    [folders, selectedFolderId],
-  );
-  const selectedTag = useMemo(
-    () => tags.find((tag) => tag.id === selectedTagId) ?? null,
-    [selectedTagId, tags],
-  );
-
   const sortedFolders = useMemo(
     () => [...folders].sort((left, right) => left.path.localeCompare(right.path, "zh-CN")),
     [folders],
@@ -138,6 +137,9 @@ export function AppShell({
   }, [childrenByParent]);
 
   const visibleFolderRows = useMemo(() => {
+    if (folderSearch.trim()) {
+      return sortedFolders.filter((folder) => folder.path.toLocaleLowerCase().includes(folderSearch.trim().toLocaleLowerCase())).map((folder) => ({ folder, depth: 0, hasChildren: false }));
+    }
     const rows: Array<{ folder: Folder; depth: number; hasChildren: boolean }> = [];
 
     function append(folder: Folder, depth: number) {
@@ -160,7 +162,7 @@ export function AppShell({
     }
 
     return rows;
-  }, [childrenByParent, collapsedFolderIds]);
+  }, [childrenByParent, collapsedFolderIds, folderSearch, sortedFolders]);
 
   const folderCounts = useMemo(() => {
     const mapping = new Map<string, number>();
@@ -200,18 +202,28 @@ export function AppShell({
     });
   }, [sortedFolders]);
 
+  useEffect(() => {
+    if (!selectedFolderId) return;
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+      for (const [id, descendants] of descendantIdsByFolder) {
+        if (id !== selectedFolderId && descendants.includes(selectedFolderId)) next.delete(id);
+      }
+      return next.size === current.size ? current : next;
+    });
+    const frame = requestAnimationFrame(() => folderListRef.current?.querySelector<HTMLElement>(".is-active")?.scrollIntoView({ block: "nearest" }));
+    return () => cancelAnimationFrame(frame);
+  }, [selectedFolderId, descendantIdsByFolder]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1080px)");
+    const update = () => { if (sidebarRef.current) sidebarRef.current.inert = media.matches && !mobileSidebarOpen; };
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [mobileSidebarOpen]);
+
   const displayName = displayUserName(user);
-  const mobileListTitle = selectedFolder?.name
-    ?? (selectedTag ? `#${selectedTag.name}` : bookmarkView === "favorites" ? "星标" : bookmarkView === "recent" ? "最近" : "归档");
-  const mobileListSubtitle = selectedFolder
-    ? "当前收藏夹"
-    : selectedTag
-      ? "当前标签"
-      : bookmarkView === "favorites"
-        ? "Favorite Archive"
-        : bookmarkView === "recent"
-          ? "Recent Updates"
-          : "KeepPage Archive";
   const privateModeStateLabel = !privateModeSummary
     ? "读取中"
     : !privateModeSummary.enabled
@@ -244,16 +256,12 @@ export function AppShell({
     setMobileSidebarOpen(false);
     setMobileSearchOpen(false);
     onSelectBookmarkView(nextNav);
-    onSelectFolder("");
-    onSelectTag("");
   }
 
   function handleSelectFolderFilter(nextFolderId: string) {
     setSidebarView("main");
     setMobileSidebarOpen(false);
     setMobileSearchOpen(false);
-    onSelectBookmarkView("all");
-    onSelectTag("");
     onSelectFolder(nextFolderId);
   }
 
@@ -261,8 +269,6 @@ export function AppShell({
     setSidebarView("main");
     setMobileSidebarOpen(false);
     setMobileSearchOpen(false);
-    onSelectBookmarkView("all");
-    onSelectFolder("");
     onSelectTag(nextTagId);
   }
 
@@ -274,10 +280,6 @@ export function AppShell({
         return next;
       }
 
-      const descendantIds = descendantIdsByFolder.get(folder.id) ?? [folder.id];
-      if (selectedFolderId && selectedFolderId !== folder.id && descendantIds.includes(selectedFolderId)) {
-        onSelectFolder(folder.id);
-      }
       next.add(folder.id);
       return next;
     });
@@ -289,12 +291,14 @@ export function AppShell({
         className={mobileSidebarOpen ? "home-mobile-sidebar-backdrop is-visible" : "home-mobile-sidebar-backdrop"}
         type="button"
         aria-label="关闭移动端侧边栏"
+        tabIndex={mobileSidebarOpen ? 0 : -1}
+        aria-hidden={!mobileSidebarOpen}
         onClick={() => {
           setMobileSidebarOpen(false);
           setSidebarView("main");
         }}
       />
-      <aside className={mobileSidebarOpen ? "home-sidebar is-mobile-open" : "home-sidebar"}>
+      <aside ref={sidebarRef} role={mobileSidebarOpen ? "dialog" : undefined} aria-modal={mobileSidebarOpen || undefined} aria-label="收藏夹与设置导航" tabIndex={-1} className={mobileSidebarOpen ? "home-sidebar is-mobile-open" : "home-sidebar"}>
         {sidebarView === "settings" ? (
           <div className="home-settings-panel">
             <button
@@ -430,6 +434,7 @@ export function AppShell({
                 type="search"
                 value={searchInput}
                 onChange={(event) => onSearchChange(event.target.value)}
+                aria-label="搜索书签"
                 placeholder="搜索标题、域名、标签..."
               />
             </label>
@@ -464,11 +469,11 @@ export function AppShell({
             <div className="home-sidebar-scroll">
               <section className="home-sidebar-section">
                 <header className="home-sidebar-section-head">
-                  <span>Collections</span>
+                  <span>收藏夹</span>
                   <button
                     className="home-section-action"
                     type="button"
-                    onClick={onCreateRootFolder}
+                    onClick={() => { setMobileSidebarOpen(false); onCreateRootFolder(); }}
                     disabled={managerBusy}
                     aria-label="新建收藏夹"
                     title="新建收藏夹"
@@ -476,7 +481,9 @@ export function AppShell({
                     <span aria-hidden="true">+</span>
                   </button>
                 </header>
-                <div className="home-folder-list">
+                <input className="home-folder-search" type="search" aria-label="查找收藏夹" placeholder="查找收藏夹…" value={folderSearch} onChange={(event) => setFolderSearch(event.target.value)} />
+                <div className="home-folder-list" ref={folderListRef}>
+                  {visibleFolderRows.length === 0 ? <p className="home-folder-empty">没有匹配的收藏夹</p> : null}
                   {visibleFolderRows.map(({ folder, depth, hasChildren }) => (
                     <div
                       className="home-folder-row"
@@ -492,13 +499,19 @@ export function AppShell({
                           contextMenuFolderId === folder.id ? "is-context-open" : "",
                         ].filter(Boolean).join(" ")}
                         type="button"
+                        aria-current={selectedFolderId === folder.id ? "page" : undefined}
+                        title={folder.path}
+                        onPointerEnter={() => onPrefetchFolder?.(folder.id)}
+                        onFocus={() => onPrefetchFolder?.(folder.id)}
+                        onPointerLeave={onCancelPrefetchFolder}
+                        onBlur={onCancelPrefetchFolder}
                         style={{ paddingLeft: `${12 + depth * 14}px` }}
                         onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
-                        onClick={() => handleSelectFolderFilter(selectedFolderId === folder.id ? "" : folder.id)}
+                        onClick={() => handleSelectFolderFilter(folder.id)}
                       >
                         <span className="home-folder-label">
                           <Icon className="home-folder-icon" name="folder_open" />
-                          <span className="home-folder-name">{folder.name}</span>
+                          <span className="home-folder-name">{folderSearch.trim() ? folder.path : folder.name}</span>
                         </span>
                         <span className="home-folder-count">{folderCounts.get(folder.id) ?? 0}</span>
                       </button>
@@ -512,6 +525,7 @@ export function AppShell({
                           type="button"
                           onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
                           onClick={() => handleToggleFolder(folder)}
+                          aria-expanded={!collapsedFolderIds.has(folder.id)}
                           aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "收起"} ${folder.name}`}
                         >
                           <Icon name="keyboard_arrow_right" />
@@ -526,11 +540,11 @@ export function AppShell({
 
               <section className="home-sidebar-section">
                 <header className="home-sidebar-section-head">
-                  <span>Tags</span>
+                  <span>标签</span>
                   <button
                     className="home-section-action"
                     type="button"
-                    onClick={onCreateTag}
+                    onClick={() => { setMobileSidebarOpen(false); onCreateTag(); }}
                     disabled={managerBusy}
                     aria-label="新建标签"
                     title="新建标签"
@@ -565,14 +579,14 @@ export function AppShell({
             <div className="home-sidebar-footer">
               <button className="home-add-new-btn" type="button" onClick={onOpenImportNew}>
                 <Icon name="add" />
-                <span>Add New</span>
+                <span>导入书签</span>
               </button>
 
               <div className="home-user-profile">
                 <div className="home-avatar">{userInitials(user)}</div>
                 <div className="home-user-info">
                   <span className="home-user-name">{displayName}</span>
-                  <span className="home-user-plan">专业版</span>
+                  <span className="home-user-plan">个人资料库</span>
                 </div>
                 <button
                   className="home-settings-btn"
@@ -606,8 +620,7 @@ export function AppShell({
               </button>
 
               <button className="home-mobile-title-wrap" type="button" onClick={onGoHome} aria-label="返回归档首页">
-                <span className="home-mobile-title-eyebrow">{mobileListSubtitle}</span>
-                <span className="home-mobile-title">{mobileListTitle}</span>
+                <span className="home-mobile-title">KeepPage</span>
               </button>
 
               <button
@@ -627,16 +640,19 @@ export function AppShell({
 
             <div
               className={mobileSearchOpen || searchInput.trim() ? "home-mobile-search-panel is-open" : "home-mobile-search-panel"}
+              aria-hidden={!mobileSearchOpen && !searchInput.trim()}
             >
               <label className="home-search">
                 <Icon className="home-search-icon" name="search" />
                 <input
                   ref={mobileSearchInputRef}
+                  tabIndex={mobileSearchOpen || searchInput.trim() ? 0 : -1}
                   className="home-search-input"
                   type="search"
                   value={searchInput}
                   onChange={(event) => onSearchChange(event.target.value)}
-                  placeholder="搜索标题、域名、标签..."
+                  aria-label="搜索书签"
+                placeholder="搜索标题、域名、标签..."
                 />
               </label>
             </div>
@@ -662,7 +678,7 @@ export function AppShell({
                 </button>
                 <button className="home-mobile-cta" type="button" onClick={onOpenImportNew}>
                   <Icon name="add" />
-                  <span>Add New</span>
+                  <span>导入书签</span>
                 </button>
                 <button
                   className={mobileSidebarOpen && sidebarView === "settings" ? "home-mobile-action is-active" : "home-mobile-action"}

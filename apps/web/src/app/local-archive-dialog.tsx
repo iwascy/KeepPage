@@ -1,3 +1,4 @@
+import { useDialogFocus } from "./use-dialog-focus";
 import type { Bookmark } from "@keeppage/domain";
 import { Icon } from "../components/Icon";
 
@@ -31,6 +32,7 @@ export function LocalArchiveDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  const dialogRef = useDialogFocus(state.step !== "closed", onClose, busy);
   if (state.step === "closed") {
     return null;
   }
@@ -39,7 +41,6 @@ export function LocalArchiveDialog({
 
   return (
     <div
-      aria-hidden="true"
       className="manager-dialog-backdrop is-create-folder"
       onClick={() => {
         if (!busy) {
@@ -52,6 +53,8 @@ export function LocalArchiveDialog({
         aria-modal="true"
         className="create-folder-dialog"
         role="dialog"
+          ref={dialogRef}
+          tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="create-folder-dialog-shell">

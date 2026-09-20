@@ -157,6 +157,7 @@ type QualityReport struct {
 }
 
 type Bookmark struct {
+	SearchSnippet   string         `json:"searchSnippet,omitempty"`
 	ID              string         `json:"id"`
 	SourceURL       string         `json:"sourceUrl"`
 	CanonicalURL    *string        `json:"canonicalUrl,omitempty"`
@@ -176,6 +177,7 @@ type Bookmark struct {
 }
 
 type BookmarkSearchQuery struct {
+	Sort     string
 	Q        string
 	Quality  string
 	View     string

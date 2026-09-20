@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/keeppage/keeppage/apps/api-go/internal/domain"
@@ -26,9 +26,16 @@ func (r *MemoryRepository) SearchPrivateBookmarks(_ context.Context, userID stri
 			continue
 		}
 		bookmark, ok := state.privateBookmarks[version.bookmarkID]
-		if !ok || (query.Q != "" && !bookmarkMatches(bookmark, query.Q)) || (query.Domain != "" && bookmark.Domain != query.Domain) || (query.View == "favorites" && !bookmark.IsFavorite) {
+		if !ok || (query.Q != "" && !bookmarkMatches(bookmark, query.Q) && !strings.Contains(strings.ToLower(r.memoryBookmarkText(userID, bookmark, true)), strings.ToLower(strings.TrimSpace(query.Q)))) || (query.Domain != "" && bookmark.Domain != query.Domain) || (query.View == "favorites" && !bookmark.IsFavorite) {
 			continue
 		}
+		if query.View == "recent" && bookmark.UpdatedAt.Before(time.Now().Add(-7*24*time.Hour)) {
+			continue
+		}
+		if query.Quality != "" && (bookmark.LatestQuality == nil || bookmark.LatestQuality.Grade != query.Quality) {
+			continue
+		}
+		bookmark.SearchSnippet = bookmarkSearchSnippet(bookmark, query.Q, r.memoryBookmarkText(userID, bookmark, true))
 		found := false
 		for _, existing := range items {
 			if existing.ID == bookmark.ID {
@@ -40,7 +47,7 @@ func (r *MemoryRepository) SearchPrivateBookmarks(_ context.Context, userID stri
 			items = append(items, bookmark)
 		}
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	sortBookmarks(items, query)
 	total := len(items)
 	start := min(query.Offset, total)
 	end := min(start+query.Limit, total)
@@ -70,9 +77,11 @@ func (r *MemoryRepository) GetPrivateBookmarkDetail(_ context.Context, userID, b
 func (r *PostgresRepository) SearchPrivateBookmarks(ctx context.Context, userID string, query domain.BookmarkSearchQuery) (domain.BookmarkSearchResponse, error) {
 	args := []any{userID}
 	conditions := []string{"user_id=$1"}
+	searchPlaceholder := ""
 	if strings.TrimSpace(query.Q) != "" {
-		args = append(args, "%"+strings.TrimSpace(query.Q)+"%")
-		conditions = append(conditions, "(title ilike $2 or source_url ilike $2 or domain ilike $2 or note ilike $2)")
+		args = append(args, "%"+escapeSearchLike(strings.TrimSpace(query.Q))+"%")
+		searchPlaceholder = "$2"
+		conditions = append(conditions, "(title ilike $2 or source_url ilike $2 or domain ilike $2 or note ilike $2 or exists (select 1 from private_bookmark_versions pv where pv.id=private_bookmarks.latest_version_id and pv.extracted_text ilike $2))")
 	}
 	if query.Domain != "" {
 		args = append(args, query.Domain)
@@ -81,12 +90,26 @@ func (r *PostgresRepository) SearchPrivateBookmarks(ctx context.Context, userID 
 	if query.View == "favorites" {
 		conditions = append(conditions, "is_favorite=true")
 	}
+	if query.View == "recent" {
+		args = append(args, time.Now().Add(-7*24*time.Hour))
+		conditions = append(conditions, fmt.Sprintf("updated_at >= $%d", len(args)))
+	}
+	if query.Quality != "" {
+		args = append(args, query.Quality)
+		conditions = append(conditions, fmt.Sprintf("exists (select 1 from private_bookmark_versions pv where pv.id=private_bookmarks.latest_version_id and pv.quality_grade=$%d)", len(args)))
+	}
 	var total int
 	if err := r.pool.QueryRow(ctx, `select count(*) from private_bookmarks where `+strings.Join(conditions, " and "), args...).Scan(&total); err != nil {
 		return domain.BookmarkSearchResponse{}, err
 	}
+	snippetSelect := "''"
+	if searchPlaceholder != "" {
+		args = append(args, strings.TrimSpace(query.Q))
+		literal := fmt.Sprintf("$%d", len(args))
+		snippetSelect = "coalesce((select case when strpos(lower(coalesce(pv.extracted_text, '')), lower(" + literal + ")) > 0 then substring(pv.extracted_text from greatest(1, strpos(lower(pv.extracted_text), lower(" + literal + ")) - 60) for 220) else '' end from private_bookmark_versions pv where pv.id=private_bookmarks.latest_version_id), '')"
+	}
 	args = append(args, query.Limit, query.Offset)
-	rows, err := r.pool.Query(ctx, `select id::text,source_url,canonical_url,title,domain,note,is_favorite,latest_version_id::text,created_at,updated_at from private_bookmarks where `+strings.Join(conditions, " and ")+fmt.Sprintf(` order by updated_at desc limit $%d offset $%d`, len(args)-1, len(args)), args...)
+	rows, err := r.pool.Query(ctx, `select id::text,source_url,canonical_url,title,domain,note,is_favorite,latest_version_id::text,created_at,updated_at, `+snippetSelect+` from private_bookmarks where `+strings.Join(conditions, " and ")+fmt.Sprintf(` order by %s limit $%d offset $%d`, bookmarkOrderSQL("", query.Sort, searchPlaceholder), len(args)-1, len(args)), args...)
 	if err != nil {
 		return domain.BookmarkSearchResponse{}, err
 	}
@@ -94,10 +117,12 @@ func (r *PostgresRepository) SearchPrivateBookmarks(ctx context.Context, userID 
 	items := []domain.Bookmark{}
 	for rows.Next() {
 		var b domain.Bookmark
-		if err := rows.Scan(&b.ID, &b.SourceURL, &b.CanonicalURL, &b.Title, &b.Domain, &b.Note, &b.IsFavorite, &b.LatestVersionID, &b.CreatedAt, &b.UpdatedAt); err != nil {
+		var extractedSnippet string
+		if err := rows.Scan(&b.ID, &b.SourceURL, &b.CanonicalURL, &b.Title, &b.Domain, &b.Note, &b.IsFavorite, &b.LatestVersionID, &b.CreatedAt, &b.UpdatedAt, &extractedSnippet); err != nil {
 			return domain.BookmarkSearchResponse{}, err
 		}
 		b.Tags = []domain.Tag{}
+		b.SearchSnippet = bookmarkSearchSnippet(b, query.Q, extractedSnippet)
 		items = append(items, b)
 	}
 	return domain.BookmarkSearchResponse{Items: items, Total: total}, rows.Err()

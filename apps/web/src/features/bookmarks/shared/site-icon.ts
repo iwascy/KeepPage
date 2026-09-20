@@ -80,6 +80,11 @@ function isDisplayableIconUrl(rawUrl: string) {
   return Boolean(rawUrl.trim()) && !isKnownFallbackIconUrl(rawUrl);
 }
 
+// Validation happens on the lazy rendered image, never through eager Image probes.
+// Cards from the same domain reuse the successful candidate and known failures.
+const iconChoices = new Map<string, number>();
+const failedIcons = new Set<string>();
+
 export function useBookmarkSiteIcon(
   bookmark: Pick<Bookmark, "id" | "domain" | "faviconUrl">,
   size: number,
@@ -88,77 +93,36 @@ export function useBookmarkSiteIcon(
     () => buildBookmarkSiteIconCandidates(bookmark, size),
     [bookmark.domain, bookmark.faviconUrl, size],
   );
-  const [candidateIndex, setCandidateIndex] = useState(candidates.length);
-  const [validatedSiteIconSrc, setValidatedSiteIconSrc] = useState<string | null>(null);
-  const minimumNaturalSize = Math.max(64, size);
+  const key = `${bookmark.domain.toLowerCase()}:${candidates.join("|")}`;
+  const firstAvailable = () => iconChoices.get(key) ?? candidates.findIndex((candidate) => !failedIcons.has(candidate));
+  const [choice, setChoice] = useState(() => ({ key, index: firstAvailable() }));
+  const candidateIndex = choice.key === key ? choice.index : firstAvailable();
+  const siteIconSrc = candidates[candidateIndex] ?? null;
 
   useEffect(() => {
-    setValidatedSiteIconSrc(null);
-    setCandidateIndex(0);
-  }, [bookmark.id, bookmark.domain, bookmark.faviconUrl, size]);
+    setChoice({ key, index: firstAvailable() });
+  }, [key]);
 
-  useEffect(() => {
-    if (candidateIndex >= candidates.length) {
-      setValidatedSiteIconSrc(null);
-      return undefined;
-    }
-
-    const candidate = candidates[candidateIndex];
-    let cancelled = false;
-    const image = new Image();
-
-    image.decoding = "async";
-    image.onload = () => {
-      if (cancelled) {
-        return;
-      }
-
-      const naturalSize = Math.min(image.naturalWidth, image.naturalHeight);
-      if (naturalSize > 0 && naturalSize < minimumNaturalSize) {
-        setCandidateIndex((current) => (
-          current === candidateIndex ? Math.min(current + 1, candidates.length) : current
-        ));
-        return;
-      }
-
-      setValidatedSiteIconSrc(candidate);
-    };
-    image.onerror = () => {
-      if (!cancelled) {
-        setCandidateIndex((current) => (
-          current === candidateIndex ? Math.min(current + 1, candidates.length) : current
-        ));
-      }
-    };
-    image.src = candidate;
-
-    return () => {
-      cancelled = true;
-    };
-  }, [candidateIndex, candidates, minimumNaturalSize]);
-
-  const advanceCandidate = (failedSrc?: string) => {
-    if (failedSrc && failedSrc !== validatedSiteIconSrc && isDisplayableIconUrl(failedSrc)) {
-      return;
-    }
-
-    setValidatedSiteIconSrc(null);
-    setCandidateIndex((current) => Math.min(current + 1, candidates.length));
+  const advanceCandidate = () => {
+    if (siteIconSrc) failedIcons.add(siteIconSrc);
+    iconChoices.delete(key);
+    const index = candidates.findIndex((candidate, index) => index > candidateIndex && !failedIcons.has(candidate));
+    setChoice({ key, index });
+    // Bound process-wide caches during long browsing sessions.
+    if (failedIcons.size > 512) failedIcons.clear();
   };
 
   return {
-    siteIconSrc: validatedSiteIconSrc,
-    useDefaultSiteIcon: !validatedSiteIconSrc,
-    handleSiteIconError: () => advanceCandidate(),
+    siteIconSrc,
+    useDefaultSiteIcon: !siteIconSrc,
+    handleSiteIconError: advanceCandidate,
     handleSiteIconLoad: (image: HTMLImageElement) => {
-      if (!isDisplayableIconUrl(image.currentSrc || image.src)) {
-        advanceCandidate(image.currentSrc || image.src);
+      if (!isDisplayableIconUrl(image.currentSrc || image.src) || image.naturalWidth < 16 || image.naturalHeight < 16) {
+        advanceCandidate();
         return;
       }
-      const naturalSize = Math.min(image.naturalWidth, image.naturalHeight);
-      if (naturalSize > 0 && naturalSize < minimumNaturalSize) {
-        advanceCandidate(image.currentSrc || image.src);
-      }
+      if (iconChoices.size > 512) iconChoices.clear();
+      iconChoices.set(key, candidateIndex);
     },
   };
 }

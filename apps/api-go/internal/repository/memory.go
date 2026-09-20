@@ -227,14 +227,17 @@ func (r *MemoryRepository) SearchBookmarks(_ context.Context, userID string, que
 		if query.TagID != "" && !bookmarkHasTag(item, query.TagID) {
 			continue
 		}
-		if query.Q != "" && !bookmarkMatches(item, query.Q) {
+		extractedText := r.memoryBookmarkText(userID, item, false)
+		if query.Quality != "" && (item.LatestQuality == nil || item.LatestQuality.Grade != query.Quality) {
 			continue
 		}
+		if query.Q != "" && !bookmarkMatches(item, query.Q) && !strings.Contains(strings.ToLower(extractedText), strings.ToLower(strings.TrimSpace(query.Q))) {
+			continue
+		}
+		item.SearchSnippet = bookmarkSearchSnippet(item, query.Q, extractedText)
 		filtered = append(filtered, item)
 	}
-	sort.SliceStable(filtered, func(i, j int) bool {
-		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
-	})
+	sortBookmarks(filtered, query)
 	total := len(filtered)
 	start := min(query.Offset, total)
 	end := min(start+query.Limit, total)
@@ -303,10 +306,12 @@ func (r *MemoryRepository) IngestBookmark(_ context.Context, userID string, inpu
 
 func bookmarkMatches(bookmark domain.Bookmark, query string) bool {
 	needle := strings.ToLower(strings.TrimSpace(query))
-	return strings.Contains(strings.ToLower(bookmark.Title), needle) ||
-		strings.Contains(strings.ToLower(bookmark.SourceURL), needle) ||
-		strings.Contains(strings.ToLower(bookmark.Domain), needle) ||
-		strings.Contains(strings.ToLower(bookmark.Note), needle)
+	for _, value := range bookmarkSearchFields(bookmark) {
+		if strings.Contains(strings.ToLower(value), needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveTitle(title string, fallbackURL string) string {

@@ -98,6 +98,7 @@ export type BookmarkQuery = {
   tagId?: string;
   limit?: number;
   offset?: number;
+  sort?: "created" | "updated" | "title" | "relevance";
 };
 
 export type BookmarkResult = {
@@ -298,6 +299,7 @@ export async function fetchAIOrganizationJobItems(jobId: string, token: string):
 }
 
 type RequestOptions = {
+  signal?: AbortSignal;
   method?: string;
   token?: string;
   privateToken?: string;
@@ -306,7 +308,7 @@ type RequestOptions = {
 };
 
 const responseCache = new Map<string, unknown>();
-const RESPONSE_CACHE_PREFIX = "keeppage:api-response:v2:";
+const responseEtags = new Map<string, string>();
 
 function resolveApiBase() {
   return (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
@@ -328,6 +330,7 @@ async function request(path: string, options: RequestOptions = {}) {
   }
 
   const response = await fetch(`${resolveApiBase()}${path}`, {
+    signal: options.signal,
     method: options.method ?? "GET",
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -345,14 +348,79 @@ async function request(path: string, options: RequestOptions = {}) {
   return response;
 }
 
-async function requestJsonCached<T>(
+type PendingRequest = {
+  promise: Promise<unknown>;
+  controller: AbortController;
+  consumers: number;
+};
+const pendingRequests = new Map<string, PendingRequest>();
+
+function clearLegacyStoredResponses() {
+  if (typeof window === "undefined") return;
+  try {
+    for (const key of Object.keys(window.sessionStorage)) {
+      if (key.startsWith("keeppage:api-response:v2:") || (key.startsWith('{"path":') && key.endsWith(":etag"))) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
+  } catch { /* Storage may be disabled. In-memory caching still works. */ }
+}
+clearLegacyStoredResponses();
+
+export function clearApiResponseCache() {
+  clearLegacyStoredResponses();
+  responseCache.clear();
+  responseEtags.clear();
+  for (const entry of pendingRequests.values()) entry.controller.abort();
+  pendingRequests.clear();
+}
+
+function requestJsonCached<T>(path: string, schema: ZodType<T>, options: RequestOptions = {}): Promise<T> {
+  if (options.signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+  const key = buildResponseCacheKey(path, options);
+  let entry = pendingRequests.get(key);
+  if (!entry) {
+    const controller = new AbortController();
+    const promise = requestJsonCachedTransport(path, schema, { ...options, signal: controller.signal });
+    entry = { promise, controller, consumers: 0 };
+    pendingRequests.set(key, entry);
+    const current = entry;
+    void promise.then(() => {
+      if (pendingRequests.get(key) === current) pendingRequests.delete(key);
+    }, () => {
+      if (pendingRequests.get(key) === current) pendingRequests.delete(key);
+    });
+  }
+  const current = entry;
+  current.consumers += 1;
+  return new Promise<T>((resolve, reject) => {
+    let finished = false;
+    const release = () => {
+      if (finished) return false;
+      finished = true;
+      options.signal?.removeEventListener("abort", abort);
+      current.consumers -= 1;
+      if (!current.consumers && pendingRequests.get(key) === current) {
+        pendingRequests.delete(key);
+        current.controller.abort();
+      }
+      return true;
+    };
+    const abort = () => {
+      if (release()) reject(new DOMException("Aborted", "AbortError"));
+    };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    current.promise.then((value) => { if (release()) resolve(value as T); }, (error) => { if (release()) reject(error); });
+  });
+}
+
+async function requestJsonCachedTransport<T>(
   path: string,
   schema: ZodType<T>,
   options: RequestOptions = {},
 ) {
   const cacheKey = buildResponseCacheKey(path, options);
-  const etagKey = `${cacheKey}:etag`;
-  const etag = typeof window === "undefined" ? null : window.sessionStorage.getItem(etagKey);
+  const etag = responseEtags.get(cacheKey);
   const response = await request(path, {
     ...options,
     headers: {
@@ -366,23 +434,14 @@ async function requestJsonCached<T>(
     if (cached !== undefined) {
       return schema.parse(cached);
     }
-    const cachedRawValue = readStoredResponseCache(cacheKey);
-    if (cachedRawValue !== null) {
-      const parsed = schema.parse(cachedRawValue);
-      responseCache.set(cacheKey, parsed);
-      return parsed;
-    }
     throw new ApiError(304, "No cached response available for a revalidated request.");
   }
 
   const payload = await response.json();
   const parsed = schema.parse(payload);
   responseCache.set(cacheKey, parsed);
-  writeStoredResponseCache(cacheKey, parsed);
   const nextEtag = response.headers.get("etag");
-  if (nextEtag && typeof window !== "undefined") {
-    window.sessionStorage.setItem(etagKey, nextEtag);
-  }
+  if (nextEtag) responseEtags.set(cacheKey, nextEtag);
   return parsed;
 }
 
@@ -402,29 +461,6 @@ function buildResponseCacheKey(path: string, options: RequestOptions) {
     token: options.token ?? "",
     privateToken: options.privateToken ?? "",
   });
-}
-
-function readStoredResponseCache(cacheKey: string) {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  try {
-    const rawValue = window.sessionStorage.getItem(`${RESPONSE_CACHE_PREFIX}${cacheKey}`);
-    return rawValue ? JSON.parse(rawValue) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredResponseCache(cacheKey: string, payload: unknown) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.sessionStorage.setItem(`${RESPONSE_CACHE_PREFIX}${cacheKey}`, JSON.stringify(payload));
-  } catch {
-    return;
-  }
 }
 
 async function requestVoid(path: string, options: RequestOptions = {}) {
@@ -709,11 +745,12 @@ export async function revokeExtensionDevice(deviceId: string, token: string) {
   });
 }
 
-export async function fetchBookmarks(query: BookmarkQuery, token: string): Promise<BookmarkResult> {
+export async function fetchBookmarks(query: BookmarkQuery, token: string, signal?: AbortSignal): Promise<BookmarkResult> {
   const params = new URLSearchParams();
   if (query.search.trim()) {
     params.set("q", query.search.trim());
   }
+  params.set("sort", query.sort ?? "created");
   params.set("view", bookmarkListViewSchema.parse(query.view));
   if (query.quality !== "all") {
     params.set("quality", query.quality);
@@ -733,6 +770,7 @@ export async function fetchBookmarks(query: BookmarkQuery, token: string): Promi
   const path = `/bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
   const payload = await requestJsonCached(path, bookmarkSearchResponseSchema, {
     token,
+    signal,
   });
   return {
     items: payload.items,
@@ -789,11 +827,13 @@ export async function fetchPrivateBookmarks(
   query: BookmarkQuery,
   token: string,
   privateToken: string,
+  signal?: AbortSignal,
 ): Promise<BookmarkResult> {
   const params = new URLSearchParams();
   if (query.search.trim()) {
     params.set("q", query.search.trim());
   }
+  params.set("sort", query.sort ?? "created");
   params.set("view", bookmarkListViewSchema.parse(query.view));
   if (query.quality !== "all") {
     params.set("quality", query.quality);
@@ -808,6 +848,7 @@ export async function fetchPrivateBookmarks(
   const payload = await requestJsonCached(path, privateBookmarkSearchResponseSchema, {
     token,
     privateToken,
+    signal,
   });
   return {
     items: payload.items,

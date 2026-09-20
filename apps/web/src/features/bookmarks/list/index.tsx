@@ -1,4 +1,5 @@
 import {
+  type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   useEffect,
@@ -12,7 +13,6 @@ import type {
   Folder,
   Tag,
 } from "@keeppage/domain";
-import { Icon } from "../../../components/Icon";
 import { BrandBookmarkCard, BrandBookmarkSkeleton } from "./brand-card";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -50,6 +50,11 @@ function HomePage({
   selectionMode,
   selectedIds,
   onToggleSelect,
+  showSkeleton,
+  onRetry,
+  onRetryFailed,
+  searchInput = "",
+  onCreateArchive,
 }: {
   items: Bookmark[];
   totalItems: number;
@@ -70,13 +75,18 @@ function HomePage({
   selectionMode: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (bookmarkId: string) => void;
+  showSkeleton?: boolean;
+  onRetry?: () => void;
+  onRetryFailed?: () => void;
+  searchInput?: string;
+  onCreateArchive?: (bookmark: Bookmark) => void;
 }) {
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const showLoading = loadState === "loading";
-  const showError = loadState === "error";
+  const showError = loadState === "error" && items.length === 0;
   const showEmpty = !showLoading && !showError && items.length === 0 && totalItems === 0;
-  const canLoadMore = hasMoreItems && !loadingMore && loadState === "ready";
+  const canLoadMore = hasMoreItems && !loadingMore && !loadMoreError && loadState === "ready";
 
   useEffect(() => {
     const node = loadMoreSentinelRef.current;
@@ -109,45 +119,21 @@ function HomePage({
       : bookmarkView === "recent"
         ? "最近新增或编辑过的书签会优先显示在这里。"
         : "扩展同步或导入的书签会显示在这里。";
-  const mobileHeroKicker = hasActiveFilters
-    ? "FILTERED LIST"
-    : bookmarkView === "favorites"
-      ? "STARRED PICKS"
-      : bookmarkView === "recent"
-        ? "RECENT UPDATES"
-        : "BOOKMARK LIBRARY";
-  const mobileHeroTitle = hasActiveFilters
-    ? "筛选结果"
-    : bookmarkView === "favorites"
-      ? "星标收藏"
-      : bookmarkView === "recent"
-        ? "最近添加"
-        : "全部书签";
-  const mobileHeroCount = `${Math.max(totalItems, items.length)} 条${bookmarkView === "recent" ? "更新" : "书签"}`;
-
   return (
     <>
       {managerFeedback ? (
         <p className={managerFeedback.kind === "error" ? "home-feedback is-error" : "home-feedback"}>
           {managerFeedback.message}
+          {managerFeedback.kind === "error" && onRetryFailed ? <button className="library-inline-action" type="button" onClick={onRetryFailed}>重试失败项</button> : null}
         </p>
       ) : null}
 
-      <section className="home-mobile-hero" aria-label="移动端书签概览">
-        <div className="home-mobile-hero-copy">
-          <p className="home-mobile-hero-kicker">{mobileHeroKicker}</p>
-          <div className="home-mobile-hero-title-row">
-            <h1 className="home-mobile-hero-title">{mobileHeroTitle}</h1>
-            <span className="home-mobile-hero-count">{mobileHeroCount}</span>
-          </div>
-        </div>
-      </section>
-
-      {showLoading && items.length > 0 ? (
-        <p className="home-loading-note">正在刷新书签列表...</p>
+      {listError && items.length > 0 ? (
+        <div className="library-error" role="status">{listError} <button type="button" onClick={onRetry}>重试更新</button></div>
       ) : null}
-
-      {showLoading && items.length === 0 ? (
+      {showLoading && items.length === 0 && showSkeleton === false ? (
+        <div className="library-loading-space" aria-busy="true" aria-label="正在加载书签" />
+      ) : showLoading && items.length === 0 ? (
         <section className="home-grid">
           {Array.from({ length: 8 }).map((_, index) => (
             <BrandBookmarkSkeleton key={index} />
@@ -157,6 +143,7 @@ function HomePage({
         <section className="home-empty-panel">
           <h2>书签列表加载失败</h2>
           <p>{listError ?? "暂时无法读取当前账号的书签列表。"}</p>
+          <button className="secondary-button" type="button" onClick={onRetry}>重新加载</button>
         </section>
       ) : showEmpty ? (
         <section className="home-empty-panel">
@@ -170,6 +157,8 @@ function HomePage({
               <BrandBookmarkCard
                 key={bookmark.id}
                 bookmark={bookmark}
+                searchInput={searchInput}
+                onCreateArchive={onCreateArchive}
                 onToggleFavorite={onToggleFavorite}
                 onContextMenu={onBookmarkContextMenu}
                 onOpenContextMenuAt={onOpenBookmarkContextMenuAt}
@@ -187,7 +176,7 @@ function HomePage({
               : null}
           </section>
           {loadMoreError ? (
-            <p className="home-feedback is-error home-loading-note-inline">{loadMoreError}</p>
+            <p className="home-feedback is-error home-loading-note-inline">{loadMoreError} <button type="button" onClick={onLoadMore}>重试加载</button></p>
           ) : null}
           {hasMoreItems ? (
             <div
@@ -199,12 +188,7 @@ function HomePage({
         </>
       )}
 
-      <footer className="home-footer">
-        <span>Privacy</span>
-        <span>Terms</span>
-        <span>Support</span>
-        <span>KeepPage</span>
-      </footer>
+      <footer className="home-footer"><span>KeepPage · 你的个人资料库</span></footer>
     </>
   );
 }
@@ -215,6 +199,7 @@ function SearchableBatchDropdown({
   placeholder,
   options,
   emptyLabel,
+  children,
   onClose,
 }: {
   id: string;
@@ -222,6 +207,7 @@ function SearchableBatchDropdown({
   placeholder: string;
   options: BatchDropdownOption[];
   emptyLabel: string;
+  children?: ReactNode;
   onClose: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -294,6 +280,7 @@ function SearchableBatchDropdown({
 
   return (
     <div className="selection-toolbar-dropdown is-searchable">
+      {children}
       <label className="selection-toolbar-search" htmlFor={`${id}-search`}>
         <span>{label}</span>
         <input
@@ -346,6 +333,9 @@ function SearchableBatchDropdown({
 function SelectionToolbar({
   selectedCount,
   totalCount,
+  resultCount,
+  selectedVisibleCount,
+  onSelectAllResults,
   busy,
   folders,
   tags,
@@ -363,6 +353,9 @@ function SelectionToolbar({
 }: {
   selectedCount: number;
   totalCount: number;
+  resultCount: number;
+  selectedVisibleCount: number;
+  onSelectAllResults?: () => void;
   busy: boolean;
   folders: Folder[];
   tags: Tag[];
@@ -373,12 +366,13 @@ function SelectionToolbar({
   onBatchFavorite: (isFavorite: boolean) => void;
   onBatchLocalArchive: () => void;
   onBatchMoveTo: (folderId: string | null) => void;
-  onBatchSetTags: (tagIds: string[]) => void;
+  onBatchSetTags: (tagIds: string[], mode: "append" | "remove" | "replace") => void;
   onBatchShare: () => void;
   onBatchDelete: () => void;
   onExit: () => void;
 }) {
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [tagMode, setTagMode] = useState<"append" | "remove" | "replace">("append");
 
   useEffect(() => {
     if (batchDropdown === "closed") {
@@ -395,7 +389,7 @@ function SelectionToolbar({
     return () => window.removeEventListener("mousedown", handleClickOutside);
   }, [batchDropdown, onBatchDropdownChange]);
 
-  const allSelected = selectedCount === totalCount && totalCount > 0;
+  const allSelected = selectedVisibleCount === totalCount && totalCount > 0;
   const hasSelection = selectedCount > 0;
   const folderOptions = useMemo<BatchDropdownOption[]>(() => [
     {
@@ -415,8 +409,8 @@ function SelectionToolbar({
     id: tag.id,
     label: tag.name,
     color: tag.color,
-    onSelect: () => onBatchSetTags([tag.id]),
-  })), [onBatchSetTags, tags]);
+    onSelect: () => onBatchSetTags([tag.id], tagMode),
+  })), [onBatchSetTags, tags, tagMode]);
 
   return (
     <div className="selection-toolbar">
@@ -430,30 +424,31 @@ function SelectionToolbar({
           <span className={`selection-toolbar-checkbox${allSelected ? " is-checked" : ""}`}>
             {allSelected ? "✓" : ""}
           </span>
-          {allSelected ? "取消全选" : "全选"}
+          {allSelected ? "清空选择" : `选中已加载 ${totalCount} 条`}
         </button>
         <span className="selection-toolbar-count">
-          已选 {selectedCount} / {totalCount}
+          已选 {selectedCount} 条{selectedCount > selectedVisibleCount ? `（含当前未显示 ${selectedCount - selectedVisibleCount} 条）` : ""}
         </span>
       </div>
+      {resultCount > totalCount && onSelectAllResults ? <button type="button" className="selection-toolbar-btn" disabled={busy} onClick={onSelectAllResults}>选择全部 {resultCount} 条结果</button> : null}
       <div className="selection-toolbar-actions" ref={dropdownRef}>
         <button
           type="button"
           className="selection-toolbar-btn"
           disabled={!hasSelection || busy}
           onClick={() => onBatchFavorite(true)}
-          title="加入收藏"
+          title="加入星标"
         >
-          收藏
+          加入星标
         </button>
         <button
           type="button"
           className="selection-toolbar-btn"
           disabled={!hasSelection || busy}
           onClick={() => onBatchFavorite(false)}
-          title="取消收藏"
+          title="取消星标"
         >
-          取消收藏
+          取消星标
         </button>
         <button
           type="button"
@@ -469,6 +464,7 @@ function SelectionToolbar({
             type="button"
             className="selection-toolbar-btn"
             disabled={!hasSelection || busy}
+            aria-expanded={batchDropdown === "folder"}
             onClick={() => onBatchDropdownChange(batchDropdown === "folder" ? "closed" : "folder")}
           >
             移动到
@@ -489,6 +485,7 @@ function SelectionToolbar({
             type="button"
             className="selection-toolbar-btn"
             disabled={!hasSelection || busy}
+            aria-expanded={batchDropdown === "tag"}
             onClick={() => onBatchDropdownChange(batchDropdown === "tag" ? "closed" : "tag")}
           >
             标签
@@ -496,12 +493,14 @@ function SelectionToolbar({
           {batchDropdown === "tag" ? (
             <SearchableBatchDropdown
               id="batch-tag"
-              label="设置标签"
+              label={tagMode === "append" ? "追加标签" : tagMode === "remove" ? "移除标签" : "替换全部标签"}
               placeholder="搜索标签..."
               options={tagOptions}
               emptyLabel={tags.length === 0 ? "暂无标签" : "没有匹配的标签"}
               onClose={() => onBatchDropdownChange("closed")}
-            />
+            >
+              <label className="batch-tag-mode">标签操作<select value={tagMode} onChange={(event) => setTagMode(event.target.value as typeof tagMode)}><option value="append">追加标签</option><option value="remove">移除标签</option><option value="replace">替换全部标签</option></select>{tagMode === "replace" ? <small>会移除所选书签的其他标签</small> : null}</label>
+            </SearchableBatchDropdown>
           ) : null}
         </div>
         <button
@@ -535,6 +534,22 @@ function SelectionToolbar({
 }
 
 export function BookmarksListRoute({
+  title,
+  searchInput = "",
+  selectedFolderId = "",
+  selectedTagId = "",
+  sort = "created",
+  onSortChange,
+  onClearFilters,
+  onClearTag,
+  onClearSearch,
+  onSearchGlobally,
+  onRetry,
+  onRetryFailed,
+  onSelectAllResults,
+  onEnterSelection,
+  showSkeleton,
+  onCreateArchive,
   selectionMode,
   selectedIds,
   selectionBusy,
@@ -569,6 +584,22 @@ export function BookmarksListRoute({
   onOpenArchive,
   onToggleSelect,
 }: {
+  title?: string;
+  searchInput?: string;
+  selectedFolderId?: string;
+  selectedTagId?: string;
+  sort?: "created" | "updated" | "title" | "relevance";
+  onSortChange?: (value: "created" | "updated" | "title" | "relevance") => void;
+  onClearFilters?: () => void;
+  onClearTag?: () => void;
+  onClearSearch?: () => void;
+  onSearchGlobally?: () => void;
+  onRetry?: () => void;
+  onRetryFailed?: () => void;
+  onSelectAllResults?: () => void;
+  onEnterSelection?: () => void;
+  showSkeleton?: boolean;
+  onCreateArchive?: (bookmark: Bookmark) => void;
   selectionMode: boolean;
   selectedIds: Set<string>;
   selectionBusy: boolean;
@@ -592,7 +623,7 @@ export function BookmarksListRoute({
   onBatchFavorite: (isFavorite: boolean) => void;
   onBatchLocalArchive: () => void;
   onBatchMoveTo: (folderId: string | null) => void;
-  onBatchSetTags: (tagIds: string[]) => void;
+  onBatchSetTags: (tagIds: string[], mode: "append" | "remove" | "replace") => void;
   onBatchShare: () => void;
   onBatchDelete: () => void;
   onExitSelection: () => void;
@@ -603,12 +634,31 @@ export function BookmarksListRoute({
   onOpenArchive: (bookmark: Bookmark) => void;
   onToggleSelect: (bookmarkId: string) => void;
 }) {
+  const [view, setView] = useState<"compact" | "gallery">(() => {
+    try { return localStorage.getItem("keeppage.library-view") === "gallery" ? "gallery" : "compact"; } catch { return "compact"; }
+  });
+  const listTitle = title || folders.find((folder) => folder.id === selectedFolderId)?.path || (bookmarkView === "favorites" ? "星标收藏" : bookmarkView === "recent" ? "最近更新" : "全部书签");
+  const selectedTag = tags.find((tag) => tag.id === selectedTagId);
   return (
-    <>
+    <div className={`bookmark-library is-${view}`}>
+      <header className="library-toolbar">
+        <div className="library-heading"><h1 title={listTitle}>{listTitle}</h1><p aria-live="polite">{loadState === "loading" && items.length === 0 ? "书签资料库" : `${totalItems} 条书签`}{searchInput.trim() ? ` · 搜索“${searchInput.trim()}”` : ""}</p></div>
+        <div className="library-tools">
+          <label className="library-sort"><span className="sr-only">书签排序</span><select value={sort} onChange={(event) => onSortChange?.(event.target.value as typeof sort)}><option value="updated">最近更新</option><option value="created">收藏时间</option><option value="title">标题顺序</option>{searchInput.trim() ? <option value="relevance">搜索相关性</option> : null}</select></label>
+          <div className="library-view-switch" role="group" aria-label="显示密度">
+            {(["compact", "gallery"] as const).map((mode) => <button key={mode} type="button" aria-pressed={view === mode} onClick={() => { setView(mode); try { localStorage.setItem("keeppage.library-view", mode); } catch { /* Storage may be unavailable. */ } }}>{mode === "compact" ? "紧凑" : "画廊"}</button>)}
+          </div>
+          {!selectionMode && onEnterSelection ? <button className="library-select" type="button" onClick={onEnterSelection}>多选</button> : null}
+        </div>
+      </header>
+      {hasActiveFilters ? <div className="library-filter-bar"><span>范围：{listTitle}</span>{selectedTag ? <button className="library-filter-chip" type="button" onClick={onClearTag} aria-label={`清除标签筛选：${selectedTag.name}`}>标签 · {selectedTag.name} ×</button> : null}{searchInput.trim() ? <button className="library-filter-chip" type="button" onClick={onClearSearch} aria-label="清除关键词">关键词 · {searchInput.trim()} ×</button> : null}<button type="button" onClick={searchInput.trim() || selectedTag ? onClearFilters : onSearchGlobally}>{searchInput.trim() || selectedTag ? "清除筛选" : "返回全部书签"}</button>{searchInput.trim() && (selectedFolderId || selectedTagId || bookmarkView !== "all") ? <button type="button" onClick={onSearchGlobally}>搜索全部书签</button> : null}</div> : null}
       {selectionMode ? (
         <SelectionToolbar
           selectedCount={selectedIds.size}
           totalCount={items.length}
+          resultCount={totalItems}
+          selectedVisibleCount={items.filter((item) => selectedIds.has(item.id)).length}
+          onSelectAllResults={onSelectAllResults}
           busy={selectionBusy}
           folders={folders}
           tags={tags}
@@ -626,6 +676,11 @@ export function BookmarksListRoute({
         />
       ) : null}
       <HomePage
+        searchInput={searchInput}
+        showSkeleton={showSkeleton}
+        onRetry={onRetry}
+        onRetryFailed={onRetryFailed}
+        onCreateArchive={onCreateArchive}
         items={items}
         totalItems={totalItems}
         bookmarkView={bookmarkView}
@@ -646,6 +701,6 @@ export function BookmarksListRoute({
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
       />
-    </>
+    </div>
   );
 }

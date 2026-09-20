@@ -1,3 +1,40 @@
+import type { BookmarkListView, QualityGrade } from "@keeppage/domain";
+
+export type ListFilters = {
+  search: string;
+  view: BookmarkListView;
+  quality: "all" | QualityGrade;
+  folderId: string;
+  tagId: string;
+  sort: "created" | "updated" | "title" | "relevance";
+};
+
+export function parseListFilters(hash: string): ListFilters {
+  const params = new URLSearchParams(hash.split("?")[1] ?? "");
+  const view = params.get("view");
+  const quality = params.get("quality");
+  const sort = params.get("sort");
+  return {
+    search: params.get("q") ?? "",
+    view: view === "favorites" || view === "recent" ? view : "all",
+    quality: quality === "high" || quality === "medium" || quality === "low" ? quality : "all",
+    folderId: params.get("folder") ?? "",
+    tagId: params.get("tag") ?? "",
+    sort: sort === "updated" || sort === "title" || sort === "relevance" ? sort : "created",
+  };
+}
+
+export function buildListHash(filters: ListFilters) {
+  const params = new URLSearchParams();
+  if (filters.search) params.set("q", filters.search);
+  if (filters.view !== "all") params.set("view", filters.view);
+  if (filters.quality !== "all") params.set("quality", filters.quality);
+  if (filters.folderId) params.set("folder", filters.folderId);
+  if (filters.tagId) params.set("tag", filters.tagId);
+  if (filters.sort !== "created") params.set("sort", filters.sort);
+  return `#/${params.size ? `?${params}` : ""}`;
+}
+
 export type ViewRoute =
   | { page: "list" }
   | { page: "detail"; bookmarkId: string; versionId?: string }

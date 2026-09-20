@@ -14,8 +14,9 @@ export default defineConfig({
         demo: path.resolve(__dirname, "demo.html"),
       },
       output: {
+        onlyExplicitManualChunks: true,
         manualChunks(id) {
-          if (id.includes("node_modules/react")) {
+          if (id.includes("node_modules/react") || id.includes("node_modules/scheduler")) {
             return "react-vendor";
           }
           if (id.includes("node_modules/zod")) {

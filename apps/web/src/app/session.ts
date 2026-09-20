@@ -1,5 +1,6 @@
 import type { AuthUser } from "@keeppage/domain";
-import { ApiError } from "../api";
+import { clearBookmarkListCache } from "../lib/bookmark-list-cache";
+import { ApiError, clearApiResponseCache } from "../api";
 
 const AUTH_TOKEN_STORAGE_KEY = "keeppage.auth-token";
 
@@ -18,6 +19,8 @@ export function setStoredToken(token: string) {
 }
 
 export function clearStoredToken() {
+  clearBookmarkListCache();
+  clearApiResponseCache();
   window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
 }
 
