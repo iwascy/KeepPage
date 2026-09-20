@@ -2,46 +2,59 @@ import { useEffect, useMemo, useState } from "react";
 import type { PublicShareItem, PublicShareResponse } from "@keeppage/domain";
 import { ApiError } from "../../api";
 import { Icon } from "../../components/Icon";
+import { domainMonogram, formatDisplayDomain } from "../../lib/brand-cover";
 import { formatCompactRelativeWhen } from "../../lib/date-format";
 import { getPublicShare } from "./share-api";
 
 type LoadState = "loading" | "ready" | "error";
 
-const COVER_TONES = ["peach", "mist", "sand", "sky", "rose", "slate"] as const;
+function SharedBookmark({ item }: { item: PublicShareItem }) {
+  const [iconFailed, setIconFailed] = useState(false);
+  useEffect(() => setIconFailed(false), [item.faviconUrl]);
 
-function coverTone(domain: string) {
-  let hash = 0;
-  for (const char of domain) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return COVER_TONES[hash % COVER_TONES.length];
-}
-
-function formatDomain(domain: string) {
-  return domain.replace(/^www\./i, "");
-}
-
-function faviconFor(item: PublicShareItem) {
-  if (item.faviconUrl) {
-    return item.faviconUrl;
-  }
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(item.domain)}&sz=64`;
-}
-
-function ownerInitial(name: string) {
-  const trimmed = name.trim();
-  return trimmed ? trimmed.slice(0, 1).toUpperCase() : "K";
+  return (
+    <a className="shared-bookmark" href={item.sourceUrl} target="_blank" rel="noreferrer">
+      <span className="shared-bookmark-icon" aria-hidden="true">
+        {item.faviconUrl && !iconFailed ? (
+          <img src={item.faviconUrl} alt="" loading="lazy" onError={() => setIconFailed(true)} />
+        ) : domainMonogram(item.domain)}
+      </span>
+      <div className="shared-bookmark-content">
+        <h3 title={item.title}>{item.title}</h3>
+        <div className="shared-bookmark-meta">
+          <span>{formatDisplayDomain(item.domain)}</span>
+          <span aria-hidden="true">·</span>
+          <span>{formatCompactRelativeWhen(item.updatedAt)}</span>
+        </div>
+        {item.note.trim() ? <p className="shared-bookmark-note">{item.note}</p> : null}
+        <div className="shared-bookmark-labels">
+          <span className={`shared-bookmark-status${item.hasArchive ? " is-archived" : ""}`}>
+            {item.hasArchive ? "已归档" : "仅链接"}
+          </span>
+          {item.tags.slice(0, 3).map((tag) => (
+            <span className="shared-bookmark-tag" key={tag.name}>
+              {tag.color ? <i aria-hidden="true" style={{ backgroundColor: tag.color }} /> : null}
+              {tag.name}
+            </span>
+          ))}
+          {item.tags.length > 3 ? <span className="shared-bookmark-tag">+{item.tags.length - 3}</span> : null}
+        </div>
+      </div>
+      <span className="shared-bookmark-open">打开原网页 <Icon name="arrow_outward" /></span>
+    </a>
+  );
 }
 
 export function PublicSharePage({ token }: { token: string }) {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [data, setData] = useState<PublicShareResponse | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     const previous = document.title;
-    document.title = "分享 · KeepPage";
     const robots = document.createElement("meta");
     robots.name = "robots";
     robots.content = "noindex, nofollow";
@@ -54,45 +67,35 @@ export function PublicSharePage({ token }: { token: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    document.title = "分享 · KeepPage";
     setLoadState("loading");
+    setData(null);
+    setUnavailable(false);
     getPublicShare(token)
       .then((payload) => {
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
         setData(payload);
         setLoadState("ready");
         document.title = `${payload.title} · KeepPage`;
       })
       .catch((error: unknown) => {
-        if (cancelled) {
-          return;
-        }
-        setData(null);
+        if (cancelled) return;
+        setUnavailable(error instanceof ApiError && (error.status === 404 || error.status === 410));
         setLoadState("error");
-        if (!(error instanceof ApiError)) {
-          console.error(error);
-        }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+    return () => { cancelled = true; };
+  }, [token, attempt]);
 
   useEffect(() => {
-    if (!toast) {
-      return;
-    }
+    if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), 2200);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const shareUrl = useMemo(() => {
-    if (typeof window === "undefined") {
-      return "";
-    }
-    return `${window.location.origin}/s/${encodeURIComponent(token)}`;
-  }, [token]);
+  const shareUrl = useMemo(
+    () => `${window.location.origin}/s/${encodeURIComponent(token)}`,
+    [token],
+  );
 
   async function handleCopy() {
     try {
@@ -103,241 +106,83 @@ export function PublicSharePage({ token }: { token: string }) {
     }
   }
 
-  if (loadState === "loading") {
-    return (
-      <div className="public-share-page">
-        <div className="public-share-state">
-          <div className="public-share-state-card">
-            <div className="public-share-state-icon">
-              <Icon name="hourglass_empty" />
-            </div>
-            <h1>正在打开分享</h1>
-            <p>无需登录，稍候即可浏览。</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadState === "error" || !data) {
-    return (
-      <div className="public-share-page">
-        <div className="public-share-state">
-          <div className="public-share-state-card">
-            <div className="public-share-state-icon">
-              <Icon name="link_off" />
-            </div>
-            <h1>链接无效或已取消分享</h1>
-            <p>这份分享不存在、已被撤销，或链接已失效。</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="public-share-page">
       <header className="public-share-header">
         <div className="public-share-header-inner">
-          <a className="public-share-brand" href="/">
-            <span className="public-share-brand-mark" aria-hidden="true">
-              <Icon name="bookmark" />
-            </span>
-            <span>
-              <div className="public-share-brand-title">KeepPage</div>
-              <div className="public-share-brand-sub">Shared Collection</div>
-            </span>
-          </a>
-          <div className="public-share-header-actions">
-            <button className="public-share-btn is-primary" type="button" onClick={handleCopy}>
-              <Icon name="link" />
-              <span className="btn-label">复制链接</span>
-            </button>
-            <span className="public-share-btn is-ghost" title="公开访问，无需登录">
-              <Icon name="public" />
-            </span>
-          </div>
+          <a className="public-share-brand" href="/" aria-label="KeepPage 首页">KeepPage</a>
+          <span className="public-share-header-label">分享收藏</span>
+          <span className="public-share-access"><Icon name="public" />只读分享</span>
         </div>
       </header>
 
-      <main className="public-share-main">
-        <section className="public-share-hero">
-          <div className="public-share-hero-inner">
-            <div className="public-share-badges">
-              <span className="public-share-badge">
-                <Icon name="share" />
-                Public Share
-              </span>
-              <span className="public-share-badge is-open">
-                <Icon name="lock_open" />
-                无需登录
-              </span>
-              <span className="public-share-badge">只读</span>
-            </div>
-            <h1 className="public-share-title">{data.title}</h1>
-            {data.description.trim() ? (
-              <p className="public-share-desc">{data.description}</p>
-            ) : null}
-            <div className="public-share-meta">
-              <div className="public-share-owner">
-                <div className="public-share-avatar" aria-hidden="true">
-                  {ownerInitial(data.ownerDisplayName)}
+      <main className="public-share-main" aria-busy={loadState === "loading"}>
+        {loadState === "ready" && data ? (
+          <>
+            <section className="public-share-heading" aria-labelledby="share-title">
+              <div className="public-share-heading-copy">
+                <p className="public-share-eyebrow">来自 {data.ownerDisplayName} 的收藏</p>
+                <h1 id="share-title">{data.title}</h1>
+                {data.description.trim() ? <p className="public-share-description">{data.description}</p> : null}
+                <div className="public-share-meta">
+                  <span>{data.itemCount} 条书签</span>
+                  <span>更新于 {formatCompactRelativeWhen(data.updatedAt)}</span>
+                  <span>无需登录即可浏览</span>
                 </div>
+              </div>
+              <button className="primary-button public-share-copy" type="button" onClick={handleCopy}>
+                <Icon name="link" />复制链接
+              </button>
+            </section>
+
+            <section className="public-share-bookmarks" aria-labelledby="shared-bookmarks-title">
+              <div className="public-share-toolbar">
                 <div>
-                  <div className="public-share-meta-label">Shared by</div>
-                  <div className="public-share-meta-value">{data.ownerDisplayName}</div>
+                  <h2 id="shared-bookmarks-title">分享的书签</h2>
+                  <p>点击书签，打开原网页。</p>
+                </div>
+                <div className="library-view-switch" role="group" aria-label="书签显示方式">
+                  <button type="button" aria-pressed={view === "grid"} onClick={() => setView("grid")}>
+                    <Icon name="grid_view" />紧凑
+                  </button>
+                  <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")}>
+                    <Icon name="view_list" />列表
+                  </button>
                 </div>
               </div>
-              <div>
-                <div className="public-share-meta-label">Items</div>
-                <div className="public-share-meta-value">{data.itemCount} 条</div>
-              </div>
-              <div>
-                <div className="public-share-meta-label">Updated</div>
-                <div className="public-share-meta-value">{formatCompactRelativeWhen(data.updatedAt)}</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="public-share-toolbar">
-          <div className="public-share-toolbar-label">Shared Bookmarks</div>
-          <div className="public-share-view-toggle">
-            <button
-              type="button"
-              className={`public-share-view-btn${view === "grid" ? " is-active" : ""}`}
-              aria-label="网格视图"
-              onClick={() => setView("grid")}
-            >
-              <Icon name="grid_view" />
-            </button>
-            <button
-              type="button"
-              className={`public-share-view-btn${view === "list" ? " is-active" : ""}`}
-              aria-label="列表视图"
-              onClick={() => setView("list")}
-            >
-              <Icon name="view_list" />
-            </button>
-          </div>
-        </div>
-
-        {data.items.length === 0 ? (
-          <div className="public-share-state">
-            <div className="public-share-state-card">
-              <div className="public-share-state-icon">
-                <Icon name="inbox" />
-              </div>
-              <h1>这份分享里还没有内容</h1>
-              <p>分享者尚未保留可用书签，或条目已被删除。</p>
-            </div>
-          </div>
-        ) : view === "grid" ? (
-          <div className="public-share-grid">
-            {data.items.map((item, index) => (
-              <a
-                key={`grid-${index}-${item.domain}`}
-                className="public-share-card"
-                href={item.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <div className={`public-share-card-cover is-${coverTone(item.domain)}`}>
-                  <img
-                    className="public-share-card-favicon"
-                    src={faviconFor(item)}
-                    alt=""
-                    loading="lazy"
-                    onError={(event) => {
-                      event.currentTarget.style.display = "none";
-                    }}
-                  />
-                  {item.hasArchive ? (
-                    <span className="public-share-card-archive">
-                      <Icon name="inventory_2" />
-                      已归档
-                    </span>
-                  ) : null}
+              {data.items.length ? (
+                <div className={`public-share-grid${view === "list" ? " is-list" : ""}`}>
+                  {data.items.map((item, index) => (
+                    <SharedBookmark key={`${index}-${item.sourceUrl}`} item={item} />
+                  ))}
                 </div>
-                <div className="public-share-card-body">
-                  <div className="public-share-card-top">
-                    <span>{formatDomain(item.domain)}</span>
-                    <span>{formatCompactRelativeWhen(item.updatedAt)}</span>
-                  </div>
-                  <h2 className="public-share-card-title">{item.title}</h2>
-                  {item.note.trim() ? <p className="public-share-card-note">{item.note}</p> : null}
-                  {item.tags.length > 0 ? (
-                    <div className="public-share-card-tags">
-                      {item.tags.slice(0, 3).map((tag) => (
-                        <span
-                          key={tag.name}
-                          className="public-share-tag"
-                          style={tag.color ? { background: tag.color } : undefined}
-                        >
-                          {tag.name}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
+              ) : (
+                <div className="public-share-empty">
+                  <Icon name="inbox" />
+                  <h3>这份分享里还没有内容</h3>
+                  <p>分享者尚未保留可用书签，或条目已被删除。</p>
                 </div>
-              </a>
-            ))}
-          </div>
+              )}
+            </section>
+          </>
         ) : (
-          <div className="public-share-grid is-list">
-            {data.items.map((item, index) => (
-              <a
-                key={`list-${index}-${item.domain}`}
-                className="public-share-list-card"
-                href={item.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <div className={`public-share-list-thumb is-${coverTone(item.domain)} public-share-card-cover`}>
-                  <img
-                    className="public-share-card-favicon"
-                    src={faviconFor(item)}
-                    alt=""
-                    loading="lazy"
-                    width={28}
-                    height={28}
-                    onError={(event) => {
-                      event.currentTarget.style.display = "none";
-                    }}
-                  />
-                </div>
-                <div className="public-share-list-body">
-                  <div className="public-share-list-meta">
-                    <span>{formatDomain(item.domain)}</span>
-                    <span>·</span>
-                    <span>{formatCompactRelativeWhen(item.updatedAt)}</span>
-                    {item.hasArchive ? <span>已归档</span> : null}
-                  </div>
-                  <h2 className="public-share-list-title">{item.title}</h2>
-                  {item.note.trim() ? <p className="public-share-list-note">{item.note}</p> : null}
-                </div>
-                <Icon name="open_in_new" />
-              </a>
-            ))}
+          <div className="public-share-state" role="status">
+            <div className="public-share-state-card">
+              <span className="public-share-state-icon"><Icon name={loadState === "loading" ? "hourglass_empty" : unavailable ? "link_off" : "info"} /></span>
+              <h1>{loadState === "loading" ? "正在打开分享" : unavailable ? "链接无效或已取消分享" : "暂时无法打开分享"}</h1>
+              <p>{loadState === "loading" ? "正在读取这份收藏，请稍候。" : unavailable ? "这份分享不存在、已被撤销，或链接已失效。" : "网络或服务暂时不可用，请稍后重试。"}</p>
+              {loadState === "error" && !unavailable ? (
+                <button className="secondary-button" type="button" onClick={() => setAttempt((value) => value + 1)}><Icon name="refresh" />重新加载</button>
+              ) : null}
+            </div>
           </div>
         )}
-
         <footer className="public-share-footer">
-          <p>此页面为公开分享 · 浏览无需账号</p>
-          <a className="public-share-btn is-ghost" href="/">
-            <Icon name="rocket_launch" />
-            用 KeepPage 整理你的网页
-          </a>
-          <p className="public-share-footer-note">KeepPage Share</p>
+          <span>由 KeepPage 分享 · 只读浏览</span>
+          <a href="/">打开 KeepPage <Icon name="arrow_outward" /></a>
         </footer>
       </main>
-
-      {toast ? (
-        <div className="public-share-toast" role="status">
-          <Icon name="check_circle" />
-          {toast}
-        </div>
-      ) : null}
+      {toast ? <div className="public-share-toast" role="status">{toast}</div> : null}
     </div>
   );
 }
