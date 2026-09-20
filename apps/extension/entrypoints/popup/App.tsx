@@ -87,14 +87,15 @@ export function App() {
   }, [bookmarkId, saveState]);
 
   const statusTitle = saveState === "success"
-    ? "书签保存完成"
+    ? "已收藏当前网页"
     : saveState === "removed"
     ? "已取消收藏"
     : saveState === "error"
     ? "收藏操作失败"
     : "正在检查收藏状态";
   const statusDescription = getStatusDescription(saveState, saveError);
-  const progressValue = saveState === "success" || saveState === "removed" ? 100 : saveState === "error" ? 0 : 45;
+  const isMetadataUnavailable = metadataState === "loading" || metadataState === "saving"
+    || metadataLoadedBookmarkIdRef.current !== bookmarkId;
   const normalizedFolderInput = normalizeFolderPath(folderInput);
   const suggestedFolders = useMemo(
     () => filterFolders(folders, folderInput).slice(0, FOLDER_SUGGESTION_LIMIT),
@@ -315,25 +316,21 @@ export function App() {
   }
 
   return (
-    <main className="popup-shell">
-      <section className={`status-card ${saveState}`}>
+    <main className="popup-shell" onKeyDown={(event) => {
+      if (event.key === "Escape") {
+        setIsFolderMenuOpen(false);
+        setIsTagMenuOpen(false);
+      }
+    }}>
+      <header className="popup-brand"><span className="popup-brand-mark" aria-hidden="true">K</span>KeepPage</header>
+      <section className={`status-card ${saveState}`} role="status" aria-live="polite">
         <div className="status-copy">
-          <p className="eyebrow">KeepPage</p>
           <div className="status-pill">
             <span className="status-dot" aria-hidden="true" />
-            <span>{saveState === "success" ? "书签已保存" : saveState === "removed" ? "已取消收藏" : saveState === "error" ? "保存失败" : "保存进行中"}</span>
+            <span>{saveState === "success" ? "书签已保存" : saveState === "removed" ? "已取消收藏" : saveState === "error" ? "操作失败" : "正在处理"}</span>
           </div>
           <h1>{statusTitle}</h1>
           <p className="status-description">{statusDescription}</p>
-          <div className="status-progress" aria-hidden="true">
-            <div className="status-progress-track">
-              <span style={{ width: `${progressValue}%` }} />
-            </div>
-            <div className="status-progress-meta">
-              <span>{saveState === "success" ? "已写入书签" : saveState === "removed" ? "书签已移除" : saveState === "error" ? "写入失败" : "正在检查收藏状态"}</span>
-              <span>{progressValue}%</span>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -348,20 +345,17 @@ export function App() {
           <span>模式</span>
           <strong>书签（不存档）</strong>
         </div>
-        {saveError ? (
-          <p className="inline-message error-text">{saveError}</p>
-        ) : null}
       </section>
 
       {saveState === "success" && bookmarkId ? (
         <section className="editor-card">
           <div className="section-heading">
-            <h2>保存后整理</h2>
-            <p>现在就可以选择已有收藏夹、直接新建路径，并把 tag 一次补齐。</p>
+            <h2>整理收藏</h2>
+            <p>选择收藏夹和标签，方便以后查找。</p>
           </div>
 
-          <label className="field">
-            <span>收藏夹</span>
+          <div className="field">
+            <label htmlFor="bookmark-folder">收藏夹</label>
             <div className="picker-shell" ref={folderPickerRef}>
               <div className="picker-input">
                 <span className="picker-icon" aria-hidden="true">
@@ -369,18 +363,19 @@ export function App() {
                 </span>
                 <input
                   type="text"
+                  id="bookmark-folder"
                   value={folderInput}
                   onFocus={() => setIsFolderMenuOpen(true)}
                   onChange={(event) => handleFolderInputChange(event.target.value)}
                   placeholder="搜索或选择收藏夹，留空则不加入"
-                  disabled={metadataState === "loading" || metadataState === "saving"}
+                  disabled={isMetadataUnavailable}
                 />
                 {folderInput ? (
                   <button
                     type="button"
                     className="picker-clear"
                     onClick={clearFolderSelection}
-                    disabled={metadataState === "loading" || metadataState === "saving"}
+                    disabled={isMetadataUnavailable}
                   >
                     清空
                   </button>
@@ -393,7 +388,7 @@ export function App() {
                       type="button"
                       className="folder-create-card"
                       onClick={createFolderFromInput}
-                      disabled={metadataState === "loading" || metadataState === "saving"}
+                      disabled={isMetadataUnavailable}
                     >
                       <span className="folder-create-icon" aria-hidden="true">
                         <PlusIcon />
@@ -411,7 +406,7 @@ export function App() {
                           type="button"
                           className={`picker-list-item ${selectedFolderId === folder.id ? "selected" : ""}`}
                           onClick={() => selectFolder(folder)}
-                          disabled={metadataState === "loading" || metadataState === "saving"}
+                          disabled={isMetadataUnavailable}
                         >
                           <span className="picker-list-icon" aria-hidden="true">
                             <FolderIcon />
@@ -431,21 +426,22 @@ export function App() {
                 </div>
               ) : null}
             </div>
-          </label>
+          </div>
 
           <div className="field">
-            <span>tag</span>
+            <label htmlFor="bookmark-tags">标签</label>
             <div className="tag-chip-list">
               {selectedTagNames.map((tagName) => (
                 <button
                   key={tagName}
                   type="button"
                   className="selected-tag"
+                  aria-label={`移除标签 ${tagName}`}
                   onClick={() => toggleTag(tagName)}
-                  disabled={metadataState === "loading" || metadataState === "saving"}
+                  disabled={isMetadataUnavailable}
                 >
                   <span>{tagName}</span>
-                  <strong>x</strong>
+                  <strong aria-hidden="true">×</strong>
                 </button>
               ))}
             </div>
@@ -454,6 +450,7 @@ export function App() {
               <div className="picker-input tag-input-shell">
                 <input
                   type="text"
+                  id="bookmark-tags"
                   value={tagInput}
                   onFocus={() => setIsTagMenuOpen(true)}
                   onChange={(event) => {
@@ -463,14 +460,15 @@ export function App() {
                     setMetadataMessage(null);
                   }}
                   onKeyDown={handleTagInputKeyDown}
-                  placeholder="输入 tag，回车或点击 + 添加"
-                  disabled={metadataState === "loading" || metadataState === "saving"}
+                  placeholder="输入标签，按回车添加"
+                  disabled={isMetadataUnavailable}
                 />
                 <button
                   type="button"
                   className="tag-add-button"
+                  aria-label="添加标签"
                   onClick={handleAddDraftTags}
-                  disabled={metadataState === "loading" || metadataState === "saving" || tagInput.trim().length === 0}
+                  disabled={isMetadataUnavailable || tagInput.trim().length === 0}
                 >
                   <PlusIcon />
                 </button>
@@ -482,13 +480,13 @@ export function App() {
                       type="button"
                       className="picker-list-item create"
                       onClick={() => addTag(normalizedSingleTagDraft!)}
-                      disabled={metadataState === "loading" || metadataState === "saving"}
+                      disabled={isMetadataUnavailable}
                     >
                       <span className="picker-list-icon" aria-hidden="true">
                         <PlusIcon />
                       </span>
                       <span className="picker-list-copy">
-                        <strong>新增 tag “{normalizedSingleTagDraft}”</strong>
+                        <strong>新增标签 “{normalizedSingleTagDraft}”</strong>
                       </span>
                     </button>
                   ) : null}
@@ -500,7 +498,7 @@ export function App() {
                           type="button"
                           className="picker-list-item"
                           onClick={() => addTag(tag.name)}
-                          disabled={metadataState === "loading" || metadataState === "saving"}
+                          disabled={isMetadataUnavailable}
                         >
                           <span className="picker-list-icon tag" aria-hidden="true">
                             #
@@ -520,19 +518,24 @@ export function App() {
             ) : null}
           </div>
 
-          {metadataMessage ? (
-            <p className={`inline-message ${metadataState === "error" ? "error-text" : "success-text"}`}>
-              {metadataMessage}
+          {metadataState === "loading" || metadataState === "saving" || metadataMessage ? (
+            <p role="status" className={`inline-message metadata-notice ${metadataState === "error" ? "error-text" : metadataState === "saved" ? "success-text" : ""}`}>
+              {metadataState === "loading" ? "正在加载收藏夹和标签…" : metadataState === "saving" ? "正在保存整理…" : metadataMessage}
             </p>
+          ) : null}
+          {metadataState === "error" && metadataLoadedBookmarkIdRef.current !== bookmarkId ? (
+            <button type="button" className="ghost metadata-retry" onClick={() => void loadMetadataOptions(bookmarkId)}>
+              重新加载整理选项
+            </button>
           ) : null}
 
           <div className="actions">
             <button
               type="button"
               onClick={handleSubmitMetadata}
-              disabled={metadataState === "loading" || metadataState === "saving"}
+              disabled={isMetadataUnavailable}
             >
-              {metadataState === "saving" ? "保存中..." : "应用收藏夹和 tag"}
+              {metadataState === "saving" ? "保存中..." : "保存整理"}
             </button>
             <button type="button" className="ghost" onClick={handleOpenWorkspace}>
               打开工作台
@@ -545,7 +548,7 @@ export function App() {
         <div className="actions">
           {saveState === "error" ? (
             <button type="button" onClick={() => window.location.reload()}>
-              重新保存
+              重试收藏操作
             </button>
           ) : null}
           <button type="button" className="ghost" onClick={handleOpenWorkspace}>
@@ -553,7 +556,7 @@ export function App() {
           </button>
           {saveState === "error" && looksLikeAuthError(saveError) ? (
             <button type="button" className="ghost" onClick={handleOpenLogin}>
-              去登录
+              连接账号
             </button>
           ) : null}
         </div>
@@ -601,7 +604,7 @@ function getStatusDescription(
     return saveError ?? "这次书签保存没有完成，请重试。";
   }
   if (saveState === "success") {
-    return "网页链接已保存，不会生成页面存档；现在可以继续整理收藏夹和 tag。";
+    return "网页链接已保存，不会生成页面存档；现在可以继续整理收藏夹和标签。";
   }
   if (saveState === "removed") {
     return "当前网页已从 KeepPage 中移除，再点一次插件即可重新收藏。";

@@ -5,33 +5,27 @@
   display: grid;
   place-items: center;
   padding: 1.2rem;
-  background:
-    radial-gradient(circle at top, rgba(200, 210, 224, 0.2), transparent 38%),
-    rgba(26, 24, 21, 0.34);
-  backdrop-filter: blur(14px);
+  background: #18212e66;
 }
 
 .manager-dialog-backdrop.is-create-folder {
   padding: 1.5rem;
-  background: rgba(12, 14, 16, 0.1);
-  backdrop-filter: blur(14px);
+  background: #18212e66;
 }
 
 .create-folder-dialog {
   width: min(432px, 100%);
-  border-radius: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.44);
-  background: rgba(255, 255, 255, 0.62);
-  box-shadow:
-    0 24px 60px rgba(45, 51, 56, 0.16),
-    0 10px 28px rgba(45, 51, 56, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(18px);
+  border-radius: 16px;
+  border: 1px solid #e4e7eb;
+  background: #fff;
+  box-shadow: 0 20px 70px #101a2b26;
   animation: dialog-rise 180ms ease;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
 }
 
 .create-folder-dialog-shell {
-  padding: 2rem 1.9rem 1.95rem;
+  padding: 28px;
 }
 
 .create-folder-dialog-header {
@@ -44,17 +38,17 @@
 
 .create-folder-dialog-heading h2 {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 2.18rem);
-  line-height: 1.05;
-  letter-spacing: -0.05em;
-  font-weight: 800;
+  font-size: 22px;
+  line-height: 1.4;
+  letter-spacing: -.4px;
+  font-weight: 650;
 }
 
 .create-folder-dialog-heading p {
   margin: 0.55rem 0 0;
   color: #68717a;
-  font-size: 1rem;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .create-folder-dialog-close {
@@ -64,7 +58,7 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: #7d848c;
   cursor: pointer;
@@ -74,7 +68,7 @@
 .create-folder-dialog-close:hover {
   background: rgba(233, 236, 239, 0.9);
   color: #5d646b;
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .create-folder-dialog-close svg {
@@ -100,9 +94,9 @@
   min-height: 34px;
   max-width: 100%;
   padding: 0.45rem 0.8rem;
-  border-radius: 999px;
+  border-radius: 8px;
   background: rgba(245, 246, 248, 0.9);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  box-shadow: none;
 }
 
 .create-folder-parent-pill span {
@@ -130,34 +124,30 @@
 .create-folder-dialog-label {
   display: block;
   padding-left: 0.15rem;
-  color: #7b838b;
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  color: #39424e;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .create-folder-dialog-input {
-  min-height: 50px;
-  border-radius: 999px;
-  padding: 0.95rem 1.35rem;
-  background: rgba(242, 244, 246, 0.96);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    0 1px 2px rgba(45, 51, 56, 0.03);
-  font-size: 0.98rem;
+  min-height: 42px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  box-shadow: none;
+  font-size: 14px;
   color: #2e3439;
+  border: 1px solid #d9dee5;
 }
 
 .create-folder-dialog-input:focus {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    0 0 0 2px rgba(93, 93, 93, 0.16),
-    0 1px 3px rgba(45, 51, 56, 0.05);
+  box-shadow: none;
 }
 
 .create-folder-dialog-error {
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(159, 64, 61, 0.08);
 }
 
@@ -173,14 +163,15 @@
 }
 
 .create-folder-action-button {
-  min-height: 46px;
-  border-radius: 999px;
+  min-height: 40px;
+  border-radius: 8px;
   border: 0;
   font: inherit;
   font-weight: 700;
-  font-size: 0.96rem;
+  font-size: 13px;
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+  padding: 9px 14px;
 }
 
 .create-folder-action-button:disabled,
@@ -191,20 +182,20 @@
 }
 
 .create-folder-action-button:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .create-folder-action-button.is-secondary {
-  border: 1px solid rgba(113, 113, 122, 0.12);
-  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid #dce0e5;
+  background: #fff;
   color: #5f666d;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  box-shadow: none;
 }
 
 .create-folder-action-button.is-primary {
-  background: linear-gradient(180deg, #737373 0%, #666666 100%);
+  background: #262a31;
   color: #ffffff;
-  box-shadow: 0 14px 26px rgba(93, 93, 93, 0.24);
+  box-shadow: none;
 }
 
 .archive-dialog-panel {
@@ -257,9 +248,9 @@
   appearance: none;
   min-height: 34px;
   border: 1px solid rgba(113, 113, 122, 0.14);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 0.4rem 0.85rem;
-  background: rgba(255, 255, 255, 0.56);
+  background: #fff;
   color: #535a61;
   font: inherit;
   font-size: 0.84rem;
@@ -269,46 +260,38 @@
 }
 
 .archive-dialog-tag-button:hover {
-  transform: translateY(-1px);
+  transform: none;
   border-color: rgba(93, 93, 93, 0.18);
-  background: rgba(255, 255, 255, 0.82);
+  background: #fff;
 }
 
 .archive-dialog-tag-button:active {
-  transform: scale(0.97);
+  transform: none;
 }
 
 .archive-dialog-tag-button.is-active {
-  border-color: rgba(93, 93, 93, 0.2);
-  background: linear-gradient(180deg, rgba(115, 115, 115, 0.16), rgba(102, 102, 102, 0.08));
-  color: #2f3439;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  border-color: #cad7e7;
+  background: #eef2f8;
+  color: #284a78;
+  box-shadow: none;
 }
 
 .manager-dialog-backdrop.is-bookmark-delete {
-  background:
-    radial-gradient(circle at top left, rgba(214, 216, 255, 0.32), transparent 34%),
-    radial-gradient(circle at top right, rgba(200, 210, 224, 0.2), transparent 28%),
-    rgba(12, 14, 16, 0.14);
-  backdrop-filter: blur(20px);
+  background: #18212e66;
 }
 
 .bookmark-delete-dialog {
-  width: min(680px, 100%);
-  border-radius: 36px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0.76) 100%);
-  box-shadow:
-    0 20px 40px rgba(45, 51, 56, 0.12),
-    0 12px 28px rgba(45, 51, 56, 0.07),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  width: min(520px, 100%);
+  border-radius: 16px;
+  border: 1px solid #e4e7eb;
+  background: #fff;
+  box-shadow: 0 20px 70px #101a2b26;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
 }
 
 .bookmark-delete-dialog-shell {
-  padding: 2rem 1.95rem 1.9rem;
+  padding: 28px;
 }
 
 .bookmark-delete-dialog-header {
@@ -321,17 +304,18 @@
 
 .bookmark-delete-dialog-heading h2 {
   margin: 0.35rem 0 0;
-  font-size: clamp(2.2rem, 4.2vw, 3rem);
-  line-height: 0.98;
-  letter-spacing: -0.06em;
-  font-weight: 800;
+  font-size: 22px;
+  line-height: 1.4;
+  letter-spacing: -.4px;
+  font-weight: 650;
 }
 
 .bookmark-delete-dialog-heading p:last-child {
   margin: 0.7rem 0 0;
   max-width: 42ch;
   color: #68717a;
-  line-height: 1.55;
+  line-height: 1.7;
+  font-size: 13px;
 }
 
 .bookmark-delete-dialog-close {
@@ -341,7 +325,7 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: #7b8289;
   cursor: pointer;
@@ -351,11 +335,11 @@
 .bookmark-delete-dialog-close:hover {
   background: rgba(240, 242, 244, 0.92);
   color: #50575d;
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .bookmark-delete-dialog-close:active {
-  transform: scale(0.94);
+  transform: none;
 }
 
 .bookmark-delete-dialog-close:disabled {
@@ -374,12 +358,10 @@
   align-items: center;
   gap: 0.85rem;
   padding: 0.95rem 1rem;
-  border-radius: 24px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(242, 244, 246, 0.74));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 12px 28px rgba(45, 51, 56, 0.05);
+  border-radius: 8px;
+  background: #f7f8fa;
+  box-shadow: none;
+  border: 1px solid #e4e7eb;
 }
 
 .batch-delete-card {
@@ -388,14 +370,14 @@
 
 .batch-delete-card-count {
   flex: none;
-  min-width: 58px;
-  min-height: 58px;
-  border-radius: 18px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   padding: 0 0.5rem;
-  background: linear-gradient(145deg, #f0f2f5, #f8fafc);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  background: #f7f8fa;
+  box-shadow: none;
   color: #434a51;
   font-size: 1.2rem;
   font-weight: 800;
@@ -407,9 +389,7 @@
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    0 4px 10px rgba(45, 51, 56, 0.08);
+  box-shadow: none;
   object-fit: contain;
   display: block;
 }
@@ -425,10 +405,8 @@
   display: grid;
   place-items: center;
   border-radius: 12px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(240, 242, 245, 0.88));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.82),
-    0 4px 10px rgba(45, 51, 56, 0.08);
+  background: #f7f8fa;
+  box-shadow: none;
   color: #5d646b;
 }
 
@@ -470,18 +448,23 @@
 .bookmark-delete-warning {
   margin-top: 1rem;
   padding: 0.9rem 1rem;
-  border-radius: 20px;
-  background: rgba(255, 244, 239, 0.88);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  border-radius: 8px;
+  background: #fff3f2;
+  box-shadow: none;
+  color: #a32e36;
+  border: 1px solid #f1d6d6;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .bookmark-delete-warning p {
   display: block;
+  color: #a32e36;
 }
 
 .bookmark-delete-warning p {
   margin: 0;
-  color: #78716c;
+  color: #a32e36;
   line-height: 1.58;
 }
 
@@ -497,22 +480,23 @@
 }
 
 .bookmark-delete-action {
-  min-height: 48px;
+  min-height: 40px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   font: inherit;
-  font-size: 0.96rem;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+  padding: 9px 14px;
 }
 
 .bookmark-delete-action:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .bookmark-delete-action:active {
-  transform: scale(0.96);
+  transform: none;
 }
 
 .bookmark-delete-action:disabled {
@@ -522,60 +506,53 @@
 }
 
 .bookmark-delete-action.is-secondary {
-  background: rgba(255, 255, 255, 0.5);
+  background: #fff;
   color: #5e666d;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.76),
-    0 1px 3px rgba(45, 51, 56, 0.03);
+  box-shadow: none;
+  border: 1px solid #dce0e5;
 }
 
 .bookmark-delete-action.is-secondary:hover {
-  background: rgba(255, 255, 255, 0.72);
+  background: #fff;
 }
 
 .bookmark-delete-action.is-danger {
-  background: linear-gradient(180deg, #666666 0%, #525252 100%);
+  background: #b52e35;
   color: #ffffff;
-  box-shadow:
-    0 14px 28px rgba(94, 94, 94, 0.24),
-    0 0 0 1px rgba(82, 82, 82, 0.08);
+  box-shadow: none;
 }
 
 .bookmark-delete-action.is-danger:hover {
-  box-shadow:
-    0 18px 34px rgba(94, 94, 94, 0.28),
-    0 0 0 1px rgba(82, 82, 82, 0.1);
+  box-shadow: none;
+  background: #96272e;
 }
 
 .manager-dialog {
   position: relative;
-  width: min(620px, 100%);
+  width: min(520px, 100%);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 28px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(248, 249, 252, 0.92));
-  box-shadow:
-    0 34px 90px rgba(45, 51, 56, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(18px);
+  border: 1px solid #e4e7eb;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 20px 70px #101a2b26;
   animation: dialog-rise 180ms ease;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
 }
 
 .manager-dialog.is-danger {
-  background:
-    linear-gradient(145deg, rgba(255, 252, 252, 0.92), rgba(252, 248, 248, 0.9));
+  background: #fff;
 }
 
 .manager-dialog-accent {
   position: absolute;
   inset: 0 0 auto;
-  height: 3px;
-  background: linear-gradient(90deg, #d4d4d8 0%, #a1a1aa 52%, #d4d4d8 100%);
+  height: 0;
+  background: #f7f8fa;
 }
 
 .manager-dialog.is-danger .manager-dialog-accent {
-  background: linear-gradient(90deg, #a1a1aa 0%, #d4d4d8 52%, #a1a1aa 100%);
+  background: #fff3f2;
 }
 
 .manager-dialog-header,
@@ -602,7 +579,8 @@
   margin: 0.45rem 0 0;
   max-width: 44ch;
   color: var(--muted);
-  line-height: 1.55;
+  line-height: 1.7;
+  font-size: 13px;
 }
 
 .manager-dialog-close {
@@ -622,7 +600,7 @@
 .manager-dialog-warning,
 .manager-dialog-tag-preview {
   border: 1px solid rgba(113, 113, 122, 0.08);
-  border-radius: 20px;
+  border-radius: 8px;
 }
 
 .manager-dialog-hero {
@@ -630,22 +608,18 @@
   align-items: center;
   gap: 0.9rem;
   padding: 1rem;
-  background:
-    linear-gradient(135deg, rgba(113, 113, 122, 0.08), rgba(161, 161, 170, 0.04)),
-    rgba(255, 255, 255, 0.6);
+  background: #f7f8fa;
 }
 
 .manager-dialog.is-danger .manager-dialog-hero {
-  background:
-    linear-gradient(135deg, rgba(185, 62, 49, 0.08), rgba(200, 100, 80, 0.04)),
-    rgba(255, 255, 255, 0.6);
+  background: #fff3f2;
 }
 
 .manager-dialog-mark {
   flex: none;
-  min-width: 58px;
-  min-height: 58px;
-  border-radius: 18px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   font-family: inherit;
@@ -656,19 +630,19 @@
 
 .manager-dialog-mark.is-folder {
   color: #355466;
-  background: linear-gradient(145deg, #e8eef5, #f7f9fc);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  background: #f7f8fa;
+  box-shadow: none;
 }
 
 .manager-dialog-mark.is-tag {
   color: #45655f;
-  background: linear-gradient(145deg, #e9f2ee, #f8fcfa);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  background: #f7f8fa;
+  box-shadow: none;
 }
 
 .manager-dialog.is-danger .manager-dialog-mark {
   color: #7f4a43;
-  background: linear-gradient(145deg, #f8e8e4, #fcf6f4);
+  background: #fff3f2;
 }
 
 .manager-dialog-hero-copy {
@@ -694,15 +668,15 @@
   align-items: center;
   gap: 0.7rem;
   padding: 0.85rem 0.95rem;
-  background: rgba(255, 255, 255, 0.76);
+  background: #fff;
 }
 
 .manager-dialog-tag-swatch {
   width: 12px;
   height: 12px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #0956a4;
-  box-shadow: 0 0 0 5px rgba(9, 86, 164, 0.08);
+  box-shadow: none;
 }
 
 .manager-dialog-tag-swatch.is-empty {
@@ -714,7 +688,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 34px;
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 0.3rem 0.75rem;
   background: rgba(9, 86, 164, 0.08);
   color: var(--accent-deep);
@@ -753,7 +727,7 @@
 .manager-dialog-error {
   margin: 0;
   border: 1px solid rgba(154, 43, 43, 0.14);
-  border-radius: 14px;
+  border-radius: 8px;
   background: rgba(154, 43, 43, 0.08);
   color: var(--low);
   padding: 0.78rem 0.9rem;
@@ -764,12 +738,15 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
+  padding-top: 20px;
+  border-top: 1px solid #e4e7eb;
+  flex-wrap: wrap;
 }
 
 .danger-fill {
   border-color: rgba(154, 43, 43, 0.18);
-  background: linear-gradient(180deg, #c74938 0%, #a83224 100%);
-  box-shadow: 0 12px 24px rgba(168, 50, 36, 0.18);
+  background: #b52e35;
+  box-shadow: none;
 }
 
 @keyframes dialog-rise {

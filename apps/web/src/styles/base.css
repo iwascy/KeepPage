@@ -7,28 +7,28 @@
 }
 
 :root {
-  --bg: #f9f9fb;
-  --bg-deep: #f2f4f6;
-  --surface: rgba(255, 255, 255, 0.78);
-  --surface-soft: #eff2f5;
+  --bg: #fafbfc;
+  --bg-deep: #f7f8fa;
+  --surface: #ffffff;
+  --surface-soft: #f7f8fa;
   --surface-container-lowest: #ffffff;
   --surface-container-low: #f2f4f6;
   --surface-container: #ebeef2;
-  --text: #2d3338;
-  --muted: #596065;
-  --soft: #93a0ab;
-  --line: rgba(172, 179, 184, 0.2);
-  --accent: #5e5e5e;
-  --accent-deep: #525252;
-  --good: #12664f;
-  --mid: #8a5900;
-  --low: #932a2a;
-  --shadow: 0 24px 48px rgba(45, 51, 56, 0.08);
-  --shadow-soft: 0 20px 40px rgba(45, 51, 56, 0.05);
-  --radius-card: 32px;
-  --radius-button: 999px;
-  --radius-input: 20px;
-  --font-display: "Manrope", "Inter", ui-sans-serif, sans-serif;
+  --text: #202329;
+  --muted: #636b76;
+  --soft: #68737d;
+  --line: #e4e7eb;
+  --accent: #262a31;
+  --accent-deep: #262a31;
+  --good: #28734d;
+  --mid: #95611d;
+  --low: #a32e36;
+  --shadow: 0 12px 36px #18212e14;
+  --shadow-soft: 0 1px 2px #18202c03;
+  --radius-card: 12px;
+  --radius-button: 8px;
+  --radius-input: 8px;
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 * {
@@ -44,13 +44,9 @@ body,
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: "Inter", ui-sans-serif, sans-serif;
+  font-family: var(--font-display);
   color: var(--text);
-  background:
-    radial-gradient(circle at 12% 6%, rgba(216, 211, 244, 0.34), transparent 24%),
-    radial-gradient(circle at 88% 12%, rgba(226, 226, 233, 0.55), transparent 22%),
-    radial-gradient(circle at 78% 76%, rgba(221, 227, 233, 0.42), transparent 24%),
-    linear-gradient(180deg, #fbfbfd 0%, var(--bg-deep) 100%);
+  background: var(--bg);
 }
 
 /* ── Global Form Elements ── */
@@ -58,14 +54,14 @@ body {
 input,
 select,
 textarea {
-  border: 0;
+  border: 1px solid #d9dee5;
   outline: none;
   border-radius: var(--radius-input);
-  background: rgba(239, 242, 245, 0.96);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  padding: 0.72rem 0.95rem;
+  background: #fff;
+  box-shadow: none;
+  padding: 10px 12px;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 14px;
   color: var(--text);
   transition: box-shadow 120ms ease;
 }
@@ -73,15 +69,15 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 0 0 3px rgba(94, 94, 94, 0.08);
+  box-shadow: none;
   transform: none;
+  outline: 2px solid #477cb8;
+  outline-offset: 1px;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #97a2ad;
+  color: #68737d;
 }
 
 textarea {

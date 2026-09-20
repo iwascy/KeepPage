@@ -1510,82 +1510,87 @@ function ensureToastElements() {
       all: initial;
     }
 
+    :host([hidden]) {
+      display: none;
+    }
+
     .viewport {
       position: fixed;
       inset: 0;
       z-index: 2147483647;
       pointer-events: none;
-      font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
 
     .toast {
       position: absolute;
-      top: 22px;
-      right: 22px;
+      top: 16px;
+      right: 14px;
       width: min(360px, calc(100vw - 28px));
       box-sizing: border-box;
-      padding: 14px 16px;
-      border-radius: 18px;
-      border: 1px solid rgba(110, 231, 183, 0.28);
-      background:
-        linear-gradient(135deg, rgba(15, 118, 110, 0.98), rgba(15, 23, 42, 0.98));
-      box-shadow:
-        0 18px 60px rgba(15, 23, 42, 0.28),
-        inset 0 1px 0 rgba(255, 255, 255, 0.12);
-      color: #f8fafc;
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid #e4e7eb;
+      background: #ffffff;
+      box-shadow: 0 4px 18px #18202c14;
+      color: #202329;
       opacity: 0;
-      transform: translateY(-14px) scale(0.96);
+      transform: translateY(-6px);
       transition:
         opacity 180ms ease,
         transform 220ms ease;
-      backdrop-filter: blur(16px);
+      overflow-wrap: anywhere;
+      max-height: calc(100dvh - 32px);
+      overflow: auto;
     }
 
     .toast[data-state="visible"] {
       opacity: 1;
-      transform: translateY(0) scale(1);
+      transform: translateY(0);
     }
 
     .toast[data-state="leaving"] {
       opacity: 0;
-      transform: translateY(-10px) scale(0.98);
+      transform: translateY(-6px);
     }
 
     .eyebrow {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      margin: 0 0 10px;
-      color: rgba(236, 253, 245, 0.9);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      margin: 0 0 12px;
+      color: #636b76;
+      font-size: 12px;
+      font-weight: 600;
     }
 
     .eyebrow::before {
       content: "";
-      width: 9px;
-      height: 9px;
-      border-radius: 999px;
-      background: #6ee7b7;
-      box-shadow: 0 0 0 6px rgba(110, 231, 183, 0.18);
+      width: 12px;
+      height: 14px;
+      border-radius: 2px;
+      background: #262a31;
+      clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
       flex: none;
     }
 
     .title {
       margin: 0;
-      font-size: 16px;
-      line-height: 1.35;
-      font-weight: 700;
+      font-size: 14px;
+      line-height: 1.5;
+      font-weight: 650;
     }
 
     .message {
       margin: 6px 0 0;
-      color: rgba(241, 245, 249, 0.82);
+      color: #636b76;
       font-size: 13px;
       line-height: 1.5;
       word-break: break-word;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .toast { transition: none; transform: none; }
     }
   `;
 
@@ -1595,6 +1600,9 @@ function ensureToastElements() {
   const toast = document.createElement("div");
   toast.className = "toast";
   toast.dataset.state = "hidden";
+  toast.setAttribute("role", "status");
+  toast.setAttribute("aria-live", "polite");
+  toast.setAttribute("aria-atomic", "true");
 
   const eyebrow = document.createElement("p");
   eyebrow.className = "eyebrow";
@@ -1636,22 +1644,25 @@ function ensureSelectionOverlay() {
       all: initial;
     }
 
+    :host([hidden]) {
+      display: none;
+    }
+
     .viewport {
       position: fixed;
       inset: 0;
       z-index: 2147483646;
       pointer-events: none;
-      font-family: "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
 
     .frame {
       position: fixed;
-      border-radius: 18px;
-      border: 2px solid rgba(15, 118, 110, 0.95);
-      background: rgba(45, 212, 191, 0.12);
-      box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.3),
-        0 18px 48px rgba(15, 23, 42, 0.2);
+      box-sizing: border-box;
+      border-radius: 8px;
+      border: 2px solid #477cb8;
+      background: #477cb812;
+      box-shadow: 0 0 0 1px #ffffff;
       opacity: 0;
       transition:
         left 80ms ease,
@@ -1667,14 +1678,16 @@ function ensureSelectionOverlay() {
 
     .label {
       position: fixed;
-      max-width: min(60vw, 420px);
+      max-width: min(calc(100vw - 24px), 420px);
+      box-sizing: border-box;
       padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(15, 23, 42, 0.94);
-      color: #f8fafc;
+      border-radius: 8px;
+      border: 1px solid #e4e7eb;
+      background: #ffffff;
+      color: #202329;
       font-size: 12px;
       line-height: 1.35;
-      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.2);
+      box-shadow: 0 2px 8px #18202c14;
       opacity: 0;
       transition:
         left 80ms ease,
@@ -1692,16 +1705,25 @@ function ensureSelectionOverlay() {
     .helper {
       position: fixed;
       left: 50%;
-      bottom: 22px;
+      bottom: 16px;
       transform: translateX(-50%);
       padding: 10px 14px;
-      border-radius: 999px;
-      background: rgba(15, 23, 42, 0.92);
-      color: rgba(248, 250, 252, 0.96);
-      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+      box-sizing: border-box;
+      width: max-content;
+      max-width: calc(100vw - 24px);
+      border-radius: 8px;
+      border: 1px solid #e4e7eb;
+      background: #ffffff;
+      color: #39414c;
+      box-shadow: 0 2px 8px #18202c14;
       font-size: 12px;
-      line-height: 1.35;
-      white-space: nowrap;
+      line-height: 1.6;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .frame, .label { transition: none; }
     }
   `;
 
@@ -1718,6 +1740,7 @@ function ensureSelectionOverlay() {
 
   const helper = document.createElement("div");
   helper.className = "helper";
+  helper.setAttribute("role", "status");
   helper.textContent = "点击页面内容开始保存，按 Esc 取消";
 
   viewport.append(frame, label, helper);

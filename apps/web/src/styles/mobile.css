@@ -281,11 +281,26 @@
   }
 
   .create-folder-dialog-heading h2 {
-    font-size: 1.8rem;
+    font-size: 21px;
+  }
+
+  .create-folder-action-button,
+  .bookmark-delete-action,
+  .manager-dialog-actions button,
+  .detail-action-button,
+  .detail-icon-button {
+    min-height: 44px;
+  }
+
+  .create-folder-dialog-close,
+  .bookmark-delete-dialog-close,
+  .detail-icon-button {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .create-folder-dialog-heading p {
-    font-size: 0.92rem;
+    font-size: 13px;
   }
 
   .create-folder-dialog-form {
@@ -307,16 +322,16 @@
   }
 
   .bookmark-delete-dialog-header {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: flex-start;
   }
 
   .bookmark-delete-dialog-heading h2 {
-    font-size: 1.95rem;
+    font-size: 21px;
   }
 
   .bookmark-delete-dialog-close {
-    align-self: flex-end;
+    align-self: flex-start;
   }
 
   .bookmark-delete-dialog-actions {

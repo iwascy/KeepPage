@@ -603,27 +603,12 @@ export function App() {
     return (
       <div className="auth-page">
         <main className="auth-page-shell">
-          <section className="auth-page-hero" aria-label="KeepPage 连接状态">
-            <div className="auth-page-hero-copy">
-              <p className="eyebrow">KeepPage 队列</p>
-              <h1>{authPageTitle}</h1>
-              <p className="auth-page-subtitle">{authPageSubtitle}</p>
-            </div>
-            <div className="auth-page-visual" aria-hidden="true">
-              <div className="auth-orbit auth-orbit-one" />
-              <div className="auth-orbit auth-orbit-two" />
-              <div className="auth-page-logo-mark">K</div>
-              <div className="auth-sync-card auth-sync-card-primary">
-                <span className="auth-sync-dot" />
-                <strong>{authUser ? "同步就绪" : "等待连接"}</strong>
-                <span>{authUser ? "归档将进入当前账号" : "连接后自动回到侧边栏"}</span>
-              </div>
-              <div className="auth-sync-card auth-sync-card-secondary">
-                <span>API</span>
-                <strong>{authPageApiHost}</strong>
-              </div>
-            </div>
-          </section>
+          <header className="auth-page-header">
+            <p className="eyebrow">KeepPage · 浏览器扩展</p>
+            <h1>{authPageTitle}</h1>
+            <p className="auth-page-subtitle">{authPageSubtitle}</p>
+            <p className="auth-service">当前服务：{authPageApiHost}</p>
+          </header>
 
           <section className="auth-page-card">
             <div className="auth-page-card-main">
@@ -658,14 +643,14 @@ export function App() {
                 </div>
               ) : (
                 <div className="auth-page-actions">
-                  <button onClick={connectAccount} type="button">
+                  <button onClick={connectAccount} disabled={authState === "submitting"} type="button">
                     {authState === "submitting" ? "打开中..." : "打开网页授权"}
                   </button>
                 </div>
               )}
 
               {authMessage ? (
-                <section className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
+                <section role="status" aria-live="polite" className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
               ) : null}
             </div>
 
@@ -702,10 +687,10 @@ export function App() {
                 </label>
               </div>
               <div className="auth-page-actions auth-page-actions-wrap">
-                <button onClick={saveSettings} type="button">
+                <button onClick={saveSettings} disabled={settingsState === "saving"} type="button">
                   {settingsState === "saving" ? "保存中..." : "保存设置"}
                 </button>
-                <button className="ghost-btn" onClick={testConnection} type="button">
+                <button className="ghost-btn" onClick={testConnection} disabled={connectionState === "testing"} type="button">
                   {connectionState === "testing" ? "测试中..." : "测试连接"}
                 </button>
                 <button className="ghost-btn" onClick={resetApiBaseUrl} type="button">
@@ -715,15 +700,15 @@ export function App() {
             </div>
 
             {settingsMessage ? (
-              <section className={`settings-banner settings-${settingsState}`}>{settingsMessage}</section>
+              <section role="status" aria-live="polite" className={`settings-banner settings-${settingsState}`}>{settingsMessage}</section>
             ) : null}
             {connectionMessage ? (
-              <section className={`settings-banner settings-${connectionState}`}>{connectionMessage}</section>
+              <section role="status" aria-live="polite" className={`settings-banner settings-${connectionState}`}>{connectionMessage}</section>
             ) : null}
           </section>
         </main>
 
-        {error && <footer className="error-banner">{error}</footer>}
+        {error && <footer role="alert" className="error-banner">{error}</footer>}
       </div>
     );
   }
@@ -736,8 +721,8 @@ export function App() {
           <h1>{isPrivateView ? "私密归档队列" : "本地归档队列"}</h1>
           <p className="header-subtitle">
             {isPrivateView
-              ? "私密任务会走服务端私密链路，只有输入私密密码后才能查看和继续同步。"
-              : "先拿到本地可预览归档，再异步上传、去重和建索引。"}
+              ? "输入私密密码后，查看和同步私密归档。"
+              : "保存网页快照，查看本地预览和同步进度。"}
           </p>
         </div>
         <div className="header-actions">
@@ -755,7 +740,7 @@ export function App() {
             </select>
           </label>
           <label className="compact-field">
-            <span>抓取 profile</span>
+            <span>抓取配置</span>
             <div className="compact-field-value" title={selectedProfileMeta.description}>
               {selectedProfileMeta.label}
             </div>
@@ -775,7 +760,7 @@ export function App() {
               </button>
             </div>
             <p className="capture-helper">
-              只想存正文或局部区域时，点左侧按钮后回到页面点击目标内容。
+              只保存正文或局部内容，可点击「选择区域保存」。
             </p>
           </div>
         </div>
@@ -890,14 +875,14 @@ export function App() {
           </div>
         ) : (
           <div className="settings-actions">
-            <button onClick={connectAccount} type="button">
+            <button onClick={connectAccount} disabled={authState === "submitting"} type="button">
               {authState === "submitting" ? "打开中..." : "打开网页授权"}
             </button>
           </div>
         )}
       </section>
       {authMessage && (
-        <section className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
+        <section role="status" aria-live="polite" className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
       )}
 
       <section className="settings-strip">
@@ -936,10 +921,10 @@ export function App() {
           </label>
         </div>
         <div className="settings-actions">
-          <button onClick={saveSettings} type="button">
+          <button onClick={saveSettings} disabled={settingsState === "saving"} type="button">
             {settingsState === "saving" ? "保存中..." : "保存设置"}
           </button>
-          <button className="ghost-btn" onClick={testConnection} type="button">
+          <button className="ghost-btn" onClick={testConnection} disabled={connectionState === "testing"} type="button">
             {connectionState === "testing" ? "测试中..." : "测试连接"}
           </button>
           <button className="ghost-btn" onClick={resetApiBaseUrl} type="button">
@@ -956,19 +941,20 @@ export function App() {
         </div>
       </section>
       {iconRefreshMessage && (
-        <section className={`settings-banner settings-${iconRefreshState === "error" ? "error" : "saved"}`}>
+        <section role="status" aria-live="polite" className={`settings-banner settings-${iconRefreshState === "error" ? "error" : "saved"}`}>
           {iconRefreshMessage}
         </section>
       )}
       {settingsMessage && (
-        <section className={`settings-banner settings-${settingsState}`}>{settingsMessage}</section>
+        <section role="status" aria-live="polite" className={`settings-banner settings-${settingsState}`}>{settingsMessage}</section>
       )}
       {connectionMessage && (
-        <section className={`settings-banner settings-${connectionState}`}>{connectionMessage}</section>
+        <section role="status" aria-live="polite" className={`settings-banner settings-${connectionState}`}>{connectionMessage}</section>
       )}
 
       <main className="main">
-        <section className="task-list">
+        <section className="task-list" aria-label="归档记录">
+          <h2 className="task-list-heading">归档记录<span>{tasks.length} 条</span></h2>
           {tasks.length === 0 && (
             <p className="muted">
               {isPrivateView
@@ -987,6 +973,7 @@ export function App() {
             return (
               <button
                 className={`task-card ${active ? "active" : ""} ${task.isPrivate ? "task-card-private" : ""}`}
+                aria-pressed={active}
                 key={task.id}
                 onClick={() => setSelectedTaskId(task.id)}
                 type="button"
@@ -1019,8 +1006,8 @@ export function App() {
           {!selectedTask && (
             <p className="muted">
               {isPrivateView
-                ? "选择左侧私密记录以查看锁定态摘要或解锁态详情。"
-                : "选择左侧记录以查看质量诊断和本地预览。"}
+                ? "选择一条私密记录，查看摘要或解锁后的详情。"
+                : "选择一条记录，查看归档质量和本地预览。"}
             </p>
           )}
 
@@ -1112,8 +1099,8 @@ export function App() {
                   />
                 ) : (
                   <div className="preview-placeholder">
-                    <p>本地预览占位</p>
-                    <p>归档 HTML 生成后会在这里直接渲染。</p>
+                    <p>等待生成预览</p>
+                    <p>网页归档生成后会显示在这里。</p>
                   </div>
                 )}
               </div>
@@ -1122,7 +1109,7 @@ export function App() {
         </section>
       </main>
 
-      {error && <footer className="error-banner">{error}</footer>}
+      {error && <footer role="alert" className="error-banner">{error}</footer>}
     </div>
   );
 }

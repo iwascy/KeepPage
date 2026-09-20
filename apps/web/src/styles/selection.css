@@ -6,14 +6,11 @@
   gap: 0.75rem;
   padding: 0.65rem 1.2rem;
   margin-bottom: 1rem;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 249, 252, 0.82)),
-    rgba(255, 255, 255, 0.72);
+  background: #fff;
   border: 1px solid var(--line);
-  border-radius: var(--radius-input);
-  box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px #18202c03;
+
   position: sticky;
   top: 0;
   z-index: 20;
@@ -39,6 +36,7 @@
   padding: 0.3rem 0.5rem;
   border-radius: var(--radius-button);
   transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+  min-height: 36px;
 }
 
 .selection-toolbar-check-all:hover {
@@ -46,7 +44,7 @@
 }
 
 .selection-toolbar-check-all:active {
-  transform: scale(0.96);
+  transform: none;
 }
 
 .selection-toolbar-checkbox {
@@ -93,6 +91,7 @@
   cursor: pointer;
   transition: background 150ms ease, color 150ms ease, transform 150ms ease;
   white-space: nowrap;
+  min-height: 36px;
 }
 
 .selection-toolbar-btn:hover:not(:disabled) {
@@ -100,7 +99,7 @@
 }
 
 .selection-toolbar-btn:active:not(:disabled) {
-  transform: scale(0.95);
+  transform: none;
 }
 
 .selection-toolbar-btn:disabled {
@@ -127,12 +126,11 @@
   min-width: 180px;
   max-height: 260px;
   overflow-y: auto;
-  background: rgba(255, 255, 255, 0.96);
+  background: #fff;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px #18212e14;
+
   padding: 0.35rem;
   z-index: 30;
 }
@@ -154,16 +152,16 @@
 .selection-toolbar-search span {
   padding: 0 0.2rem;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .selection-toolbar-search input {
   width: 100%;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(248, 250, 252, 0.82);
+  border: 1px solid #d9dee5;
+  background: #f7f8fa;
   color: var(--text);
   font-size: 0.82rem;
   line-height: 1.2;
@@ -174,7 +172,7 @@
 }
 
 .selection-toolbar-search input:focus {
-  background: rgba(255, 255, 255, 0.96);
+  background: #fff;
   border-color: rgba(78, 96, 125, 0.26);
   box-shadow: 0 0 0 3px rgba(78, 96, 125, 0.12);
 }
@@ -199,6 +197,7 @@
   cursor: pointer;
   text-align: left;
   transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+  min-height: 36px;
 }
 
 .selection-toolbar-dropdown-item:hover,
@@ -207,7 +206,7 @@
 }
 
 .selection-toolbar-dropdown-item:active {
-  transform: scale(0.97);
+  transform: none;
 }
 
 .selection-toolbar-dropdown-empty {
@@ -254,6 +253,7 @@
   transition: background 150ms ease, color 150ms ease, transform 150ms ease;
   white-space: nowrap;
   margin-left: 0.3rem;
+  min-height: 36px;
 }
 
 .selection-toolbar-exit:hover:not(:disabled) {
@@ -262,7 +262,7 @@
 }
 
 .selection-toolbar-exit:active:not(:disabled) {
-  transform: scale(0.95);
+  transform: none;
 }
 
 .selection-toolbar-exit:disabled {
@@ -277,9 +277,7 @@
 }
 
 .brand-bookmark-card.is-selected {
-  box-shadow:
-    0 0 0 2px var(--accent-deep),
-    0 16px 36px -16px rgba(16, 24, 40, 0.18);
+  box-shadow: none;
 }
 
 .home-bookmark-checkbox {
@@ -300,12 +298,11 @@
   font-weight: 700;
   transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
   pointer-events: none;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+
 }
 
 .home-bookmark-checkbox.is-checked {
   background: var(--accent-deep);
   border-color: var(--accent-deep);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }

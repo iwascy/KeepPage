@@ -3,11 +3,7 @@
 .public-share-page {
   min-height: 100vh;
   color: var(--text, #18181b);
-  background:
-    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(216, 211, 244, 0.45), transparent 55%),
-    radial-gradient(ellipse 60% 40% at 90% 5%, rgba(212, 235, 225, 0.4), transparent 50%),
-    radial-gradient(ellipse 50% 35% at 50% 100%, rgba(253, 232, 216, 0.35), transparent 55%),
-    #fafafa;
+  background: #fafbfc;
 }
 
 .public-share-header {
@@ -15,10 +11,9 @@
   top: 0;
   z-index: 20;
   height: 4.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(20px);
-  box-shadow: 0 20px 40px rgba(45, 51, 56, 0.06);
+  border-bottom: 1px solid #e4e7eb;
+  background: #fff;
+  box-shadow: none;
 }
 
 .public-share-header-inner,
@@ -52,21 +47,21 @@
   place-items: center;
   color: #fff;
   background: #27272a;
-  box-shadow: 0 10px 24px rgba(39, 39, 42, 0.22);
+  box-shadow: none;
 }
 
 .public-share-brand-title {
   font-size: 1.05rem;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: -0.03em;
   line-height: 1.1;
 }
 
 .public-share-brand-sub {
-  font-size: 0.625rem;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: #71717a;
 }
 
@@ -81,24 +76,24 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  min-height: 2.5rem;
+  min-height: 40px;
   padding: 0 0.95rem;
   border: 0;
-  border-radius: 1rem;
-  font-size: 0.875rem;
+  border-radius: 8px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .public-share-btn:active {
-  transform: scale(0.96);
+  transform: none;
 }
 
 .public-share-btn.is-primary {
   color: #fff;
   background: #27272a;
-  box-shadow: 0 12px 28px rgba(39, 39, 42, 0.2);
+  box-shadow: none;
 }
 
 .public-share-btn.is-primary:hover {
@@ -107,13 +102,13 @@
 
 .public-share-btn.is-ghost {
   color: #52525b;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04);
+  background: #fff;
+  border: 1px solid #dce0e5;
+  box-shadow: none;
 }
 
 .public-share-btn.is-ghost:hover {
-  background: #fff;
+  background: #f5f6f8;
   color: #18181b;
 }
 
@@ -125,19 +120,18 @@
   position: relative;
   overflow: hidden;
   margin-bottom: 1.75rem;
-  padding: 1.75rem;
-  border-radius: 1.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(28px);
-  box-shadow: 0 20px 40px rgba(45, 51, 56, 0.08);
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #e4e7eb;
+  background: #fff;
+  box-shadow: none;
 }
 
 .public-share-hero::before,
 .public-share-hero::after {
-  content: "";
+  content: none;
   position: absolute;
-  border-radius: 999px;
+  border-radius: 8px;
   filter: blur(40px);
   pointer-events: none;
 }
@@ -174,11 +168,11 @@
   align-items: center;
   gap: 0.3rem;
   padding: 0.28rem 0.65rem;
-  border-radius: 999px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: normal;
+  text-transform: none;
   background: #f4f4f5;
   color: #71717a;
 }
@@ -190,18 +184,20 @@
 
 .public-share-title {
   margin: 0 0 0.75rem;
-  font-size: clamp(1.75rem, 4vw, 2.75rem);
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1.1;
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -.6px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .public-share-desc {
   margin: 0 0 1.5rem;
   max-width: 40rem;
   color: #71717a;
-  font-size: 1rem;
+  font-size: 14px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .public-share-meta {
@@ -220,25 +216,26 @@
 .public-share-avatar {
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: 999px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   color: #fff;
   font-weight: 700;
-  background: linear-gradient(145deg, #3f3f46, #18181b);
-  box-shadow: 0 8px 18px rgba(24, 24, 27, 0.18);
+  background: #262a31;
+  box-shadow: none;
 }
 
 .public-share-meta-label {
-  font-size: 0.625rem;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: #71717a;
 }
 
 .public-share-meta-value {
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .public-share-toolbar {
@@ -250,10 +247,10 @@
 }
 
 .public-share-toolbar-label {
-  font-size: 0.625rem;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: #71717a;
 }
 
@@ -276,17 +273,17 @@
 }
 
 .public-share-view-btn:hover {
-  background: rgba(255, 255, 255, 0.7);
+  background: #fff;
 }
 
 .public-share-view-btn.is-active {
   color: #18181b;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.06);
+  box-shadow: none;
 }
 
 .public-share-view-btn:active {
-  transform: scale(0.9);
+  transform: none;
 }
 
 .public-share-grid {
@@ -305,45 +302,48 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  border: 1px solid #e4e7eb;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04);
+  box-shadow: none;
   color: inherit;
   text-decoration: none;
   transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
 .public-share-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 18px 40px rgba(45, 51, 56, 0.12);
+  transform: none;
+  box-shadow: 0 4px 14px #2136260a;
+  border-color: #bac7c0;
 }
 
 .public-share-card:active {
-  transform: scale(0.99);
+  transform: none;
 }
 
 .public-share-card-cover {
   position: relative;
-  aspect-ratio: 16 / 10;
+  aspect-ratio: auto;
   display: grid;
   place-items: center;
+  height: 76px;
+  background: #f7f8fa;
 }
 
-.public-share-card-cover.is-peach { background: linear-gradient(145deg, #fde8d8, #f5d0b8); }
-.public-share-card-cover.is-mist { background: linear-gradient(145deg, #d8d3f4, #c4bddf); }
-.public-share-card-cover.is-sand { background: linear-gradient(145deg, #f5efe6, #e8dcc8); }
-.public-share-card-cover.is-sky { background: linear-gradient(145deg, #d4ebe1, #b8d9cc); }
-.public-share-card-cover.is-rose { background: linear-gradient(145deg, #f5dce4, #e8c0ce); }
-.public-share-card-cover.is-slate { background: linear-gradient(145deg, #e2e8f0, #cbd5e1); }
+.public-share-card-cover.is-peach { background: #f7f8fa; }
+.public-share-card-cover.is-mist { background: #f7f8fa; }
+.public-share-card-cover.is-sand { background: #f7f8fa; }
+.public-share-card-cover.is-sky { background: #f7f8fa; }
+.public-share-card-cover.is-rose { background: #f7f8fa; }
+.public-share-card-cover.is-slate { background: #f7f8fa; }
 
 .public-share-card-favicon {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.88);
+  background: #fff;
   padding: 0.35rem;
-  box-shadow: 0 6px 16px rgba(24, 24, 27, 0.12);
+  box-shadow: none;
   object-fit: contain;
 }
 
@@ -355,14 +355,13 @@
   align-items: center;
   gap: 0.2rem;
   padding: 0.28rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.625rem;
+  border-radius: 5px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: #3f3f46;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(10px);
+  background: #fff;
 }
 
 .public-share-card-body {
@@ -370,6 +369,7 @@
   flex-direction: column;
   flex: 1;
   padding: 1rem 1.1rem 1.15rem;
+  gap: 6px;
 }
 
 .public-share-card-top {
@@ -383,15 +383,17 @@
 
 .public-share-card-title {
   margin: 0 0 0.45rem;
-  font-size: 0.98rem;
-  font-weight: 600;
-  line-height: 1.35;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  order: -1;
 }
 
 .public-share-card-note {
   margin: 0 0 0.75rem;
   color: #71717a;
-  font-size: 0.85rem;
+  font-size: 13px;
   line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -408,12 +410,12 @@
 
 .public-share-tag {
   padding: 0.18rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.625rem;
+  border-radius: 5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  background: #e2e8f0;
+  background: #f0f2f4;
   color: #3f3f46;
 }
 
@@ -422,23 +424,24 @@
   align-items: center;
   gap: 1rem;
   padding: 0.95rem 1rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  border: 1px solid #e4e7eb;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04);
+  box-shadow: none;
   color: inherit;
   text-decoration: none;
   transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
 .public-share-list-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 14px 32px rgba(45, 51, 56, 0.1);
+  transform: none;
+  box-shadow: 0 4px 14px #2136260a;
+  border-color: #bac7c0;
 }
 
 .public-share-list-thumb {
   width: 3.5rem;
-  height: 3.5rem;
+  height: 3rem;
   border-radius: 0.75rem;
   display: grid;
   place-items: center;
@@ -466,6 +469,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .public-share-list-note {
@@ -510,10 +514,10 @@
 .public-share-state-card {
   width: min(28rem, 100%);
   padding: 2rem 1.5rem;
-  border-radius: 1.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 20px 40px rgba(45, 51, 56, 0.08);
+  border-radius: 12px;
+  border: 1px solid #e4e7eb;
+  background: #fff;
+  box-shadow: none;
 }
 
 .public-share-state-icon {
@@ -552,24 +556,24 @@
   border-radius: 1rem;
   color: #fff;
   background: #18181b;
-  box-shadow: 0 16px 36px rgba(24, 24, 27, 0.28);
+  box-shadow: 0 8px 24px #18212e14;
   font-size: 0.875rem;
   font-weight: 500;
+  max-width: calc(100vw - 32px);
+  overflow-wrap: anywhere;
 }
 
 /* ── Create share dialog ── */
 
 .share-create-dialog {
   width: min(32rem, 100%);
-  max-height: min(88vh, 44rem);
+  max-height: calc(100dvh - 40px);
   overflow: auto;
-  border-radius: 1.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.44);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow:
-    0 24px 60px rgba(45, 51, 56, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(22px);
+  border-radius: 16px;
+  border: 1px solid #e4e7eb;
+  background: #fff;
+  box-shadow: 0 20px 70px #101a2b26;
+  overflow-y: auto;
 }
 
 .share-create-dialog-shell {
@@ -597,29 +601,33 @@
 .share-create-field label {
   display: block;
   margin-bottom: 0.35rem;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #71717a;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: normal;
+  text-transform: none;
+  color: #39424e;
 }
 
 .share-create-field input,
 .share-create-field textarea {
   width: 100%;
-  border: 0;
-  border-radius: 0.9rem;
-  background: #f4f4f5;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+  background: #fff;
   padding: 0.85rem 0.95rem;
   font: inherit;
   color: inherit;
   outline: none;
   resize: vertical;
+  min-height: 42px;
+  font-size: 14px;
 }
 
 .share-create-field input:focus,
 .share-create-field textarea:focus {
-  box-shadow: 0 0 0 2px rgba(161, 161, 170, 0.55);
+  box-shadow: none;
+  outline: 2px solid #477cb8;
+  outline-offset: 1px;
 }
 
 .share-create-items {
@@ -636,8 +644,9 @@
   align-items: center;
   gap: 0.65rem;
   padding: 0.65rem 0.75rem;
-  border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  background: #f7f8fa;
+  border: 1px solid #e4e7eb;
 }
 
 .share-create-item-copy {
@@ -676,6 +685,9 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.55rem;
+  padding-top: 20px;
+  border-top: 1px solid #e4e7eb;
+  flex-wrap: wrap;
 }
 
 .share-create-success-url {
@@ -686,9 +698,9 @@
 
 .share-create-success-url input {
   flex: 1;
-  border: 0;
-  border-radius: 0.9rem;
-  background: #f4f4f5;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+  background: #fff;
   padding: 0.8rem 0.9rem;
   font: inherit;
 }
@@ -786,6 +798,21 @@
 @media (max-width: 640px) {
   .public-share-grid {
     grid-template-columns: 1fr;
+  }
+
+  .public-share-btn,
+  .public-share-view-btn,
+  .share-create-item-remove {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .public-share-header-actions {
+    flex-shrink: 0;
+  }
+
+  .public-share-title {
+    font-size: 23px;
   }
 
   .public-share-header-inner,

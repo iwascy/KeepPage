@@ -1,3 +1,4 @@
+import { READER_THEME_CSS } from "./reader-theme";
 import { Readability } from "@mozilla/readability";
 import {
   parseXiaohongshuInitialState,
@@ -117,17 +118,7 @@ export function buildGenericReaderArchive(article: ReaderArticle, currentUrl: UR
     <title>${escapeHtml(article.title)}</title>
     ${article.excerpt ? `<meta name="description" content="${escapeHtmlAttribute(article.excerpt)}" />` : ""}
     <style>
-      :root {
-        color-scheme: light;
-        --bg: #f6f3ee;
-        --surface: rgba(255, 255, 255, 0.92);
-        --surface-soft: #f2ede4;
-        --text: #231d17;
-        --muted: #6d665d;
-        --border: rgba(110, 92, 66, 0.14);
-        --accent: #0f5d78;
-        --quote: rgba(15, 93, 120, 0.08);
-      }
+      ${READER_THEME_CSS}
 
       * {
         box-sizing: border-box;
@@ -137,27 +128,22 @@ export function buildGenericReaderArchive(article: ReaderArticle, currentUrl: UR
       body {
         margin: 0;
         padding: 0;
-        background:
-          radial-gradient(circle at top left, rgba(249, 214, 154, 0.28), transparent 34%),
-          radial-gradient(circle at bottom right, rgba(160, 210, 235, 0.24), transparent 36%),
-          var(--bg);
+        background: var(--bg);
         color: var(--text);
       }
 
       body {
         padding: clamp(12px, 3vw, 28px);
-        font-family: "Iowan Old Style", "Palatino Linotype", "Noto Serif SC", serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       }
 
       .reader-shell {
         max-width: 860px;
         margin: 0 auto;
         border: 1px solid var(--border);
-        border-radius: 28px;
+        border-radius: 12px;
         background: var(--surface);
-        box-shadow:
-          0 30px 90px rgba(35, 29, 23, 0.08),
-          inset 0 1px 0 rgba(255, 255, 255, 0.86);
+        box-shadow: var(--shadow);
         overflow: hidden;
       }
 
@@ -200,16 +186,16 @@ export function buildGenericReaderArchive(article: ReaderArticle, currentUrl: UR
         width: 5px;
         height: 5px;
         border-radius: 999px;
-        background: rgba(109, 102, 93, 0.55);
+        background: var(--muted);
       }
 
       .reader-summary {
         margin: 18px 0 0;
         padding: 14px 16px;
-        border-radius: 16px;
+        border-radius: 12px;
         border: 1px solid var(--border);
         background: var(--surface-soft);
-        color: #463f36;
+        color: var(--text);
         font-size: 15px;
         line-height: 1.75;
       }
@@ -264,8 +250,8 @@ export function buildGenericReaderArchive(article: ReaderArticle, currentUrl: UR
         width: auto;
         max-width: 100%;
         height: auto;
-        border-radius: 18px;
-        background: rgba(35, 29, 23, 0.04);
+        border-radius: 12px;
+        background: var(--surface-soft);
       }
 
       .reader-body figure {
@@ -286,16 +272,16 @@ export function buildGenericReaderArchive(article: ReaderArticle, currentUrl: UR
 
       .reader-body blockquote {
         padding: 14px 18px;
-        border-left: 3px solid rgba(15, 93, 120, 0.35);
+        border-left: 3px solid #b8c9dd;
         background: var(--quote);
-        border-radius: 0 16px 16px 0;
-        color: #494138;
+        border-radius: 0 8px 8px 0;
+        color: var(--text);
       }
 
       .reader-body pre {
         overflow: auto;
         padding: 16px;
-        border-radius: 16px;
+        border-radius: 12px;
         background: #1f2430;
         color: #f3f5f7;
         font-size: 14px;
@@ -309,8 +295,8 @@ export function buildGenericReaderArchive(article: ReaderArticle, currentUrl: UR
       .reader-body :not(pre) > code {
         padding: 0.16em 0.38em;
         border-radius: 6px;
-        background: rgba(15, 93, 120, 0.08);
-        color: #17485b;
+        background: var(--accent-soft);
+        color: var(--accent);
         font-size: 0.92em;
       }
 
@@ -318,7 +304,7 @@ export function buildGenericReaderArchive(article: ReaderArticle, currentUrl: UR
         width: 100%;
         border-collapse: collapse;
         overflow: hidden;
-        border-radius: 16px;
+        border-radius: 12px;
         border-style: hidden;
         box-shadow: 0 0 0 1px var(--border);
       }
@@ -342,7 +328,7 @@ export function buildGenericReaderArchive(article: ReaderArticle, currentUrl: UR
         }
 
         .reader-shell {
-          border-radius: 20px;
+          border-radius: 12px;
         }
 
         .reader-body {
@@ -443,19 +429,7 @@ export function buildXPostArchive(input: {
     <title>${escapeHtml(pageTitle)}</title>
     ${content.excerpt ? `<meta name="description" content="${escapeHtmlAttribute(content.excerpt)}" />` : ""}
     <style>
-      :root {
-        color-scheme: light;
-        --bg: #eef5fb;
-        --surface: rgba(255, 255, 255, 0.94);
-        --surface-strong: #ffffff;
-        --surface-soft: #edf6ff;
-        --border: rgba(18, 53, 84, 0.12);
-        --text: #16212c;
-        --muted: #617282;
-        --accent: #1d9bf0;
-        --accent-strong: #0f6eb0;
-        --shadow: 0 28px 70px rgba(22, 33, 44, 0.08);
-      }
+      ${READER_THEME_CSS}
 
       * {
         box-sizing: border-box;
@@ -465,22 +439,19 @@ export function buildXPostArchive(input: {
       body {
         margin: 0;
         padding: 0;
-        background:
-          radial-gradient(circle at top left, rgba(29, 155, 240, 0.18), transparent 34%),
-          radial-gradient(circle at bottom right, rgba(101, 182, 255, 0.16), transparent 36%),
-          linear-gradient(180deg, #f6fbff 0%, var(--bg) 100%);
+        background: var(--bg);
         color: var(--text);
       }
 
       body {
         padding: clamp(12px, 2.8vw, 28px);
-        font-family: "Charter", "Iowan Old Style", "Noto Serif SC", serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       }
 
       .post-shell {
         max-width: 820px;
         margin: 0 auto;
-        border-radius: 30px;
+        border-radius: 12px;
         border: 1px solid var(--border);
         background: var(--surface);
         box-shadow: var(--shadow);
@@ -489,8 +460,7 @@ export function buildXPostArchive(input: {
 
       .post-header {
         padding: clamp(22px, 4vw, 38px) clamp(18px, 4vw, 34px) 22px;
-        background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(237, 246, 255, 0.9));
+        background: var(--surface-soft);
       }
 
       .post-kicker {
@@ -513,8 +483,8 @@ export function buildXPostArchive(input: {
         border-radius: 999px;
         flex: 0 0 auto;
         object-fit: cover;
-        background: rgba(22, 33, 44, 0.08);
-        border: 1px solid rgba(18, 53, 84, 0.08);
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
       }
 
       .author-meta {
@@ -557,8 +527,8 @@ export function buildXPostArchive(input: {
         gap: 8px;
         padding: 8px 12px;
         border-radius: 999px;
-        border: 1px solid rgba(18, 53, 84, 0.08);
-        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid var(--border);
+        background: var(--surface);
       }
 
       .meta-link {
@@ -593,10 +563,10 @@ export function buildXPostArchive(input: {
 
       .media-card {
         margin: 0;
-        border-radius: 22px;
+        border-radius: 12px;
         overflow: hidden;
         background: var(--surface-strong);
-        border: 1px solid rgba(18, 53, 84, 0.08);
+        border: 1px solid var(--border);
       }
 
       .media-card img {
@@ -605,7 +575,7 @@ export function buildXPostArchive(input: {
         height: auto;
         aspect-ratio: 4 / 3;
         object-fit: cover;
-        background: rgba(22, 33, 44, 0.05);
+        background: var(--surface-soft);
       }
 
       .media-card figcaption {
@@ -621,7 +591,7 @@ export function buildXPostArchive(input: {
         }
 
         .post-shell {
-          border-radius: 22px;
+          border-radius: 12px;
         }
 
         .author-row {
@@ -1025,18 +995,7 @@ export function buildXiaohongshuNoteArchive(input: {
     <base href="${escapeHtmlAttribute(currentUrl.toString())}" />
     <title>${escapeHtml(title)}</title>
     <style>
-      :root {
-        color-scheme: light;
-        --bg: #f5f1ee;
-        --surface: rgba(255, 255, 255, 0.92);
-        --surface-strong: #fffaf7;
-        --border: rgba(37, 20, 17, 0.08);
-        --text: #221b19;
-        --muted: #766761;
-        --accent: #e34f6f;
-        --accent-soft: rgba(227, 79, 111, 0.12);
-        --shadow: 0 28px 70px rgba(37, 20, 17, 0.08);
-      }
+      ${READER_THEME_CSS}
 
       * {
         box-sizing: border-box;
@@ -1046,16 +1005,13 @@ export function buildXiaohongshuNoteArchive(input: {
       body {
         margin: 0;
         padding: 0;
-        background:
-          radial-gradient(circle at top left, rgba(255, 215, 218, 0.58), transparent 28%),
-          radial-gradient(circle at bottom right, rgba(255, 240, 221, 0.72), transparent 34%),
-          var(--bg);
+        background: var(--bg);
         color: var(--text);
       }
 
       body {
         padding: clamp(12px, 2.4vw, 28px);
-        font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       }
 
       .note-shell {
@@ -1069,7 +1025,7 @@ export function buildXiaohongshuNoteArchive(input: {
       .media-panel,
       .content-panel {
         border: 1px solid var(--border);
-        border-radius: 30px;
+        border-radius: 12px;
         background: var(--surface);
         box-shadow: var(--shadow);
         overflow: hidden;
@@ -1111,10 +1067,10 @@ export function buildXiaohongshuNoteArchive(input: {
       }
 
       .media-card {
-        border-radius: 24px;
+        border-radius: 12px;
         overflow: hidden;
-        background: #efe7df;
-        border: 1px solid rgba(34, 27, 25, 0.08);
+        background: var(--surface-soft);
+        border: 1px solid var(--border);
       }
 
       .media-card img {
@@ -1127,8 +1083,7 @@ export function buildXiaohongshuNoteArchive(input: {
 
       .content-panel {
         padding: clamp(22px, 3vw, 30px);
-        background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 250, 247, 0.94));
+        background: var(--surface-soft);
       }
 
       .author-row {
@@ -1144,7 +1099,7 @@ export function buildXiaohongshuNoteArchive(input: {
         border-radius: 999px;
         flex: 0 0 auto;
         object-fit: cover;
-        background: rgba(34, 27, 25, 0.08);
+        background: var(--surface-soft);
       }
 
       .author-meta {
@@ -1180,7 +1135,7 @@ export function buildXiaohongshuNoteArchive(input: {
       .meta-pill {
         padding: 8px 12px;
         border-radius: 999px;
-        border: 1px solid rgba(34, 27, 25, 0.08);
+        border: 1px solid var(--border);
         background: var(--surface-strong);
         color: var(--muted);
         font-size: 12px;
@@ -1214,8 +1169,8 @@ export function buildXiaohongshuNoteArchive(input: {
         justify-content: center;
         margin-top: 22px;
         padding: 12px 16px;
-        border-radius: 14px;
-        background: #221b19;
+        border-radius: 12px;
+        background: #262a31;
         color: #fff;
         text-decoration: none;
         font-size: 14px;
@@ -1259,7 +1214,7 @@ export function buildXiaohongshuNoteArchive(input: {
                 <img src="${escapeHtmlAttribute(item.src)}" alt="${escapeHtmlAttribute(item.alt)}" loading="lazy" />
               </figure>
             `).join("")}</div>`
-            : `<div class="media-track"><div class="media-card"><div style="padding: 28px; color: #766761;">这条笔记没有可直接归档的图片。</div></div></div>`
+            : `<div class="media-track"><div class="media-card"><div style="padding: 28px; color: var(--muted);">这条笔记没有可直接归档的图片。</div></div></div>`
         }
       </section>
     </main>
@@ -1668,16 +1623,7 @@ export function buildSspaiArticleArchive(doc: Document, currentUrl: URL) {
     <title>${escapeHtml(title)}</title>
     ${description ? `<meta name="description" content="${escapeHtmlAttribute(description)}" />` : ""}
     <style>
-      :root {
-        color-scheme: light;
-        --bg: #f6f2e9;
-        --surface: rgba(255, 253, 249, 0.96);
-        --surface-strong: #f0e7d7;
-        --text: #221d16;
-        --muted: #70675b;
-        --border: rgba(133, 108, 71, 0.16);
-        --accent: #0f5d78;
-      }
+      ${READER_THEME_CSS}
 
       * {
         box-sizing: border-box;
@@ -1687,12 +1633,9 @@ export function buildSspaiArticleArchive(doc: Document, currentUrl: URL) {
       body {
         margin: 0;
         padding: 0;
-        background:
-          radial-gradient(circle at top left, rgba(255, 223, 168, 0.28), transparent 36%),
-          radial-gradient(circle at bottom right, rgba(129, 192, 220, 0.26), transparent 34%),
-          var(--bg);
+        background: var(--bg);
         color: var(--text);
-        font-family: "Iowan Old Style", "Palatino Linotype", "Noto Serif SC", serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       }
 
       body {
@@ -1703,16 +1646,14 @@ export function buildSspaiArticleArchive(doc: Document, currentUrl: URL) {
         max-width: 860px;
         margin: 0 auto;
         border: 1px solid var(--border);
-        border-radius: 28px;
+        border-radius: 12px;
         overflow: hidden;
         background: var(--surface);
-        box-shadow:
-          0 30px 90px rgba(34, 29, 22, 0.08),
-          inset 0 1px 0 rgba(255, 255, 255, 0.85);
+        box-shadow: var(--shadow);
       }
 
       .hero {
-        background: linear-gradient(180deg, rgba(34, 29, 22, 0.06), rgba(34, 29, 22, 0));
+        background: var(--surface-soft);
       }
 
       .hero img {
@@ -1761,16 +1702,16 @@ export function buildSspaiArticleArchive(doc: Document, currentUrl: URL) {
         width: 5px;
         height: 5px;
         border-radius: 999px;
-        background: rgba(112, 103, 91, 0.55);
+        background: var(--muted);
       }
 
       .summary {
         margin: 20px 0 0;
         padding: 14px 16px;
-        border-radius: 16px;
-        border: 1px solid rgba(133, 108, 71, 0.12);
+        border-radius: 12px;
+        border: 1px solid var(--border);
         background: var(--surface-strong);
-        color: #4a4137;
+        color: var(--text);
         font-size: 15px;
         line-height: 1.75;
       }
@@ -1823,8 +1764,8 @@ export function buildSspaiArticleArchive(doc: Document, currentUrl: URL) {
         max-width: 100%;
         width: 100%;
         height: auto;
-        border-radius: 18px;
-        background: rgba(34, 29, 22, 0.04);
+        border-radius: 12px;
+        background: var(--surface-soft);
       }
 
       .article-body figure.image,
@@ -1852,16 +1793,16 @@ export function buildSspaiArticleArchive(doc: Document, currentUrl: URL) {
 
       .article-body blockquote {
         padding: 14px 18px;
-        border-left: 3px solid rgba(15, 93, 120, 0.35);
-        background: rgba(15, 93, 120, 0.06);
-        border-radius: 0 16px 16px 0;
-        color: #474038;
+        border-left: 3px solid #b8c9dd;
+        background: var(--quote);
+        border-radius: 0 8px 8px 0;
+        color: var(--text);
       }
 
       .article-body pre {
         overflow: auto;
         padding: 16px;
-        border-radius: 16px;
+        border-radius: 12px;
         background: #1f2430;
         color: #f3f5f7;
         font-size: 14px;
@@ -1875,14 +1816,14 @@ export function buildSspaiArticleArchive(doc: Document, currentUrl: URL) {
       .article-body :not(pre) > code {
         padding: 0.16em 0.38em;
         border-radius: 6px;
-        background: rgba(15, 93, 120, 0.08);
-        color: #17485b;
+        background: var(--accent-soft);
+        color: var(--accent);
         font-size: 0.92em;
       }
 
       .article-body hr {
         border: 0;
-        border-top: 1px solid rgba(133, 108, 71, 0.16);
+        border-top: 1px solid var(--border);
       }
 
       @media (max-width: 640px) {
@@ -1891,7 +1832,7 @@ export function buildSspaiArticleArchive(doc: Document, currentUrl: URL) {
         }
 
         .page {
-          border-radius: 20px;
+          border-radius: 12px;
         }
 
         .content {
