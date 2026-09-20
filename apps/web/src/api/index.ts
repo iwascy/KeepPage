@@ -82,12 +82,14 @@ type DataSource = "api";
 export class ApiError extends Error {
   readonly status: number;
   readonly details?: unknown;
+  readonly code?: string;
 
-  constructor(status: number, message: string, details?: unknown) {
+  constructor(status: number, message: string, details?: unknown, code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.details = details;
+    this.code = code;
   }
 }
 
@@ -343,7 +345,7 @@ async function request(path: string, options: RequestOptions = {}) {
 
   if (!response.ok) {
     const errorPayload = await readErrorPayload(response);
-    throw new ApiError(response.status, errorPayload.message, errorPayload.details);
+    throw new ApiError(response.status, errorPayload.message, errorPayload.details, errorPayload.code);
   }
 
   return response;
@@ -471,16 +473,19 @@ async function requestVoid(path: string, options: RequestOptions = {}) {
 async function readErrorPayload(response: Response) {
   try {
     const payload = await response.json() as {
+      error?: string;
       message?: string;
       details?: unknown;
     };
     return {
+      code: payload.error,
       message: payload.message ?? `API ${response.status}`,
       details: payload.details,
     };
   } catch {
     const text = await response.text();
     return {
+      code: undefined,
       message: text || `API ${response.status}`,
       details: undefined,
     };
@@ -1027,7 +1032,7 @@ export async function createArchiveObjectUrl(
   );
   if (!response.ok) {
     const errorPayload = await readErrorPayload(response);
-    throw new ApiError(response.status, errorPayload.message, errorPayload.details);
+    throw new ApiError(response.status, errorPayload.message, errorPayload.details, errorPayload.code);
   }
   const html = ensureArchiveBaseHref(await response.text(), sourceUrl);
   const blob = new Blob([html], {

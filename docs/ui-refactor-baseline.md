@@ -29,7 +29,7 @@
 | 批量操作 | 跨筛选保留选择、全选/取消、收藏夹/标签调整、分享、本地插件存档与删除确认 |
 | 详情 `#/bookmarks/:id` | 版本切换、归档预览/下载、对象缺失反馈与返回列表 |
 | 导入 `#/imports/new`、`#/imports`、`#/imports/:id` | 来源输入、预览、提交、历史与结果详情 |
-| 私密 `#/settings/private-mode`、`#/private/bookmarks/:id` | 设置/解锁/锁定/重设密码、私密列表与归档；内容不混入普通列表，刷新后重新解锁 |
+| 私密 `#/settings/private-mode`、`#/private/bookmarks/:id` | 设置/解锁/锁定/重设密码、私密列表与归档；输错私密密码或重设时输错登录密码只显示错误，保留账号登录；私密会话失效只锁定私密空间，账号会话失效仍退出登录；内容不混入普通列表，刷新后重新解锁 |
 | 分享 `#/settings/shares`、`/s/:token` | 多选创建、复制/管理/撤销、访客只读浏览与失效状态；不公开私密内容 |
 | API Token `#/settings/api-tokens` | 创建、一次性显示密钥、撤销与异常状态 |
 | 扩展 `#/settings/extension-devices`、`#/extension/connect` | 设备管理、撤销、连接授权流程 |

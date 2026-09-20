@@ -699,10 +699,17 @@ export function App({
   }
 
   function handlePrivateModeApiError(error: unknown) {
+    // Password checks can fail while the account session remains valid.
+    if (
+      error instanceof ApiError &&
+      (error.code === "PrivateModeInvalidPassword" || error.code === "InvalidCredentials")
+    ) {
+      return false;
+    }
     if (
       error instanceof ApiError &&
       (error.status === 401 || error.status === 403) &&
-      /(私密|密码|PrivateMode|locked)/i.test(error.message)
+      error.code === "PrivateModeLocked"
     ) {
       setPrivateToken(null);
       setPrivateItems([]);
@@ -1462,7 +1469,7 @@ export function App({
       setPrivatePasswordChangeMessage(null);
       await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
-      if (handleProtectedApiError(error)) {
+      if (handlePrivateModeApiError(error)) {
         return;
       }
       setPrivateError(toErrorMessage(error));
@@ -1490,7 +1497,7 @@ export function App({
       setPrivatePasswordChangeMessage(null);
       await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
-      if (handleProtectedApiError(error)) {
+      if (handlePrivateModeApiError(error)) {
         return;
       }
       setPrivateError(toErrorMessage(error));
@@ -1526,7 +1533,7 @@ export function App({
         goToPrivateMode();
       }
     } catch (error) {
-      if (handleProtectedApiError(error)) {
+      if (handlePrivateModeApiError(error)) {
         return;
       }
       setPrivateError(toErrorMessage(error));
@@ -1570,7 +1577,7 @@ export function App({
       setPrivatePasswordChangeMessage("私密密码已更新。");
       await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
-      if (handleProtectedApiError(error)) {
+      if (handlePrivateModeApiError(error)) {
         return;
       }
       setPrivateError(toErrorMessage(error));
