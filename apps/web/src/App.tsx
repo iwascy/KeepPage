@@ -332,7 +332,7 @@ export function App({
   const [managerFeedback, setManagerFeedback] = useState<InlineFeedback | null>(null);
   const [managerDialog, setManagerDialog] = useState<ManagerDialogState>({ kind: "closed" });
   const [managerDialogName, setManagerDialogName] = useState("");
-  const [managerDialogPath, setManagerDialogPath] = useState("");
+  const [managerDialogParentId, setManagerDialogParentId] = useState("");
   const [managerDialogColor, setManagerDialogColor] = useState("");
   const [managerDialogError, setManagerDialogError] = useState<string | null>(null);
   const [metadataNote, setMetadataNote] = useState("");
@@ -1064,30 +1064,36 @@ export function App({
     setManagerDialogError(null);
     if (managerDialog.kind === "create-folder") {
       setManagerDialogName("");
-      setManagerDialogPath("");
+      setManagerDialogParentId("");
       setManagerDialogColor("");
       return;
     }
     if (managerDialog.kind === "edit-folder") {
+      setManagerDialogName(managerDialog.folder.name);
+      setManagerDialogParentId("");
+      setManagerDialogColor("");
+      return;
+    }
+    if (managerDialog.kind === "move-folder") {
       setManagerDialogName("");
-      setManagerDialogPath(managerDialog.folder.path);
+      setManagerDialogParentId(managerDialog.folder.parentId ?? "");
       setManagerDialogColor("");
       return;
     }
     if (managerDialog.kind === "create-tag") {
       setManagerDialogName("");
-      setManagerDialogPath("");
+      setManagerDialogParentId("");
       setManagerDialogColor("");
       return;
     }
     if (managerDialog.kind === "edit-tag") {
       setManagerDialogName(managerDialog.tag.name);
-      setManagerDialogPath("");
+      setManagerDialogParentId("");
       setManagerDialogColor(managerDialog.tag.color ?? "");
       return;
     }
     setManagerDialogName("");
-    setManagerDialogPath("");
+    setManagerDialogParentId("");
     setManagerDialogColor("");
   }, [managerDialog]);
 
@@ -1711,25 +1717,26 @@ export function App({
     });
   }
 
-  async function handleEditFolderPath(folder: Folder, nextPathInput: string) {
-    const nextPath = nextPathInput
-      .split("/")
-      .map((segment) => segment.trim())
-      .filter(Boolean);
-
-    const nextName = nextPath[nextPath.length - 1] ?? folder.name;
-    const parentPath = nextPath.slice(0, -1).join("/");
-    const parent = parentPath ? folders.find((item) => item.path === parentPath) : undefined;
-    if (parentPath && !parent) {
-      throw new Error(`未找到父收藏夹路径：${parentPath}`);
-    }
-
+  async function handleRenameFolder(folder: Folder, name: string) {
     await runManagerAction(async () => {
-      const updated = await appDataSource.updateFolder(folder.id, {
-        name: nextName,
-        parentId: parent?.id ?? null,
-      }, authToken!);
-      return `已更新收藏夹路径：${updated.path}`;
+      const updated = await appDataSource.updateFolder(folder.id, { name }, authToken!);
+      return `已重命名收藏夹：${updated.path}`;
+    });
+  }
+
+  async function handleMoveFolder(folder: Folder, parentId: string | null) {
+    if (parentId) {
+      const parent = folders.find((item) => item.id === parentId);
+      if (!parent) {
+        throw new Error("目标收藏夹不存在，请重新选择。");
+      }
+      if (parent.id === folder.id || parent.path.startsWith(`${folder.path}/`)) {
+        throw new Error("不能移动到自身或子收藏夹中。");
+      }
+    }
+    await runManagerAction(async () => {
+      const updated = await appDataSource.updateFolder(folder.id, { parentId }, authToken!);
+      return `已移动收藏夹：${updated.path}`;
     });
   }
 
@@ -1789,16 +1796,22 @@ export function App({
       }
 
       if (managerDialog.kind === "edit-folder") {
-        const trimmedPath = managerDialogPath.trim();
-        if (!trimmedPath) {
-          setManagerDialogError("完整路径不能为空。");
+        const trimmedName = managerDialogName.trim();
+        if (!trimmedName) {
+          setManagerDialogError("收藏夹名称不能为空。");
           return;
         }
-        if (trimmedPath.split("/").map((segment) => segment.trim()).filter(Boolean).length === 0) {
-          setManagerDialogError("请输入至少一层有效路径。");
+        if (trimmedName.includes("/")) {
+          setManagerDialogError("收藏夹名称里不能包含 / 。");
           return;
         }
-        await handleEditFolderPath(managerDialog.folder, trimmedPath);
+        await handleRenameFolder(managerDialog.folder, trimmedName);
+        closeManagerDialog();
+        return;
+      }
+
+      if (managerDialog.kind === "move-folder") {
+        await handleMoveFolder(managerDialog.folder, managerDialogParentId || null);
         closeManagerDialog();
         return;
       }
@@ -2084,6 +2097,13 @@ export function App({
             icon: "RN",
             disabled: managerBusy,
             onSelect: () => openManagerDialog({ kind: "edit-folder", folder }),
+          },
+          {
+            id: "move-folder",
+            label: "移动收藏夹",
+            icon: "MV",
+            disabled: managerBusy,
+            onSelect: () => openManagerDialog({ kind: "move-folder", folder }),
           },
         ],
       },
@@ -2534,13 +2554,14 @@ export function App({
         busy={managerBusy}
         error={managerDialogError}
         nameValue={managerDialogName}
-        pathValue={managerDialogPath}
+        parentIdValue={managerDialogParentId}
+        folders={folders}
         colorValue={managerDialogColor}
         onClose={closeManagerDialog}
         onSubmit={(event) => void handleManagerDialogSubmit(event)}
         onConfirmDelete={() => void handleManagerDialogDelete()}
         onNameChange={setManagerDialogName}
-        onPathChange={setManagerDialogPath}
+        onParentIdChange={setManagerDialogParentId}
         onColorChange={setManagerDialogColor}
       />
       <LocalArchiveDialog

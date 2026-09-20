@@ -15,6 +15,7 @@ export type ManagerDialogState =
   | { kind: "delete-bookmarks-batch"; bookmarkIds: string[]; count: number }
   | { kind: "create-folder"; parent?: Folder }
   | { kind: "edit-folder"; folder: Folder }
+  | { kind: "move-folder"; folder: Folder }
   | { kind: "delete-folder"; folder: Folder }
   | { kind: "create-tag" }
   | { kind: "edit-tag"; tag: Tag }
@@ -57,26 +58,28 @@ export function ManagerDialog({
   busy,
   error,
   nameValue,
-  pathValue,
+  parentIdValue,
+  folders,
   colorValue,
   onClose,
   onSubmit,
   onConfirmDelete,
   onNameChange,
-  onPathChange,
+  onParentIdChange,
   onColorChange,
 }: {
   state: ManagerDialogState;
   busy: boolean;
   error: string | null;
   nameValue: string;
-  pathValue: string;
+  parentIdValue: string;
+  folders: Folder[];
   colorValue: string;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onConfirmDelete: () => void;
   onNameChange: (value: string) => void;
-  onPathChange: (value: string) => void;
+  onParentIdChange: (value: string) => void;
   onColorChange: (value: string) => void;
 }) {
   const dialogRef = useDialogFocus(state.kind !== "closed", onClose, busy);
@@ -178,7 +181,7 @@ export function ManagerDialog({
   const bookmarkDeleteTarget = state.kind === "delete-bookmark" ? state.bookmark : null;
   const folderDeleteTarget = state.kind === "delete-folder" ? state.folder : null;
   const tagDeleteTarget = state.kind === "delete-tag" ? state.tag : null;
-  const isFolderDialog = state.kind === "edit-folder" || state.kind === "delete-folder";
+  const isFolderDialog = state.kind === "edit-folder" || state.kind === "move-folder" || state.kind === "delete-folder";
   const tagColor = colorValue.trim();
 
   let title = "";
@@ -187,10 +190,15 @@ export function ManagerDialog({
   let submitLabel = "";
 
   if (state.kind === "edit-folder") {
-    eyebrow = "编辑收藏夹路径";
-    title = "调整收藏夹路径";
-    description = "直接改完整路径，系统会自动识别父级并把它移动到正确位置。";
-    submitLabel = "保存路径";
+    eyebrow = "重命名收藏夹";
+    title = "重命名收藏夹";
+    description = "修改当前收藏夹的名称，保留所在目录及子收藏夹。";
+    submitLabel = "保存名称";
+  } else if (state.kind === "move-folder") {
+    eyebrow = "移动收藏夹";
+    title = "移动收藏夹";
+    description = "选择目标位置，子收藏夹和书签会一起移动。";
+    submitLabel = "移动";
   } else if (state.kind === "delete-bookmark") {
     eyebrow = "删除书签";
     title = "删除这条书签？";
@@ -428,13 +436,13 @@ export function ManagerDialog({
                 </div>
                 <div className="manager-dialog-hero-copy">
                   <strong>
-                    {state.kind === "edit-folder"
-                      ? (pathValue.trim() || state.folder.path)
+                    {state.kind === "edit-folder" || state.kind === "move-folder"
+                      ? state.folder.path
                       : `#${nameValue.trim() || "新标签"}`}
                   </strong>
                   <span>
-                    {state.kind === "edit-folder"
-                      ? "完整路径支持多层结构，例如：工作/研究/案例。"
+                    {isFolderDialog
+                      ? "当前位置"
                       : "先预览一下最终效果，不满意可以继续改。"}
                   </span>
                 </div>
@@ -442,14 +450,33 @@ export function ManagerDialog({
 
               {state.kind === "edit-folder" ? (
                 <label className="field">
-                  <span>完整路径</span>
+                  <span>收藏夹名称</span>
                   <input
                     autoFocus
-                    maxLength={240}
-                    placeholder="例如：工作/研究"
-                    value={pathValue}
-                    onChange={(event) => onPathChange(event.target.value)}
+                    disabled={busy}
+                    maxLength={120}
+                    placeholder="例如：研究"
+                    value={nameValue}
+                    onChange={(event) => onNameChange(event.target.value)}
                   />
+                </label>
+              ) : null}
+
+              {state.kind === "move-folder" ? (
+                <label className="field">
+                  <span>目标位置</span>
+                  <select
+                    autoFocus
+                    disabled={busy}
+                    value={parentIdValue}
+                    onChange={(event) => onParentIdChange(event.target.value)}
+                  >
+                    <option value="">根目录</option>
+                    {folders
+                      .filter((folder) => folder.id !== state.folder.id && !folder.path.startsWith(`${state.folder.path}/`))
+                      .sort((left, right) => left.path.localeCompare(right.path, "zh-CN"))
+                      .map((folder) => <option key={folder.id} value={folder.id}>{folder.path}</option>)}
+                  </select>
                 </label>
               ) : null}
 

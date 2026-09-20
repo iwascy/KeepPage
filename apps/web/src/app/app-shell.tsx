@@ -96,7 +96,7 @@ export function AppShell({
   children: ReactNode;
   logoutLabel?: string;
 }) {
-  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
+  const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(() => new Set());
   const isSettingsPage = routePage.startsWith("settings-") || routePage.startsWith("imports-") || routePage === "private-mode" || routePage === "extension-connect";
   const [sidebarView, setSidebarView] = useState<"main" | "settings">(isSettingsPage ? "settings" : "main");
   useEffect(() => { setSidebarView(isSettingsPage ? "settings" : "main"); }, [routePage, isSettingsPage]);
@@ -123,23 +123,6 @@ export function AppShell({
     return mapping;
   }, [sortedFolders]);
 
-  const descendantIdsByFolder = useMemo(() => {
-    const mapping = new Map<string, string[]>();
-
-    function visit(folder: Folder): string[] {
-      const childIds = (childrenByParent.get(folder.id) ?? []).flatMap(visit);
-      const ids = [folder.id, ...childIds];
-      mapping.set(folder.id, ids);
-      return ids;
-    }
-
-    for (const folder of childrenByParent.get(null) ?? []) {
-      visit(folder);
-    }
-
-    return mapping;
-  }, [childrenByParent]);
-
   const visibleFolderRows = useMemo(() => {
     if (folderSearch.trim()) {
       return sortedFolders.filter((folder) => folder.path.toLocaleLowerCase().includes(folderSearch.trim().toLocaleLowerCase())).map((folder) => ({ folder, depth: 0, hasChildren: false }));
@@ -153,7 +136,7 @@ export function AppShell({
         depth,
         hasChildren: folderChildren.length > 0,
       });
-      if (collapsedFolderIds.has(folder.id)) {
+      if (!expandedFolderIds.has(folder.id)) {
         return;
       }
       for (const child of folderChildren) {
@@ -166,7 +149,7 @@ export function AppShell({
     }
 
     return rows;
-  }, [childrenByParent, collapsedFolderIds, folderSearch, sortedFolders]);
+  }, [childrenByParent, expandedFolderIds, folderSearch, sortedFolders]);
 
   const folderCounts = useMemo(() => {
     const mapping = new Map<string, number>();
@@ -186,7 +169,7 @@ export function AppShell({
   }, [childrenByParent, folderItemCounts]);
 
   useEffect(() => {
-    setCollapsedFolderIds((current) => {
+    setExpandedFolderIds((current) => {
       const next = new Set(
         [...current].filter((folderId) => sortedFolders.some((folder) => folder.id === folderId)),
       );
@@ -208,16 +191,9 @@ export function AppShell({
 
   useEffect(() => {
     if (!selectedFolderId) return;
-    setCollapsedFolderIds((current) => {
-      const next = new Set(current);
-      for (const [id, descendants] of descendantIdsByFolder) {
-        if (id !== selectedFolderId && descendants.includes(selectedFolderId)) next.delete(id);
-      }
-      return next.size === current.size ? current : next;
-    });
     const frame = requestAnimationFrame(() => folderListRef.current?.querySelector<HTMLElement>(".is-active")?.scrollIntoView({ block: "nearest" }));
     return () => cancelAnimationFrame(frame);
-  }, [selectedFolderId, descendantIdsByFolder]);
+  }, [selectedFolderId]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 1080px)");
@@ -279,7 +255,7 @@ export function AppShell({
   }
 
   function handleToggleFolder(folder: Folder) {
-    setCollapsedFolderIds((current) => {
+    setExpandedFolderIds((current) => {
       const next = new Set(current);
       if (next.has(folder.id)) {
         next.delete(folder.id);
@@ -534,14 +510,14 @@ export function AppShell({
                         <button
                           className={[
                             "home-folder-toggle",
-                            collapsedFolderIds.has(folder.id) ? "" : "is-expanded",
+                            expandedFolderIds.has(folder.id) ? "is-expanded" : "",
                             contextMenuFolderId === folder.id ? "is-context-open" : "",
                           ].filter(Boolean).join(" ")}
                           type="button"
                           onContextMenuCapture={(event) => onFolderContextMenu(folder, event)}
                           onClick={() => handleToggleFolder(folder)}
-                          aria-expanded={!collapsedFolderIds.has(folder.id)}
-                          aria-label={`${collapsedFolderIds.has(folder.id) ? "展开" : "收起"} ${folder.name}`}
+                          aria-expanded={expandedFolderIds.has(folder.id)}
+                          aria-label={`${expandedFolderIds.has(folder.id) ? "收起" : "展开"} ${folder.name}`}
                         >
                           <Icon name="keyboard_arrow_right" />
                         </button>
