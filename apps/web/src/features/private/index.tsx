@@ -22,7 +22,10 @@ type ArchivePreviewState =
 
 export function PrivateModePage({
   summary,
+  onRetryStatus,
   privateToken,
+  searchInput,
+  onSearchChange,
   items,
   loadState,
   error,
@@ -47,7 +50,10 @@ export function PrivateModePage({
   onOpenBookmark,
 }: {
   summary: PrivateVaultSummary | null;
+  onRetryStatus: () => void;
   privateToken: string | null;
+  searchInput: string;
+  onSearchChange: (value: string) => void;
   items: Bookmark[];
   loadState: LoadState;
   error: string | null;
@@ -74,202 +80,101 @@ export function PrivateModePage({
   const enabled = Boolean(summary?.enabled);
   const unlocked = Boolean(privateToken);
 
-  if (!summary) {
-    return (
-      <section className="private-mode-page">
-        <header className="private-mode-hero">
-          <div>
-            <p className="eyebrow">设置</p>
-            <h1>私密模式</h1>
-            <p>正在读取私密模式状态...</p>
-          </div>
-        </header>
-        {error ? (
-          <p className="status-banner is-error">{error}</p>
-        ) : (
-          <p className="status-banner">正在加载私密模式状态...</p>
-        )}
-      </section>
-    );
-  }
-
   return (
-    <section className="private-mode-page">
-      <header className="private-mode-hero">
+    <section className="private-mode-page" aria-labelledby="private-mode-title">
+      <header className="private-mode-header settings-page-heading">
         <div>
-          <p className="eyebrow">设置</p>
-          <h1>私密模式</h1>
-          <p>
-            私密模式用于默认隐藏和密码进入，不等同于加密保险箱。
-            当前版本会把私密内容存到独立私密链路中，首页默认不会展示。
-          </p>
+          <p className="settings-kicker">资料库</p>
+          <h1 id="private-mode-title">私密模式</h1>
+          <p>为私密收藏设置独立密码，普通列表和搜索中不显示这些内容。</p>
         </div>
         {enabled && unlocked ? (
           <button className="secondary-button" type="button" onClick={onLock} disabled={busy}>
-            退出私密模式
+            <Icon name="lock" />{busy ? "处理中…" : "锁定私密空间"}
           </button>
         ) : null}
       </header>
 
-      <div className="private-mode-stats">
-        <article className="private-mode-stat-card">
-          <span>当前状态</span>
-          <strong>{!enabled ? "未启用" : unlocked ? "已进入" : "已锁定"}</strong>
-          <small>登录账号后仍需单独输入私密密码</small>
-        </article>
-        <article className="private-mode-stat-card">
-          <span>私密条目</span>
-          <strong>{summary.totalItems ?? 0}</strong>
-          <small>默认不会出现在普通首页和普通搜索中</small>
-        </article>
-        <article className="private-mode-stat-card">
-          <span>最近更新</span>
-          <strong>{summary.lastUpdatedAt ? formatRelativeWhen(summary.lastUpdatedAt) : "暂无"}</strong>
-          <small>{summary.lastUpdatedAt ? formatWhen(summary.lastUpdatedAt) : "还没有私密内容"}</small>
-        </article>
-      </div>
-
-      {!enabled ? (
-        <section className="private-mode-card">
-          <h2>启用私密模式</h2>
-          <p>设置一个独立密码后，扩展和 Web 都可以把内容保存到私密工作区。</p>
-          <div className="private-mode-form">
-            <label>
-              <span>私密密码</span>
-              <input
-                type="password"
-                value={setupPassword}
-                onChange={(event) => onSetupPasswordChange(event.target.value)}
-                placeholder="至少 8 位"
-              />
-            </label>
-            <label>
-              <span>确认密码</span>
-              <input
-                type="password"
-                value={setupConfirm}
-                onChange={(event) => onSetupConfirmChange(event.target.value)}
-                placeholder="再次输入"
-              />
-            </label>
-          </div>
-          <button className="primary-button" type="button" onClick={onSetup} disabled={busy}>
-            {busy ? "启用中..." : "启用私密模式"}
-          </button>
-        </section>
-      ) : !unlocked ? (
-        <section className="private-mode-card">
-          <h2>输入密码进入私密空间</h2>
-          <p>关闭或刷新 KeepPage 页面后，会默认退出私密模式。</p>
-          <div className="private-mode-form">
-            <label>
-              <span>私密密码</span>
-              <input
-                type="password"
-                value={unlockPassword}
-                onChange={(event) => onUnlockPasswordChange(event.target.value)}
-                placeholder="输入私密密码"
-              />
-            </label>
-          </div>
-          <button className="primary-button" type="button" onClick={onUnlock} disabled={busy}>
-            {busy ? "进入中..." : "进入私密空间"}
-          </button>
-        </section>
+      {error ? <p className="private-mode-feedback is-error" role="alert">{error}</p> : null}
+      {!summary ? (
+        <div className="private-mode-state" role="status" aria-busy={!error}>
+          <Icon name={error ? "lock" : "refresh"} />
+          <h2>{error ? "暂时无法读取私密设置" : "正在加载私密设置…"}</h2>
+          <p>{error ? "请检查连接后重试。" : "正在确认当前状态和私密内容数量。"}</p>
+          {error ? <button className="secondary-button" type="button" onClick={onRetryStatus}>重新加载</button> : null}
+        </div>
       ) : (
-        <section className="private-mode-card">
-          <div className="private-mode-card-head">
-            <div>
-              <h2>私密内容</h2>
-              <p>这里是独立私密工作区。内容不会出现在普通列表、普通搜索和普通统计里。</p>
+        <>
+          <section className="private-mode-card" aria-labelledby="private-overview-title">
+            <div className="private-mode-section-heading">
+              <h2 id="private-overview-title">空间概览</h2>
+              <span className="private-mode-status"><span aria-hidden="true" />{!enabled ? "未启用" : unlocked ? "已解锁" : "已锁定"}</span>
             </div>
-          </div>
+            <dl className="private-mode-overview">
+              <div><dt>私密收藏</dt><dd>{summary.totalItems ?? 0}<span> 条</span></dd></div>
+              <div><dt>最近更新</dt><dd title={summary.lastUpdatedAt ? formatWhen(summary.lastUpdatedAt) : undefined}>{summary.lastUpdatedAt ? formatRelativeWhen(summary.lastUpdatedAt) : "暂无内容"}</dd></div>
+              <div><dt>访问方式</dt><dd>独立密码</dd></div>
+            </dl>
+            <p className="private-mode-boundary"><Icon name="info" />私密模式提供密码访问控制和内容隔离，不是端到端加密保险箱。</p>
+          </section>
 
-          {loadState === "loading" ? (
-            <div className="detail-skeleton private-mode-skeleton" aria-label="正在加载私密内容">
-              <div className="detail-skeleton-block is-hero" />
-              <div className="detail-skeleton-grid">
-                <div className="detail-skeleton-block" />
-                <div className="detail-skeleton-block" />
-                <div className="detail-skeleton-block" />
-              </div>
-            </div>
-          ) : items.length === 0 ? (
-            <div className="private-mode-empty">
-              <h3>还没有私密内容</h3>
-              <p>可以在扩展侧通过“保存到 KP 私密模式”把当前网页保存进来。</p>
-            </div>
+          {!enabled ? (
+            <section className="private-mode-card" aria-labelledby="private-enable-title">
+              <div className="private-mode-section-copy"><h2 id="private-enable-title">启用私密空间</h2><p>设置独立密码后，即可从浏览器扩展保存私密收藏。</p></div>
+              <form className="private-mode-form" onSubmit={(event) => { event.preventDefault(); onSetup(); }}>
+                <label><span>私密密码</span><input type="password" value={setupPassword} onChange={(event) => onSetupPasswordChange(event.target.value)} placeholder="至少 8 位" minLength={8} autoComplete="new-password" required disabled={busy} /></label>
+                <label><span>确认私密密码</span><input type="password" value={setupConfirm} onChange={(event) => onSetupConfirmChange(event.target.value)} placeholder="再次输入私密密码" minLength={8} autoComplete="new-password" required disabled={busy} /></label>
+                <div className="private-mode-action-row"><button className="primary-button" type="submit" disabled={busy}>{busy ? "启用中…" : "启用私密模式"}</button></div>
+              </form>
+            </section>
+          ) : !unlocked ? (
+            <section className="private-mode-card" aria-labelledby="private-unlock-title">
+              <div className="private-mode-section-copy"><h2 id="private-unlock-title">解锁私密空间</h2><p>本次页面会话内保持解锁。刷新或关闭页面后需要重新输入密码。</p></div>
+              <form className="private-mode-form" onSubmit={(event) => { event.preventDefault(); onUnlock(); }}>
+                <label><span>私密密码</span><input type="password" value={unlockPassword} onChange={(event) => onUnlockPasswordChange(event.target.value)} placeholder="输入私密密码" autoComplete="current-password" required disabled={busy} /></label>
+                <div className="private-mode-action-row"><button className="primary-button" type="submit" disabled={busy}><Icon name="lock_open" />{busy ? "解锁中…" : "解锁私密空间"}</button></div>
+              </form>
+            </section>
           ) : (
-            <div className="private-mode-list">
-              {items.map((bookmark) => (
-                <button
-                  className="private-mode-item"
-                  key={bookmark.id}
-                  type="button"
-                  onClick={() => onOpenBookmark(bookmark.id)}
-                >
-                  <div>
-                    <strong>{bookmark.title}</strong>
-                    <p>{bookmark.domain}</p>
-                  </div>
-                  <span>{formatRelativeWhen(bookmark.updatedAt)}</span>
-                </button>
-              ))}
-            </div>
+            <section className="private-mode-card" aria-labelledby="private-content-title">
+              <div className="private-mode-section-copy"><h2 id="private-content-title">私密收藏</h2><p>点击条目查看存档。搜索仅查询私密收藏。</p></div>
+              <label className="private-mode-search"><Icon name="search" /><input type="search" aria-label="搜索私密收藏" placeholder="搜索私密收藏" value={searchInput} onChange={(event) => onSearchChange(event.target.value)} /></label>
+              {loadState === "loading" ? (
+                <div className="private-mode-state is-compact" role="status" aria-busy="true"><Icon name="refresh" /><p>正在加载私密收藏…</p></div>
+              ) : loadState === "error" ? (
+                <div className="private-mode-empty"><h3>私密收藏加载失败</h3><p>请检查连接后重新进入私密空间。</p></div>
+              ) : items.length === 0 ? (
+                <div className="private-mode-empty"><Icon name="bookmark" /><h3>{summary.totalItems ? "没有匹配的私密收藏" : "还没有私密收藏"}</h3><p>{summary.totalItems ? "试试其他关键词，或清空搜索后查看全部私密收藏。" : "在浏览器扩展中选择“保存到 KP 私密模式”，即可将网页加入这里。"}</p></div>
+              ) : (
+                <div className="private-mode-list">
+                  {items.map((bookmark) => (
+                    <button className="private-mode-item" key={bookmark.id} type="button" onClick={() => onOpenBookmark(bookmark.id)}>
+                      <div><strong>{bookmark.title}</strong><p>{bookmark.domain}</p></div>
+                      <span>{formatRelativeWhen(bookmark.updatedAt)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
           )}
-        </section>
+
+          {enabled ? (
+            <section className="private-mode-card private-mode-security" aria-labelledby="private-password-title">
+              <details className="private-mode-password-settings">
+                <summary><span><strong id="private-password-title">修改或重设私密密码</strong><span>忘记私密密码时，也可通过账号登录密码完成验证。</span></span><Icon name="keyboard_arrow_right" /></summary>
+                <form className="private-mode-form" onSubmit={(event) => { event.preventDefault(); onChangePassword(); }}>
+                  <p>验证通过后将设置新密码，并重新解锁当前私密空间。</p>
+                  <label><span>账号登录密码</span><input type="password" value={passwordChangeLogin} onChange={(event) => onPasswordChangeLoginChange(event.target.value)} placeholder="输入当前账号的登录密码" autoComplete="current-password" required disabled={busy} /></label>
+                  <label><span>新的私密密码</span><input type="password" value={passwordChangeNew} onChange={(event) => onPasswordChangeNewChange(event.target.value)} placeholder="至少 8 位" minLength={8} autoComplete="new-password" required disabled={busy} /></label>
+                  <label><span>确认新密码</span><input type="password" value={passwordChangeConfirm} onChange={(event) => onPasswordChangeConfirmChange(event.target.value)} placeholder="再次输入新的私密密码" minLength={8} autoComplete="new-password" required disabled={busy} /></label>
+                  <div className="private-mode-action-row"><button className="primary-button" type="submit" disabled={busy}>{busy ? "更新中…" : "更新私密密码"}</button></div>
+                  {passwordChangeMessage ? <p className="private-mode-feedback" role="status">{passwordChangeMessage}</p> : null}
+                </form>
+              </details>
+            </section>
+          ) : null}
+        </>
       )}
-
-      {enabled ? (
-        <section className="private-mode-card">
-          <h2>修改私密密码</h2>
-          <p>输入当前账号的登录密码完成验证，然后设置新的私密密码。</p>
-          <div className="private-mode-form private-mode-form-three">
-            <label>
-              <span>登录密码</span>
-              <input
-                type="password"
-                value={passwordChangeLogin}
-                onChange={(event) => onPasswordChangeLoginChange(event.target.value)}
-                placeholder="当前账号密码"
-                autoComplete="current-password"
-              />
-            </label>
-            <label>
-              <span>新的私密密码</span>
-              <input
-                type="password"
-                value={passwordChangeNew}
-                onChange={(event) => onPasswordChangeNewChange(event.target.value)}
-                placeholder="至少 8 位"
-                autoComplete="new-password"
-              />
-            </label>
-            <label>
-              <span>确认新密码</span>
-              <input
-                type="password"
-                value={passwordChangeConfirm}
-                onChange={(event) => onPasswordChangeConfirmChange(event.target.value)}
-                placeholder="再次输入"
-                autoComplete="new-password"
-              />
-            </label>
-          </div>
-          <div className="private-mode-action-row">
-            <button className="secondary-button" type="button" onClick={onChangePassword} disabled={busy}>
-              {busy ? "更新中..." : "更新私密密码"}
-            </button>
-            {passwordChangeMessage ? (
-              <span>{passwordChangeMessage}</span>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
-
-      {error ? (
-        <p className="status-banner is-error">{error}</p>
-      ) : null}
     </section>
   );
 }

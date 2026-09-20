@@ -33,11 +33,12 @@ type ImportSharedProps = {
 const SOURCE_OPTIONS: Array<{
   value: ImportSourceType;
   title: string;
+  description: string;
 }> = [
-  { value: "url_list", title: "URL 列表" },
-  { value: "csv_txt", title: "CSV / TXT / MD" },
-  { value: "browser_html", title: "书签 HTML" },
-  { value: "browser_extension", title: "浏览器扩展" },
+  { value: "url_list", title: "链接列表", description: "粘贴网址，每行一条" },
+  { value: "csv_txt", title: "文本文件", description: "支持 CSV、TXT、Markdown" },
+  { value: "browser_html", title: "书签 HTML", description: "导入浏览器导出的书签" },
+  { value: "browser_extension", title: "浏览器扩展", description: "读取扩展导出的内容" },
 ];
 
 function toErrorMessage(error: unknown) {
@@ -239,41 +240,49 @@ export function ImportNewPanel({
     <section className="import-shell">
       <header className="import-header">
         <div className="import-header-copy">
-          <p className="eyebrow">Bulk Import</p>
-          <h2>新建导入</h2>
-          <p>粘贴链接、浏览器书签导出文件或批量文本，先预检再按你的策略写入 KeepPage。</p>
+          <h1>导入书签</h1>
+          <p>选择导入来源，检查内容与分类，再将书签加入资料库。</p>
         </div>
         <button className="secondary-button" type="button" onClick={onOpenHistory}>
           导入历史
         </button>
       </header>
 
-      <form className="import-card import-form" onSubmit={handlePreview}>
-        <div className="import-section">
-          <div className="source-grid">
+      <form className="import-card import-form" onSubmit={handlePreview} aria-busy={previewLoading || submitting}>
+        <section className="import-section" aria-labelledby="import-source-title">
+          <h2 id="import-source-title">导入来源</h2>
+          <div className="source-grid" role="group" aria-label="选择导入来源">
             {SOURCE_OPTIONS.map((source) => (
               <button
                 key={source.value}
                 className={`source-card${sourceType === source.value ? " is-active" : ""}`}
                 type="button"
+                aria-pressed={sourceType === source.value}
+                disabled={previewLoading || submitting}
                 onClick={() => setSourceType(source.value)}
               >
                 <strong>{source.title}</strong>
+                <small>{source.description}</small>
               </button>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="import-section">
+        <section className="import-section" aria-labelledby="import-content-title">
+          <h2 id="import-content-title">导入内容</h2>
           <label className="field">
+            <span>任务名称 <small>可选</small></span>
             <input
+              disabled={previewLoading || submitting}
               value={taskName}
               onChange={(event) => setTaskName(event.target.value)}
-              placeholder="任务名称（可选）"
+              placeholder="例如：工作资料迁移"
             />
           </label>
           <label className="field">
+            <span>链接或文件内容</span>
             <textarea
+              disabled={previewLoading || submitting}
               className="input-textarea"
               value={rawInput}
               onChange={(event) => setRawInput(event.target.value)}
@@ -284,24 +293,30 @@ export function ImportNewPanel({
           <div className="upload-row">
             <label className="secondary-button upload-button">
               读取文件
-              <input type="file" accept=".txt,.md,.csv,.html,.htm" onChange={handleFileRead} />
+              <input type="file" aria-label="选择导入文件" accept=".txt,.md,.csv,.html,.htm" disabled={previewLoading || submitting} onChange={handleFileRead} />
             </label>
-            <span>{fileName || "未选择文件"}</span>
+            <span>{fileName || "支持 .txt、.md、.csv 和书签 .html 文件"}</span>
           </div>
-        </div>
+        </section>
 
-        <div className="import-section">
+        <section className="import-section" aria-labelledby="import-rules-title">
+          <h2 id="import-rules-title">导入规则</h2>
           <label className="field">
+            <span>导入方式</span>
             <select value={mode} onChange={(event) => setMode(event.target.value as ImportMode)} disabled>
               <option value="links_only">仅导入链接</option>
             </select>
           </label>
 
+          <p className="import-field-hint">导入后可在书签列表中选择条目，通过浏览器插件创建网页存档。</p>
           <details className="import-advanced">
-            <summary>高级选项</summary>
+            <summary>重复处理、标题与收藏夹</summary>
+            <div className="import-advanced-body">
             <div className="import-config-grid">
               <label className="field">
+                <span>重复书签</span>
                 <select
+                  disabled={previewLoading || submitting}
                   value={dedupeStrategy}
                   onChange={(event) => setDedupeStrategy(event.target.value as ImportPreviewRequest["dedupeStrategy"])}
                 >
@@ -311,7 +326,9 @@ export function ImportNewPanel({
                 </select>
               </label>
               <label className="field">
+                <span>标题来源</span>
                 <select
+                  disabled={previewLoading || submitting}
                   value={titleStrategy}
                   onChange={(event) => setTitleStrategy(event.target.value as ImportPreviewRequest["titleStrategy"])}
                 >
@@ -321,7 +338,9 @@ export function ImportNewPanel({
                 </select>
               </label>
               <label className="field">
+                <span>收藏夹结构</span>
                 <select
+                  disabled={previewLoading || submitting}
                   value={targetFolderMode}
                   onChange={(event) =>
                     setTargetFolderMode(event.target.value as ImportPreviewRequest["targetFolderMode"])}
@@ -334,30 +353,34 @@ export function ImportNewPanel({
             </div>
             {targetFolderMode === "specific_folder" ? (
               <label className="field">
+                <span>目标收藏夹路径</span>
                 <input
+                  disabled={previewLoading || submitting}
                   value={targetFolderPath}
                   onChange={(event) => setTargetFolderPath(event.target.value)}
                   placeholder="文件夹路径，例如：导入/2026-03"
                 />
               </label>
             ) : null}
+            </div>
           </details>
-        </div>
+        </section>
 
         <div className="import-action-row">
-          <button className="secondary-button" type="submit" disabled={!canPreview || previewLoading}>
-            {previewLoading ? "预检中..." : "预检"}
+          <button className="secondary-button" type="submit" disabled={!canPreview || previewLoading || submitting}>
+            {previewLoading ? "检查中…" : "预览导入结果"}
           </button>
           <button className="primary-button" type="button" disabled={!canStartImport} onClick={handleStartImport}>
-            {submitting ? "导入中..." : importModeLabel(mode)}
+            {submitting ? "正在创建任务…" : "开始导入"}
           </button>
         </div>
-        {previewError ? <p className="auth-error">{previewError}</p> : null}
-        {submitError ? <p className="auth-error">{submitError}</p> : null}
+        {previewError ? <p className="auth-error" role="alert">{previewError}</p> : null}
+        {submitError ? <p className="auth-error" role="alert">{submitError}</p> : null}
       </form>
 
       {preview ? (
-        <section className="import-card import-preview">
+        <section className="import-card import-preview" aria-labelledby="import-preview-title">
+          <header className="import-section-heading"><h2 id="import-preview-title">导入预览</h2><p>以下为预检结果，尚未写入书签。</p></header>
           <div className="summary import-summary">
             <article className="metric"><p>总数</p><h3>{getPreviewTotalCount(preview)}</h3></article>
             <article className="metric"><p>有效</p><h3>{preview.stats.validCount}</h3></article>
@@ -366,10 +389,11 @@ export function ImportNewPanel({
           </div>
           <div className="import-table-wrap">
             <table className="import-table">
+              <caption>收藏夹分布</caption>
               <thead>
                 <tr>
-                  <th>收藏夹</th>
-                  <th>数量</th>
+                  <th scope="col">收藏夹</th>
+                  <th scope="col">数量</th>
                 </tr>
               </thead>
               <tbody>
@@ -387,15 +411,16 @@ export function ImportNewPanel({
             </table>
           </div>
           <div className="import-table-wrap">
-            <table className="import-table">
+            <table className="import-table is-samples">
+              <caption>条目样本</caption>
               <thead>
                 <tr>
-                  <th>标题</th>
-                  <th>URL</th>
-                  <th>收藏夹</th>
-                  <th>标签</th>
-                  <th>状态</th>
-                  <th>说明</th>
+                  <th scope="col">标题</th>
+                  <th scope="col">URL</th>
+                  <th scope="col">收藏夹</th>
+                  <th scope="col">标签</th>
+                  <th scope="col">状态</th>
+                  <th scope="col">说明</th>
                 </tr>
               </thead>
               <tbody>
@@ -405,10 +430,10 @@ export function ImportNewPanel({
                   preview.samples.map((item) => (
                     <tr key={item.id}>
                       <td>{item.title}</td>
-                      <td><span className="ellipsis-cell">{item.url}</span></td>
+                      <td><span className="ellipsis-cell" title={item.url}>{item.url}</span></td>
                       <td>{item.folderPath ?? "—"}</td>
                       <td>{item.sourceTags?.length ? item.sourceTags.join(", ") : "—"}</td>
-                      <td>{item.status}</td>
+                      <td>{({ valid: "可导入", invalid: "无效内容", duplicate_in_file: "文件内重复", duplicate_in_library: "资料库中已存在" })[item.status]}</td>
                       <td>{item.reason || "—"}</td>
                     </tr>
                   ))
@@ -476,8 +501,7 @@ export function ImportHistoryPanel({
     <section className="import-shell">
       <header className="import-header">
         <div className="import-header-copy">
-          <p className="eyebrow">Import Activity</p>
-          <h2>导入历史</h2>
+          <h1>导入历史</h1>
           <p>查看每个导入批次的解析状态、成功率和后续归档结果。</p>
         </div>
         <button className="primary-button" type="button" onClick={onOpenNew}>
@@ -486,14 +510,14 @@ export function ImportHistoryPanel({
       </header>
 
       {loadState === "loading" ? (
-        <section className="loading">正在加载...</section>
+        <section className="import-state-panel" role="status" aria-busy="true">正在读取导入记录…</section>
       ) : loadState === "error" ? (
-        <section className="empty-state">
+        <section className="import-state-panel">
           <h2>加载失败</h2>
           <p>{error ?? "暂时无法读取导入任务。"}</p>
         </section>
       ) : tasks.length === 0 ? (
-        <section className="empty-state">
+        <section className="import-state-panel">
           <h2>还没有导入任务</h2>
           <p>先创建一个导入任务开始吧。</p>
         </section>
@@ -625,23 +649,25 @@ export function ImportDetailPanel({
   }, [taskId, token, runFetchImportTaskDetail, onApiError]);
 
   if (loadState === "loading") {
-    return <section className="loading">正在加载导入详情...</section>;
+    return <section className="import-shell"><section className="import-state-panel" role="status" aria-busy="true">正在读取任务详情…</section></section>;
   }
 
   if (loadState === "error") {
     return (
-      <section className="empty-state">
+      <section className="import-state-panel">
         <h2>导入详情加载失败</h2>
         <p>{error ?? "请稍后重试。"}</p>
+        <button className="secondary-button" type="button" onClick={onOpenHistory}>返回导入历史</button>
       </section>
     );
   }
 
   if (loadState === "not-found" || !detail) {
     return (
-      <section className="empty-state">
+      <section className="import-state-panel">
         <h2>导入任务不存在</h2>
         <p>该任务可能已被删除，或当前账号无权限访问。</p>
+        <button className="secondary-button" type="button" onClick={onOpenHistory}>返回导入历史</button>
       </section>
     );
   }
@@ -653,8 +679,7 @@ export function ImportDetailPanel({
     <section className="import-shell">
       <header className="import-header">
         <div className="import-header-copy">
-          <p className="eyebrow">Import Detail</p>
-          <h2>{task.name}</h2>
+          <h1>{task.name}</h1>
           <p>
             当前状态为 {importTaskStatusLabel(task.status)}，来源类型是 {importSourceLabel(task.sourceType)}，
             执行模式为 {importModeLabel(task.mode)}。
@@ -673,6 +698,7 @@ export function ImportDetailPanel({
       </section>
 
       <section className="import-card import-detail-meta-card">
+        <h2 className="import-section-title">任务概览</h2>
         <div className="import-detail-meta-grid">
           <article className="import-detail-meta-item">
             <span>任务状态</span>
@@ -697,9 +723,10 @@ export function ImportDetailPanel({
         </div>
       </section>
 
+      <h2 className="import-section-title">条目明细 <small>{detail.items.length} 条</small></h2>
       <section className="import-item-grid" aria-label="导入条目明细">
         {detail.items.length === 0 ? (
-          <section className="empty-state">
+          <section className="import-state-panel">
             <h2>暂无条目明细</h2>
             <p>当前任务还没有可展示的处理记录。</p>
           </section>
@@ -718,13 +745,13 @@ export function ImportDetailPanel({
 
               <div className="import-item-url">
                 <Icon name="link" />
-                <span className="ellipsis-cell">{item.url}</span>
+                <span className="ellipsis-cell" title={item.url}>{item.url}</span>
               </div>
 
               <div className="import-item-meta">
                 <div className="import-item-meta-row">
                   <span>处理结果</span>
-                  <strong>{item.dedupeResult ?? "—"}</strong>
+                  <strong>{({ none: "未发生重复", created_bookmark: "新建书签", merged_existing: "合并已有书签", skipped_existing: "跳过已有书签", skipped_duplicate: "跳过重复条目", invalid_input: "无效内容" } as Record<string, string>)[item.dedupeResult ?? ""] ?? item.dedupeResult ?? "—"}</strong>
                 </div>
                 <div className="import-item-meta-row">
                   <span>收藏夹</span>

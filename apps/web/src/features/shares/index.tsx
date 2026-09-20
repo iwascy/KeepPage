@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Share, ShareDetail, ShareOwnerItem } from "@keeppage/domain";
 import { ApiError, fetchBookmarks } from "../../api";
+import { useDialogFocus } from "../../app/use-dialog-focus";
 import { Icon } from "../../components/Icon";
 import { formatRelativeWhen } from "../../lib/date-format";
 import { PublicSharePage } from "./public-page";
@@ -59,6 +60,20 @@ export function SharesPanel({
   const [addQuery, setAddQuery] = useState("");
   const [addCandidates, setAddCandidates] = useState<ShareOwnerItem[]>([]);
   const [addLoading, setAddLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "revoked">("all");
+  const [revoking, setRevoking] = useState<Share | null>(null);
+  const apiErrorHandler = useRef(onApiError);
+  apiErrorHandler.current = onApiError;
+  const candidateRequest = useRef<AbortController | null>(null);
+  const closeEdit = () => { if (!editBusy) { candidateRequest.current?.abort(); setEditing(null); } };
+  const editOpenerRef = useRef<HTMLElement | null>(null);
+  const pageHeadingRef = useRef<HTMLHeadingElement>(null);
+  const editDialogRef = useDialogFocus(Boolean(editing), closeEdit, editBusy, editOpenerRef);
+  const revokeDialogRef = useDialogFocus(Boolean(revoking), () => setRevoking(null), Boolean(busyId));
+  const visibleItems = items.filter((share) => statusFilter === "all" || share.status === statusFilter);
+  const activeCount = items.filter((share) => share.status === "active").length;
+
+  useEffect(() => () => candidateRequest.current?.abort(), []);
 
   const selectedIds = useMemo(
     () => new Set(editItems.map((item) => item.bookmarkId)),
@@ -75,9 +90,9 @@ export function SharesPanel({
     } catch (error) {
       setLoadState("error");
       setFeedback({ kind: "error", message: toErrorMessage(error) });
-      onApiError?.(error);
+      apiErrorHandler.current?.(error);
     }
-  }, [onApiError, token]);
+  }, [token]);
 
   useEffect(() => {
     void load();
@@ -96,46 +111,52 @@ export function SharesPanel({
     if (share.status === "revoked") {
       return;
     }
-    const confirmed = window.confirm(`确定撤销「${share.title}」？链接将立即失效。`);
-    if (!confirmed) {
-      return;
-    }
     setBusyId(share.id);
     try {
       const updated = await revokeShareById(share.id, token);
       setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setFeedback({ kind: "success", message: "已撤销分享" });
+      setFeedback({ kind: "success", message: "已撤销分享，公开链接不再可用。" });
+      setRevoking(null);
+      requestAnimationFrame(() => pageHeadingRef.current?.focus());
     } catch (error) {
       setFeedback({ kind: "error", message: toErrorMessage(error) });
-      onApiError?.(error);
+      apiErrorHandler.current?.(error);
     } finally {
       setBusyId(null);
     }
   }
 
-  async function openEdit(share: Share) {
+  async function openEdit(share: Share, opener: HTMLElement) {
     if (share.status !== "active") {
       return;
     }
+    editOpenerRef.current = opener;
     setBusyId(share.id);
+    setFeedback(null);
     try {
       const detail = await getShareDetail(share.id, token);
       setEditing(detail);
       setEditTitle(detail.title);
       setEditDescription(detail.description);
       setEditItems(detail.items.slice().sort((a, b) => a.position - b.position));
+      candidateRequest.current?.abort();
       setAddQuery("");
       setAddCandidates([]);
+      setAddLoading(false);
     } catch (error) {
       setFeedback({ kind: "error", message: toErrorMessage(error) });
-      onApiError?.(error);
+      apiErrorHandler.current?.(error);
     } finally {
       setBusyId(null);
     }
   }
 
   async function searchAddCandidates(query: string) {
+    candidateRequest.current?.abort();
+    const controller = new AbortController();
+    candidateRequest.current = controller;
     setAddQuery(query);
+    setAddCandidates([]);
     if (isDemoShareToken(token)) {
       // Demo has no full library API here; keep empty picker with guidance.
       setAddCandidates([]);
@@ -149,7 +170,8 @@ export function SharesPanel({
         view: "all",
         limit: 20,
         offset: 0,
-      }, token);
+      }, token, controller.signal);
+      if (controller.signal.aborted) return;
       setAddCandidates(
         result.items
           .filter((item) => !selectedIds.has(item.id))
@@ -162,10 +184,11 @@ export function SharesPanel({
           })),
       );
     } catch (error) {
+      if (controller.signal.aborted) return;
       setFeedback({ kind: "error", message: toErrorMessage(error) });
-      onApiError?.(error);
+      apiErrorHandler.current?.(error);
     } finally {
-      setAddLoading(false);
+      if (!controller.signal.aborted) setAddLoading(false);
     }
   }
 
@@ -189,6 +212,10 @@ export function SharesPanel({
 
   async function saveEdit() {
     if (!editing) {
+      return;
+    }
+    if (!editTitle.trim()) {
+      setFeedback({ kind: "error", message: "请输入分享标题。" });
       return;
     }
     if (editItems.length === 0) {
@@ -227,57 +254,59 @@ export function SharesPanel({
       setFeedback({ kind: "success", message: "分享已更新" });
     } catch (error) {
       setFeedback({ kind: "error", message: toErrorMessage(error) });
-      onApiError?.(error);
+      apiErrorHandler.current?.(error);
     } finally {
       setEditBusy(false);
     }
   }
 
   return (
-    <section className="shares-panel">
-      <div className="shares-panel-header">
+    <section className="shares-panel" aria-labelledby="shares-page-title">
+      <div className="shares-panel-header settings-page-heading">
         <div>
-          <h1>我的分享</h1>
-          <p>管理公开只读链接。持有链接的人无需登录即可查看。</p>
+          <p className="settings-kicker">连接与分享</p>
+          <h1 id="shares-page-title" ref={pageHeadingRef} tabIndex={-1}>分享管理</h1>
+          <p>管理已创建的分享链接、公开内容和访问状态。</p>
         </div>
         <button className="public-share-btn is-ghost" type="button" onClick={onBack}>
-          <Icon name="arrow_back" />
-          返回
+          <Icon name="add" />
+          选择书签创建分享
         </button>
       </div>
 
-      {feedback ? (
-        <p className={`home-feedback${feedback.kind === "error" ? " is-error" : ""}`} role="status">
+      {feedback && !editing && !revoking ? (
+        <p className={`shares-feedback${feedback.kind === "error" ? " is-error" : ""}`} role="status">
           {feedback.message}
         </p>
       ) : null}
 
-      {loadState === "loading" ? (
-        <p className="home-loading-note">正在加载分享列表...</p>
-      ) : null}
-
-      {loadState === "ready" && items.length === 0 ? (
-        <div className="shares-empty">
-          <p>还没有分享。在首页进入多选，勾选书签后点击「分享」即可创建。</p>
+      <div className="shares-policy-note"><Icon name="info" /><p>分享为公开只读链接，持有链接的人无需登录即可查看。撤销后，原链接立即失效。</p></div>
+      <div className="shares-toolbar">
+        <div className="shares-filter" role="group" aria-label="按分享状态筛选">
+          {(["all", "active", "revoked"] as const).map((status) => <button key={status} type="button" aria-pressed={statusFilter === status} onClick={() => setStatusFilter(status)}>{status === "all" ? "全部" : status === "active" ? "可访问" : "已撤销"}<span>{status === "all" ? items.length : status === "active" ? activeCount : items.length - activeCount}</span></button>)}
         </div>
-      ) : null}
+        <button className="public-share-btn is-ghost" type="button" onClick={() => void load()} disabled={loadState === "loading"}><Icon name="refresh" />刷新</button>
+      </div>
+      {loadState === "loading" && !items.length ? <div className="shares-empty" role="status" aria-busy="true"><Icon name="refresh" /><h2>正在加载分享…</h2><p>读取分享链接和访问状态。</p></div> : null}
+      {loadState === "error" && !items.length ? <div className="shares-empty"><Icon name="link_off" /><h2>暂时无法读取分享</h2><p>请检查连接后重试。</p><button className="public-share-btn is-primary" type="button" onClick={() => void load()}>重试加载</button></div> : null}
+      {loadState === "ready" && !visibleItems.length ? <div className="shares-empty"><Icon name="share" /><h2>{items.length ? "此状态下没有分享" : "还没有创建分享"}</h2><p>{items.length ? "切换到其他状态查看已有分享。" : "在书签库进入多选，选择要公开的书签，然后点击“分享”。"}</p>{!items.length ? <button className="public-share-btn is-primary" type="button" onClick={onBack}>前往书签库</button> : null}</div> : null}
 
       <div className="shares-list">
-        {items.map((share) => (
+        {visibleItems.map((share) => (
           <article key={share.id} className="shares-card">
             <div className="shares-card-top">
               <h2 className="shares-card-title">{share.title}</h2>
               <span className={`shares-status is-${share.status}`}>
-                {share.status === "active" ? "活跃" : "已撤销"}
+                {share.status === "active" ? "可访问" : "已撤销"}
               </span>
             </div>
             {share.description.trim() ? (
-              <p style={{ margin: "0 0 0.65rem", color: "#71717a", fontSize: "0.9rem" }}>
+              <p className="shares-card-description">
                 {share.description}
               </p>
             ) : null}
             <div className="shares-card-meta">
-              <span>{share.itemCount} 条</span>
+              <span>{share.itemCount} 条书签</span>
               <span>更新于 {formatRelativeWhen(share.updatedAt)}</span>
             </div>
             <div className="shares-card-actions">
@@ -303,21 +332,21 @@ export function SharesPanel({
                     className="public-share-btn is-ghost"
                     type="button"
                     disabled={busyId === share.id}
-                    onClick={() => openEdit(share)}
+                    onClick={(event) => openEdit(share, event.currentTarget)}
                   >
                     编辑
                   </button>
                   <button
-                    className="public-share-btn is-ghost"
+                    className="public-share-btn is-danger shares-revoke-button"
                     type="button"
-                    disabled={busyId === share.id}
-                    onClick={() => handleRevoke(share)}
+                    disabled={Boolean(busyId)}
+                    onClick={() => { setFeedback(null); setRevoking(share); }}
                   >
                     撤销
                   </button>
                 </>
               ) : (
-                <span style={{ color: "#a1a1aa", fontSize: "0.85rem" }}>链接已失效</span>
+                <span className="shares-revoked-note"><Icon name="link_off" />此链接已停止公开访问</span>
               )}
             </div>
           </article>
@@ -325,18 +354,22 @@ export function SharesPanel({
       </div>
 
       {editing ? (
-        <div className="manager-dialog-backdrop" role="presentation" onClick={() => setEditing(null)}>
+        <div className="manager-dialog-backdrop" role="presentation" onClick={closeEdit}>
           <div
-            className="share-create-dialog"
+            className="share-create-dialog shares-edit-dialog"
+            ref={editDialogRef}
+            tabIndex={-1}
+            aria-labelledby="shares-edit-title"
             role="dialog"
             aria-modal="true"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="share-create-dialog-shell">
-              <h2>编辑分享</h2>
+              <div className="shares-edit-heading"><h2 id="shares-edit-title">编辑分享</h2><button className="settings-icon-button" type="button" aria-label="关闭编辑分享" disabled={editBusy} onClick={closeEdit}><Icon name="close" /></button></div>
               <p className="share-create-hint">
                 可修改标题、描述、条目顺序，并从书签库追加条目。公开页将实时反映当前书签内容。
               </p>
+              {feedback?.kind === "error" ? <p className="shares-feedback is-error" role="alert">{feedback.message}</p> : null}
               <div className="share-create-field">
                 <label htmlFor="edit-share-title">标题</label>
                 <input
@@ -371,6 +404,7 @@ export function SharesPanel({
                         type="button"
                         className="share-create-item-remove"
                         title="上移"
+                        aria-label={`上移 ${item.title}`}
                         disabled={editBusy || index === 0}
                         onClick={() => setEditItems((list) => moveItem(list, index, index - 1))}
                       >
@@ -380,6 +414,7 @@ export function SharesPanel({
                         type="button"
                         className="share-create-item-remove"
                         title="下移"
+                        aria-label={`下移 ${item.title}`}
                         disabled={editBusy || index === editItems.length - 1}
                         onClick={() => setEditItems((list) => moveItem(list, index, index + 1))}
                       >
@@ -389,6 +424,7 @@ export function SharesPanel({
                         type="button"
                         className="share-create-item-remove"
                         disabled={editBusy}
+                        aria-label={`移除 ${item.title}`}
                         onClick={() => setEditItems((list) => list.filter((row) => row.bookmarkId !== item.bookmarkId))}
                       >
                         <Icon name="close" />
@@ -407,7 +443,7 @@ export function SharesPanel({
                   onChange={(event) => void searchAddCandidates(event.target.value)}
                   disabled={editBusy || isDemoShareToken(token)}
                 />
-                {addLoading ? <p className="share-create-hint">搜索中...</p> : null}
+                {addLoading ? <p className="share-create-hint" role="status">搜索中…</p> : addQuery.trim() && !addCandidates.length ? <p className="share-create-hint" role="status">没有可添加的匹配书签，已在分享中的条目不会重复显示。</p> : null}
                 {!isDemoShareToken(token) && addCandidates.length > 0 ? (
                   <div className="shares-edit-items" style={{ marginTop: "0.5rem" }}>
                     {addCandidates.map((item) => (
@@ -431,7 +467,7 @@ export function SharesPanel({
               </div>
 
               <div className="share-create-actions">
-                <button className="public-share-btn is-ghost" type="button" onClick={() => setEditing(null)} disabled={editBusy}>
+                <button className="public-share-btn is-ghost" type="button" onClick={closeEdit} disabled={editBusy}>
                   取消
                 </button>
                 <button className="public-share-btn is-primary" type="button" onClick={saveEdit} disabled={editBusy}>
@@ -439,6 +475,17 @@ export function SharesPanel({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {revoking ? (
+        <div className="manager-dialog-backdrop" role="presentation" onClick={() => { if (!busyId) setRevoking(null); }}>
+          <div className="shares-revoke-dialog" ref={revokeDialogRef} role="dialog" aria-modal="true" aria-labelledby="shares-revoke-title" aria-describedby="shares-revoke-description" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+            <div className="shares-danger-icon"><Icon name="link_off" /></div>
+            <h2 id="shares-revoke-title">撤销这个分享？</h2>
+            <p id="shares-revoke-description">“{revoking.title}”的公开链接将立即失效。书签本身会保留，如需再次分享，需要创建新链接。</p>
+            {feedback?.kind === "error" ? <p className="shares-feedback is-error" role="alert">{feedback.message}</p> : null}
+            <div className="share-create-actions"><button className="public-share-btn is-ghost" type="button" onClick={() => setRevoking(null)} disabled={Boolean(busyId)}>保留分享</button><button className="public-share-btn is-danger-filled" type="button" onClick={() => void handleRevoke(revoking)} disabled={Boolean(busyId)}>{busyId ? "撤销中…" : "确认撤销"}</button></div>
           </div>
         </div>
       ) : null}

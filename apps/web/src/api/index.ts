@@ -1,3 +1,4 @@
+import { toImportApiRequest } from "./import-request";
 import {
   aiOrganizationJobItemListSchema,
   aiOrganizationJobSchema,
@@ -1039,7 +1040,7 @@ export async function previewImport(input: ImportPreviewRequest, token: string):
   const response = await request("/imports/preview", {
     method: "POST",
     token,
-    body: input,
+    body: toImportApiRequest(input),
   });
   const payload = asRecord(await response.json());
   const summary = asRecord(payload.summary);
@@ -1117,7 +1118,7 @@ export async function createImportTask(input: ImportPreviewRequest & { name: str
   const response = await request("/imports", {
     method: "POST",
     token,
-    body: input,
+    body: { ...toImportApiRequest(input), taskName: input.name },
   });
   const payload = asRecord(await response.json());
   return {

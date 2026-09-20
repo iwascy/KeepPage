@@ -40,6 +40,7 @@ export function AppShell({
   onCancelPrefetchFolder,
   onSelectTag,
   onGoHome,
+  onReturnToList,
   onCreateRootFolder,
   onCreateTag,
   onOpenPrivateMode,
@@ -77,6 +78,7 @@ export function AppShell({
   onCancelPrefetchFolder?: () => void;
   onSelectTag: (tagId: string) => void;
   onGoHome: () => void;
+  onReturnToList: () => void;
   onCreateRootFolder: () => void;
   onCreateTag: () => void;
   onOpenPrivateMode: () => void;
@@ -95,7 +97,9 @@ export function AppShell({
   logoutLabel?: string;
 }) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
-  const [sidebarView, setSidebarView] = useState<"main" | "settings">("main");
+  const isSettingsPage = routePage.startsWith("settings-") || routePage.startsWith("imports-") || routePage === "private-mode" || routePage === "extension-connect";
+  const [sidebarView, setSidebarView] = useState<"main" | "settings">(isSettingsPage ? "settings" : "main");
+  useEffect(() => { setSidebarView(isSettingsPage ? "settings" : "main"); }, [routePage, isSettingsPage]);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [folderSearch, setFolderSearch] = useState("");
   const sidebarRef = useDialogFocus<HTMLElement>(mobileSidebarOpen, () => setMobileSidebarOpen(false));
@@ -217,7 +221,10 @@ export function AppShell({
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 1080px)");
-    const update = () => { if (sidebarRef.current) sidebarRef.current.inert = media.matches && !mobileSidebarOpen; };
+    const update = () => {
+      if (sidebarRef.current) sidebarRef.current.inert = media.matches && !mobileSidebarOpen;
+      if (!media.matches && mobileSidebarOpen) setMobileSidebarOpen(false);
+    };
     update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
@@ -248,7 +255,6 @@ export function AppShell({
   useEffect(() => {
     setMobileSidebarOpen(false);
     setMobileSearchOpen(false);
-    setSidebarView("main");
   }, [routePage]);
 
   function handleSelectQuickNav(nextNav: BookmarkListView) {
@@ -286,33 +292,36 @@ export function AppShell({
   }
 
   return (
-    <main className="home-page">
+    <main className={`home-page${isSettingsPage ? " settings-workspace" : ""}`}>
       <button
         className={mobileSidebarOpen ? "home-mobile-sidebar-backdrop is-visible" : "home-mobile-sidebar-backdrop"}
         type="button"
         aria-label="关闭移动端侧边栏"
         tabIndex={mobileSidebarOpen ? 0 : -1}
         aria-hidden={!mobileSidebarOpen}
-        onClick={() => {
-          setMobileSidebarOpen(false);
-          setSidebarView("main");
-        }}
+        onClick={() => setMobileSidebarOpen(false)}
       />
       <aside ref={sidebarRef} role={mobileSidebarOpen ? "dialog" : undefined} aria-modal={mobileSidebarOpen || undefined} aria-label="收藏夹与设置导航" tabIndex={-1} className={mobileSidebarOpen ? "home-sidebar is-mobile-open" : "home-sidebar"}>
         {sidebarView === "settings" ? (
           <div className="home-settings-panel">
+            <div className="settings-nav-top">
             <button
               className="home-settings-back"
               type="button"
-              onClick={() => setSidebarView("main")}
-              aria-label="返回侧边栏"
+              onClick={() => { setSidebarView("main"); setMobileSidebarOpen(false); onReturnToList(); }}
+              aria-label="返回书签"
             >
               <Icon name="arrow_back" />
-              <span>设置</span>
+              <span>返回书签</span>
             </button>
+            <button type="button" className="settings-icon-button settings-nav-close" aria-label="关闭设置分类" onClick={() => setMobileSidebarOpen(false)}><Icon name="close" /></button>
+            </div>
+            <div className="settings-nav-heading"><span>KeepPage</span><h2>设置</h2><p>让资料库更适合你</p></div>
 
-            <div className="home-settings-list">
+            <nav className="home-settings-list" aria-label="设置分类">
+              <p className="settings-nav-group">资料库</p>
               <button
+                aria-current={routePage === "private-mode" || routePage === "private-detail" ? "page" : undefined}
                 className={routePage === "private-mode" || routePage === "private-detail"
                   ? "home-settings-item is-active"
                   : "home-settings-item"}
@@ -327,6 +336,7 @@ export function AppShell({
                 <small className="home-settings-status">{privateModeStateLabel}</small>
               </button>
               <button
+                aria-current={routePage === "settings-ai-organize" ? "page" : undefined}
                 className={routePage === "settings-ai-organize" ? "home-settings-item is-active" : "home-settings-item"}
                 type="button"
                 onClick={() => {
@@ -337,7 +347,9 @@ export function AppShell({
                 <Icon name="auto_awesome" />
                 <span>AI 整理</span>
               </button>
+              <p className="settings-nav-group">连接与分享</p>
               <button
+                aria-current={routePage === "settings-api-tokens" ? "page" : undefined}
                 className={routePage === "settings-api-tokens" ? "home-settings-item is-active" : "home-settings-item"}
                 type="button"
                 onClick={() => {
@@ -349,6 +361,7 @@ export function AppShell({
                 <span>API 密钥</span>
               </button>
               <button
+                aria-current={routePage === "settings-shares" ? "page" : undefined}
                 className={routePage === "settings-shares" ? "home-settings-item is-active" : "home-settings-item"}
                 type="button"
                 onClick={() => {
@@ -360,6 +373,7 @@ export function AppShell({
                 <span>我的分享</span>
               </button>
               <button
+                aria-current={routePage === "settings-extension-devices" || routePage === "extension-connect" ? "page" : undefined}
                 className={routePage === "settings-extension-devices" || routePage === "extension-connect"
                   ? "home-settings-item is-active"
                   : "home-settings-item"}
@@ -372,12 +386,13 @@ export function AppShell({
                 <Icon name="link" />
                 <span>插件设备</span>
               </button>
+              <p className="settings-nav-group">数据管理</p>
               <button
-                className="home-settings-item"
+                className={routePage === "imports-new" ? "home-settings-item is-active" : "home-settings-item"}
+                aria-current={routePage === "imports-new" ? "page" : undefined}
                 type="button"
                 onClick={() => {
                   setMobileSidebarOpen(false);
-                  setSidebarView("main");
                   onOpenImportNew();
                 }}
               >
@@ -385,11 +400,11 @@ export function AppShell({
                 <span>新建导入</span>
               </button>
               <button
-                className="home-settings-item"
+                className={routePage === "imports-list" || routePage === "imports-detail" ? "home-settings-item is-active" : "home-settings-item"}
+                aria-current={routePage === "imports-list" || routePage === "imports-detail" ? "page" : undefined}
                 type="button"
                 onClick={() => {
                   setMobileSidebarOpen(false);
-                  setSidebarView("main");
                   onOpenImportHistory();
                 }}
               >
@@ -409,7 +424,7 @@ export function AppShell({
                 <Icon name="logout" />
                 <span>{logoutLabel}</span>
               </button>
-            </div>
+            </nav>
           </div>
         ) : (
           <>
@@ -690,7 +705,8 @@ export function AppShell({
                   }}
                   aria-label="打开设置"
                 >
-                  <Icon name="settings" />
+                  <Icon name={isSettingsPage ? "menu" : "settings"} />
+                  {isSettingsPage ? <span>设置分类</span> : null}
                 </button>
               </div>
             </div>

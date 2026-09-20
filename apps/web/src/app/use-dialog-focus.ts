@@ -1,14 +1,21 @@
 import { useEffect, useRef } from "react";
 
 /** Trap modal keyboard focus and restore its opener without re-focusing on edits. */
-export function useDialogFocus<T extends HTMLElement = HTMLDivElement>(open: boolean, onClose: () => void, busy = false) {
+export function useDialogFocus<T extends HTMLElement = HTMLDivElement>(
+  open: boolean,
+  onClose: () => void,
+  busy = false,
+  restoreFocusRef?: { readonly current: HTMLElement | null },
+) {
   const dialogRef = useRef<T | null>(null);
   const controls = useRef({ onClose, busy });
   controls.current = { onClose, busy };
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!open || !dialog) return;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // Capture the trigger before a portal autoFocus or async busy state moves focus.
+    const opener = restoreFocusRef?.current
+      ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const getFocusable = () => Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]')).filter((node) => node.getClientRects().length > 0);
     const frame = requestAnimationFrame(() => {
       if (!dialog.contains(document.activeElement)) (getFocusable()[0] ?? dialog).focus();

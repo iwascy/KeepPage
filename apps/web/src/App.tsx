@@ -307,6 +307,7 @@ export function App({
     status: "idle",
   });
   const [preferredPreviewMode, setPreferredPreviewMode] = useState<ArchiveViewMode>("reader");
+  const [privateStatusRevision, setPrivateStatusRevision] = useState(0);
   const [privateSummary, setPrivateSummary] = useState<PrivateVaultSummary | null>(null);
   const [privateToken, setPrivateToken] = useState<string | null>(null);
   const [privateItems, setPrivateItems] = useState<Bookmark[]>([]);
@@ -841,7 +842,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, privateToken]);
+  }, [appDataSource, authToken, privateToken, privateStatusRevision]);
 
   useEffect(() => {
     if (!authToken) {
@@ -2223,6 +2224,7 @@ export function App({
         onPrefetchFolder={prefetchFolder}
         onCancelPrefetchFolder={cancelPrefetchIntent}
         onSelectTag={(tagId) => navigateList({ tagId })}
+        onReturnToList={returnToList}
         onGoHome={() => navigateList({ search: "", view: "all", folderId: "", tagId: "", quality: "all" })}
         onCreateRootFolder={() => openManagerDialog({ kind: "create-folder" })}
         onCreateTag={() => openManagerDialog({ kind: "create-tag" })}
@@ -2316,6 +2318,9 @@ export function App({
         ) : route.page === "private-mode" ? (
           <Suspense fallback={<section className="loading preview-empty">正在加载私密模式...</section>}>
             <PrivateModePage
+              onRetryStatus={() => { setPrivateError(null); setPrivateStatusRevision((value) => value + 1); }}
+              searchInput={privateSearchInput}
+              onSearchChange={setPrivateSearchInput}
               summary={privateSummary}
               privateToken={privateToken}
               items={privateItems}
@@ -2379,6 +2384,9 @@ export function App({
           ) : (
             <Suspense fallback={<section className="loading preview-empty">正在加载私密模式...</section>}>
               <PrivateModePage
+                onRetryStatus={() => { setPrivateError(null); setPrivateStatusRevision((value) => value + 1); }}
+                searchInput={privateSearchInput}
+                onSearchChange={setPrivateSearchInput}
                 summary={privateSummary}
                 privateToken={privateToken}
                 items={privateItems}

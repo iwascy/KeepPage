@@ -1,6 +1,6 @@
 import {
   useEffect,
-  useMemo,
+  useRef,
   useState,
 } from "react";
 import { ApiError } from "../../api";
@@ -50,15 +50,30 @@ export function ExtensionConnectPage({
   onApiError?: (error: unknown) => void;
   onDone: () => void;
 }) {
-  const connectParams = useMemo(() => readConnectParams(), []);
+  const [connectParams, setConnectParams] = useState(readConnectParams);
+  const attempt = useRef(0);
+  const inFlight = useRef(false);
   const [state, setState] = useState<ConnectState>("idle");
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    void connectExtension();
-  }, [token, dataSource]);
+    const handleHashChange = () => setConnectParams(readConnectParams());
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    attempt.current += 1;
+    inFlight.current = false;
+    setState(connectParams.connectNonce ? "idle" : "error");
+    setMessage(connectParams.connectNonce ? null : "请从 KeepPage 插件里打开网页登录授权页。");
+    return () => { attempt.current += 1; };
+  }, [token, dataSource, connectParams]);
 
   async function connectExtension() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    const currentAttempt = ++attempt.current;
     setState("creating");
     setMessage(null);
     try {
@@ -72,6 +87,7 @@ export function ExtensionConnectPage({
         platform: connectParams.platform,
         extensionId: connectParams.extensionId,
       }, token);
+      if (currentAttempt !== attempt.current) return;
       setState("sending");
       await sendExtensionConnectCodeToLocalExtension({
         code: result.code,
@@ -79,28 +95,32 @@ export function ExtensionConnectPage({
         apiBaseUrl,
         connectNonce: connectParams.connectNonce,
       });
+      if (currentAttempt !== attempt.current) return;
       setState("connected");
       setMessage("插件已连接。后续同步会使用独立的设备授权，不再跟随网页登录过期。");
     } catch (error) {
+      if (currentAttempt !== attempt.current) return;
       setState("error");
       setMessage(toErrorMessage(error));
       onApiError?.(error);
+    } finally {
+      if (currentAttempt === attempt.current) inFlight.current = false;
     }
   }
 
   return (
-    <main className="extension-connect-page">
+    <section className="extension-connect-page">
       <section className="extension-connect-shell">
         <div className="extension-connect-mark">
-          <Icon name={state === "connected" ? "link" : "vpn_key"} />
+          <Icon name={state === "connected" ? "check_circle" : state === "error" ? "link_off" : "link"} />
         </div>
         <div className="extension-connect-copy">
           <p>插件连接</p>
-          <h1>{state === "connected" ? "连接完成" : "正在连接 KeepPage 插件"}</h1>
+          <h1>{state === "connected" ? "浏览器已连接" : state === "error" ? "暂时无法连接" : state === "idle" ? "授权连接这台浏览器？" : "正在连接浏览器"}</h1>
           <p>
             {state === "connected"
               ? "这台浏览器已经获得长期插件授权。"
-              : "网页会把一次性授权发送给本地插件，插件兑换后会保存自己的长期设备令牌。"}
+              : "连接后，可直接从浏览器保存网页。设备授权可在设置中随时撤销。"}
           </p>
         </div>
 
@@ -108,29 +128,30 @@ export function ExtensionConnectPage({
           <span>设备</span>
           <strong>{connectParams.deviceName}</strong>
           <small>{connectParams.platform}</small>
+          {connectParams.extensionId ? <small>扩展 ID：{connectParams.extensionId}</small> : null}
         </div>
 
         {message ? (
-          <section className={`settings-banner settings-${state === "error" ? "error" : "saved"}`}>
+          <section role={state === "error" ? "alert" : "status"} className={`settings-banner settings-${state === "error" ? "error" : "saved"}`}>
             {message}
           </section>
         ) : (
-          <section className="settings-banner settings-loading">
-            {state === "creating" ? "正在创建一次性授权..." : "正在发送给本地插件..."}
+          <section role="status" className="settings-banner settings-loading">
+            {state === "idle" ? "授权后，这台浏览器的插件可以同步书签与网页存档。仅在这是你正在连接的设备时继续。" : state === "creating" ? "正在创建一次性授权…" : "正在发送给本地插件…"}
           </section>
         )}
 
         <div className="extension-connect-actions">
-          {state === "error" ? (
+          {state === "idle" || (state === "error" && connectParams.connectNonce) ? (
             <button className="primary-button" type="button" onClick={() => void connectExtension()}>
-              重试连接
+              {state === "idle" ? "授权并连接" : "重试连接"}
             </button>
           ) : null}
-          <button className="secondary-button" type="button" onClick={onDone}>
-            返回 KeepPage
+          <button className="secondary-button" type="button" disabled={state === "creating" || state === "sending"} onClick={onDone}>
+            {state === "idle" ? "取消" : "返回 KeepPage"}
           </button>
         </div>
       </section>
-    </main>
+    </section>
   );
 }
