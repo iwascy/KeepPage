@@ -8,6 +8,7 @@ UI 重构先读 [重构功能基线](ui-refactor-baseline.md)，再按模块查�
 | --- | --- |
 | [UI 重构功能基线](ui-refactor-baseline.md) | 入口、功能边界、预览方式和回归范围 |
 | [使用说明](usage.md) | 启动、日常操作与故障排查 |
+| [登录会话](auth-sessions.md) | 登录恢复、刷新令牌、撤销与鉴权写入节流 |
 | [架构说明](architecture.md) | 当前运行时、目录职责与数据边界 |
 | [部署说明](deployment.md) | Go API、Web、存储和回滚配置 |
 | [书签备份](bookmark-backup-to-r2.md) | R2 备份操作 |

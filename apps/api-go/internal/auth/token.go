@@ -46,20 +46,22 @@ type CredentialsStore interface {
 }
 
 type APIAuthRecord struct {
-	ID        string
-	UserID    string
-	TokenHash string
-	Scopes    []string
-	ExpiresAt *time.Time
-	RevokedAt *time.Time
+	ID         string
+	UserID     string
+	TokenHash  string
+	Scopes     []string
+	LastUsedAt *time.Time
+	ExpiresAt  *time.Time
+	RevokedAt  *time.Time
 }
 
 type DeviceAuthRecord struct {
-	ID        string
-	UserID    string
-	TokenHash string
-	ExpiresAt *time.Time
-	RevokedAt *time.Time
+	ID         string
+	UserID     string
+	TokenHash  string
+	LastUsedAt *time.Time
+	ExpiresAt  *time.Time
+	RevokedAt  *time.Time
 }
 
 type Service struct {
@@ -69,10 +71,11 @@ type Service struct {
 }
 
 type TokenPayload struct {
-	Sub   string `json:"sub"`
-	Email string `json:"email"`
-	Iat   int64  `json:"iat"`
-	Exp   int64  `json:"exp"`
+	Sub       string `json:"sub"`
+	Email     string `json:"email"`
+	Iat       int64  `json:"iat"`
+	Exp       int64  `json:"exp"`
+	SessionID string `json:"sid,omitempty"`
 }
 
 func NewService(secret string, ttl time.Duration, users CredentialsStore) *Service {
@@ -176,6 +179,19 @@ func (s *Service) AuthenticateBearer(ctx context.Context, token string, options 
 	if payload.Exp*1000 <= time.Now().UnixMilli() {
 		return domain.AuthUser{}, httperror.Unauthorized("TokenExpired", "登录状态已过期，请重新登录。")
 	}
+	if payload.SessionID != "" {
+		store, ok := s.users.(RefreshStore)
+		if !ok {
+			return domain.AuthUser{}, invalidSession()
+		}
+		session, err := store.GetRefreshSession(ctx, payload.SessionID)
+		if err != nil {
+			return domain.AuthUser{}, err
+		}
+		if session.UserID != payload.Sub || session.RevokedAt != nil || !session.ExpiresAt.After(time.Now()) {
+			return domain.AuthUser{}, invalidSession()
+		}
+	}
 	return s.users.GetUserByID(ctx, payload.Sub)
 }
 
@@ -239,7 +255,9 @@ func (s *Service) authenticateAPIToken(ctx context.Context, rawToken string, req
 	if err != nil {
 		return domain.AuthUser{}, err
 	}
-	_ = s.users.TouchAPIToken(ctx, record.ID, time.Now())
+	if shouldTouch(record.LastUsedAt, time.Now()) {
+		_ = s.users.TouchAPIToken(ctx, record.ID, time.Now())
+	}
 	return user, nil
 }
 
@@ -265,7 +283,9 @@ func (s *Service) authenticateDeviceToken(ctx context.Context, rawToken string) 
 	if err != nil {
 		return domain.AuthUser{}, err
 	}
-	_ = s.users.TouchDevice(ctx, record.ID, time.Now())
+	if shouldTouch(record.LastUsedAt, time.Now()) {
+		_ = s.users.TouchDevice(ctx, record.ID, time.Now())
+	}
 	return user, nil
 }
 
@@ -352,4 +372,9 @@ func NewUUID() string {
 	bytes[6] = (bytes[6] & 0x0f) | 0x40
 	bytes[8] = (bytes[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", bytes[0:4], bytes[4:6], bytes[6:8], bytes[8:10], bytes[10:16])
+}
+
+// Authentication still reads revocation state on every request. Only usage writes are throttled.
+func shouldTouch(last *time.Time, now time.Time) bool {
+	return last == nil || !last.Add(5*time.Minute).After(now)
 }

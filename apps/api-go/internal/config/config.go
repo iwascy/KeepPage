@@ -40,6 +40,8 @@ type Config struct {
 	BackupR2RunOnStart        bool
 	AuthTokenSecret           string
 	AuthTokenTTLDays          int
+	AuthAccessTokenTTLMinutes int
+	AuthRefreshTokenTTLDays   int
 	UploadBodyLimitMB         int
 	DebugMode                 bool
 	LogLevel                  slog.Level
@@ -81,12 +83,17 @@ func Read() (Config, error) {
 		BackupR2RunOnStart:        readBool("BACKUP_R2_RUN_ON_STARTUP", false),
 		AuthTokenSecret:           readString("AUTH_TOKEN_SECRET", "keeppage-dev-secret"),
 		AuthTokenTTLDays:          readInt("AUTH_TOKEN_TTL_DAYS", 30),
+		AuthAccessTokenTTLMinutes: readInt("AUTH_ACCESS_TOKEN_TTL_MINUTES", 20),
+		AuthRefreshTokenTTLDays:   readInt("AUTH_REFRESH_TOKEN_TTL_DAYS", 30),
 		UploadBodyLimitMB:         readInt("UPLOAD_BODY_LIMIT_MB", 32),
 		DebugMode:                 debugMode,
 		LogLevel:                  logLevel,
 		DatabaseURL:               readString("DATABASE_URL", ""),
 		AICredentialEncryptionKey: readString("AI_CREDENTIAL_ENCRYPTION_KEY", ""),
 		AIAllowPrivateBaseURL:     readBool("AI_ALLOW_PRIVATE_BASE_URL", false),
+	}
+	if cfg.AuthAccessTokenTTLMinutes <= 0 || cfg.AuthRefreshTokenTTLDays <= 0 {
+		return Config{}, fmt.Errorf("browser token TTL must be positive")
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -100,6 +107,19 @@ func (c Config) Addr() string {
 
 func (c Config) AuthTokenTTL() time.Duration {
 	return time.Duration(c.AuthTokenTTLDays) * 24 * time.Hour
+}
+
+func (c Config) AccessTokenTTL() time.Duration {
+	if c.AuthAccessTokenTTLMinutes == 0 {
+		return 20 * time.Minute
+	}
+	return time.Duration(c.AuthAccessTokenTTLMinutes) * time.Minute
+}
+func (c Config) RefreshTokenTTL() time.Duration {
+	if c.AuthRefreshTokenTTLDays == 0 {
+		return 30 * 24 * time.Hour
+	}
+	return time.Duration(c.AuthRefreshTokenTTLDays) * 24 * time.Hour
 }
 
 func (c Config) UploadBodyLimitBytes() int64 {
@@ -128,6 +148,9 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(c.R2Endpoint) == "" || strings.TrimSpace(c.R2Bucket) == "" || strings.TrimSpace(c.R2AccessKeyID) == "" || strings.TrimSpace(c.R2SecretAccessKey) == "" {
 			return fmt.Errorf("R2_ENDPOINT, R2_BUCKET, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY are required when OBJECT_STORAGE_DRIVER=r2")
 		}
+	}
+	if c.AuthAccessTokenTTLMinutes < 0 || c.AuthRefreshTokenTTLDays < 0 {
+		return fmt.Errorf("browser token TTL must be positive")
 	}
 	if c.AuthTokenTTLDays <= 0 {
 		return fmt.Errorf("AUTH_TOKEN_TTL_DAYS must be positive")

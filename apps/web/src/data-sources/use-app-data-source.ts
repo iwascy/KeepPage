@@ -54,11 +54,11 @@ import {
   type ExtensionDeviceItem,
 } from "../api";
 import type { ImportPanelAdapter } from "../features/imports";
+import { getStoredToken } from "../app/token-storage";
 import { enqueueBookmarksToLocalExtension } from "../local-archive-bridge";
 
-export type RestoredSessionState =
-  | { status: "anonymous"; token: null; user: null; error: string | null }
-  | { status: "authenticated"; token: string; user: AuthUser; error: null };
+import { restoreStoredSession, type RestoredSessionState } from "../app/restore-session";
+export type { RestoredSessionState } from "../app/restore-session";
 
 export type AppDataSourceKind = "live" | "demo";
 
@@ -128,33 +128,8 @@ const liveDataSource: AppDataSource = {
       kind: "live",
       logoutLabel: "退出登录",
       importAdapter: undefined,
-      async restoreSession(storedToken) {
-        if (!storedToken) {
-          return {
-            status: "anonymous",
-            token: null,
-            user: null,
-            error: null,
-          };
-        }
-
-        try {
-          const user = await fetchCurrentUser(storedToken);
-          return {
-            status: "authenticated",
-            token: storedToken,
-            user,
-            error: null,
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "请求失败，请稍后重试。";
-          return {
-            status: "anonymous",
-            token: null,
-            user: null,
-            error: message,
-          };
-        }
+      restoreSession(storedToken) {
+        return restoreStoredSession(storedToken, fetchCurrentUser, getStoredToken);
       },
       resetSession() {
         return null;

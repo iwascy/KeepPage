@@ -87,6 +87,8 @@ func (s *Server) Router() http.Handler {
 	router.Post("/auth/register", s.handleRegister)
 	router.Post("/auth/login", s.handleLogin)
 	router.Get("/auth/me", s.handleCurrentUser)
+	router.Post("/auth/refresh", s.handleRefreshSession)
+	router.Post("/auth/logout", s.handleLogoutSession)
 	router.Get("/api-tokens", s.handleListAPITokens)
 	router.Post("/api-tokens", s.handleCreateAPIToken)
 	router.Delete("/api-tokens/{tokenID}", s.handleRevokeAPIToken)
@@ -360,6 +362,12 @@ func (s *Server) handleRevokeAPIToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-KeepPage-Session") == "web" {
+		if err := s.requireBrowserOrigin(r); err != nil {
+			writeError(s.logger, w, err)
+			return
+		}
+	}
 	var input domain.AuthRegisterRequest
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(s.logger, w, err)
@@ -370,10 +378,16 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(s.logger, w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, session)
+	s.writeLoginSession(w, r, session, http.StatusCreated)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-KeepPage-Session") == "web" {
+		if err := s.requireBrowserOrigin(r); err != nil {
+			writeError(s.logger, w, err)
+			return
+		}
+	}
 	var input domain.AuthLoginRequest
 	if err := decodeJSON(r, &input); err != nil {
 		writeError(s.logger, w, err)
@@ -384,7 +398,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(s.logger, w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, session)
+	s.writeLoginSession(w, r, session, http.StatusOK)
 }
 
 func (s *Server) handleCurrentUser(w http.ResponseWriter, r *http.Request) {

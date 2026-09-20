@@ -12,6 +12,7 @@ import {
 import {
   type AnyPgColumn,
   boolean,
+  bigint,
   index,
   integer,
   jsonb,
@@ -43,6 +44,21 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   userEmailIdx: uniqueIndex("users_email_idx").on(table.email),
+}));
+
+// Managed by Go migration 0017; retained here as the shared database contract.
+export const authRefreshSessions = pgTable("auth_refresh_sessions", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  generation: bigint("generation", { mode: "number" }).default(0).notNull(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  previousHash: varchar("previous_hash", { length: 64 }).default("").notNull(),
+  rotatedAt: timestamp("rotated_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => ({
+  expiryIdx: index("auth_refresh_sessions_expiry_idx").on(table.expiresAt),
+  userIdx: index("auth_refresh_sessions_user_idx").on(table.userId),
 }));
 
 export const apiTokens = pgTable(

@@ -414,3 +414,7 @@ TS 回滚服务仍依赖 `tsx`；Go 默认服务使用静态二进制，不受�
 5. 增加插件正式商店发布流程文档
 
 > 可补充信息：若你准备采用 Docker、Systemd、PM2、Nginx Ingress 或云厂商对象存储，我可以继续按目标环境补一版可直接执行的部署手册。
+
+## Web 刷新会话
+
+登录会话改动需要执行 Go migration `0017_auth_refresh_sessions.sql`，容器启动会自动应用。建议设置 `WEB_PUBLIC_BASE_URL` 为实际 HTTPS Web origin，并通过同源 `/api` 代理。新增 `AUTH_ACCESS_TOKEN_TTL_MINUTES=20` 与 `AUTH_REFRESH_TOKEN_TTL_DAYS=30`，旧 `AUTH_TOKEN_TTL_DAYS` 仅控制未启用刷新机制的客户端。旧令牌在下次登录时升级；回滚 TS 后端需要重新登录。详见[登录会话设计](auth-sessions.md)。

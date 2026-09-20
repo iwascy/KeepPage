@@ -71,3 +71,24 @@ func TestValidateAcceptsProductionWithCustomSecret(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestReadBrowserTokenTTL(t *testing.T) {
+	t.Setenv("NODE_ENV", "development")
+	t.Setenv("AUTH_ACCESS_TOKEN_TTL_MINUTES", "7")
+	t.Setenv("AUTH_REFRESH_TOKEN_TTL_DAYS", "14")
+	cfg, err := Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AccessTokenTTL().Minutes() != 7 || cfg.RefreshTokenTTL().Hours() != 14*24 {
+		t.Fatal("browser TTL settings ignored")
+	}
+	for _, key := range []string{"AUTH_ACCESS_TOKEN_TTL_MINUTES", "AUTH_REFRESH_TOKEN_TTL_DAYS"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(key, "0")
+			if _, err := Read(); err == nil {
+				t.Fatal("zero lifetime accepted")
+			}
+		})
+	}
+}

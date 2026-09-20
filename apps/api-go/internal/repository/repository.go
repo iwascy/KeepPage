@@ -13,6 +13,7 @@ var ErrNotFound = errors.New("repository record not found")
 
 type Repository interface {
 	auth.CredentialsStore
+	auth.RefreshStore
 	AIOrganizationRepository
 	Kind() string
 	Close()

@@ -1,3 +1,5 @@
+import { sessionIdentity } from "./api/session-transport";
+import { isAuthStorageEvent } from "./app/token-storage";
 import {
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
@@ -21,6 +23,8 @@ import type {
 } from "@keeppage/domain";
 import {
   ApiError,
+  isSessionInvalid,
+  logoutAccount,
   clearApiResponseCache,
   type BookmarkDetailResult,
 } from "./api";
@@ -489,7 +493,11 @@ export function App({
     setPrivatePreferredPreviewMode("reader");
   }
 
-  function logout(message?: string) {
+  async function logout(message?: string) {
+    if (!isDemoMode && !message) {
+      try { await logoutAccount(); }
+      catch (error) { pushHomeFeedback("error", `退出失败：${toErrorMessage(error)}，请重试。`); return; }
+    }
     activeToken.current = null;
     clearBookmarkListCache();
     listSnapshots.current.clear();
@@ -715,8 +723,8 @@ export function App({
   }
 
   function handleProtectedApiError(error: unknown) {
-    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-      logout(error.message);
+    if (isSessionInvalid(error)) {
+      void logout(toErrorMessage(error));
       return true;
     }
     return false;
@@ -811,8 +819,11 @@ export function App({
     return () => cancelAnimationFrame(frame);
   }, [route.page, loadState, loadedQueryKey, queryKey]);
 
+  const [sessionRetry, setSessionRetry] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
+    setSession({ status: "booting", token: null, user: null, error: null });
     appDataSource.restoreSession(getStoredToken())
       .then((nextSession) => {
         if (cancelled) {
@@ -827,9 +838,8 @@ export function App({
         if (cancelled) {
           return;
         }
-        clearStoredToken();
         setSession({
-          status: "anonymous",
+          status: "unavailable",
           token: null,
           user: null,
           error: toErrorMessage(error),
@@ -839,7 +849,34 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource]);
+  }, [appDataSource, sessionRetry]);
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    const onStorage = (event: StorageEvent) => {
+      if (!isAuthStorageEvent(event)) return;
+      const token = getStoredToken();
+      if (!token) void logout("已在其他页面退出登录。");
+      // A different account/session must be restored before showing its data.
+      else if (!event.oldValue || sessionIdentity(event.oldValue) !== sessionIdentity(token)) {
+        activeToken.current = null;
+        clearApiResponseCache();
+        clearBookmarkListCache();
+        listSnapshots.current.clear();
+        listController.current?.abort();
+        pageController.current?.abort();
+        clearPrivateState();
+        setItems([]);
+        setDetail(null);
+        setFolders([]);
+        setTags([]);
+        setSidebarFolderCounts({});
+        setSessionRetry((value) => value + 1);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [isDemoMode]);
 
   useEffect(() => {
     if (!authToken) {
@@ -2187,7 +2224,6 @@ export function App({
         goToList();
       }
     } catch (error) {
-      clearStoredToken();
       setAuthError(toErrorMessage(error));
     } finally {
       setAuthSubmitting(false);
@@ -2224,7 +2260,16 @@ export function App({
   }
 
   if (session.status !== "authenticated") {
-    return session.status === "booting" ? (
+    return session.status === "unavailable" ? (
+      <main className="auth-shell">
+        <section className="auth-card">
+          <h1>暂时无法恢复登录</h1>
+          <p role="alert">{session.error}</p>
+          <p>登录凭据已保留，请检查网络后重试。</p>
+          <button type="button" className="primary-button" onClick={() => setSessionRetry((value) => value + 1)}>重试</button>
+        </section>
+      </main>
+    ) : session.status === "booting" ? (
       <main className="auth-shell">
         <section className="auth-card auth-loading" role="status" aria-live="polite" aria-busy="true">
           <div className="auth-brand"><span className="auth-brand-mark" aria-hidden="true"><Icon name="bookmark" /></span><span>KeepPage</span></div>

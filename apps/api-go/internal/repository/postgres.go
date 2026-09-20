@@ -149,11 +149,11 @@ func (r *PostgresRepository) GetAPIAuthRecord(ctx context.Context, tokenID strin
 	var record auth.APIAuthRecord
 	var scopesJSON []byte
 	err := r.pool.QueryRow(ctx, `
-		select id::text, user_id::text, token_hash, scopes_json, expires_at, revoked_at
+		select id::text, user_id::text, token_hash, scopes_json, expires_at, revoked_at, last_used_at
 		from api_tokens
 		where id = $1
 		limit 1
-	`, tokenID).Scan(&record.ID, &record.UserID, &record.TokenHash, &scopesJSON, &record.ExpiresAt, &record.RevokedAt)
+	`, tokenID).Scan(&record.ID, &record.UserID, &record.TokenHash, &scopesJSON, &record.ExpiresAt, &record.RevokedAt, &record.LastUsedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return auth.APIAuthRecord{}, ErrNotFound
 	}
@@ -169,11 +169,11 @@ func (r *PostgresRepository) GetAPIAuthRecord(ctx context.Context, tokenID strin
 func (r *PostgresRepository) GetDeviceAuthRecord(ctx context.Context, deviceID string) (auth.DeviceAuthRecord, error) {
 	var record auth.DeviceAuthRecord
 	err := r.pool.QueryRow(ctx, `
-		select id::text, user_id::text, token_hash, expires_at, revoked_at
+		select id::text, user_id::text, token_hash, expires_at, revoked_at, last_used_at
 		from devices
 		where id = $1
 		limit 1
-	`, deviceID).Scan(&record.ID, &record.UserID, &record.TokenHash, &record.ExpiresAt, &record.RevokedAt)
+	`, deviceID).Scan(&record.ID, &record.UserID, &record.TokenHash, &record.ExpiresAt, &record.RevokedAt, &record.LastUsedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return auth.DeviceAuthRecord{}, ErrNotFound
 	}
@@ -181,7 +181,7 @@ func (r *PostgresRepository) GetDeviceAuthRecord(ctx context.Context, deviceID s
 }
 
 func (r *PostgresRepository) TouchAPIToken(ctx context.Context, tokenID string, usedAt time.Time) error {
-	_, err := r.pool.Exec(ctx, `update api_tokens set last_used_at = $2 where id = $1`, tokenID, usedAt)
+	_, err := r.pool.Exec(ctx, `update api_tokens set last_used_at = $2 where id = $1 and (last_used_at is null or last_used_at <= $2::timestamptz - interval '5 minutes')`, tokenID, usedAt)
 	return err
 }
 
@@ -235,7 +235,7 @@ func (r *PostgresRepository) RevokeAPIToken(ctx context.Context, userID string, 
 }
 
 func (r *PostgresRepository) TouchDevice(ctx context.Context, deviceID string, usedAt time.Time) error {
-	_, err := r.pool.Exec(ctx, `update devices set last_used_at = $2 where id = $1`, deviceID, usedAt)
+	_, err := r.pool.Exec(ctx, `update devices set last_used_at = $2 where id = $1 and (last_used_at is null or last_used_at <= $2::timestamptz - interval '5 minutes')`, deviceID, usedAt)
 	return err
 }
 

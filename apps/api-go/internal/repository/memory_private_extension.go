@@ -174,7 +174,7 @@ func (r *MemoryRepository) MemoryDeviceAuthRecord(deviceID string) (auth.DeviceA
 	if !ok {
 		return auth.DeviceAuthRecord{}, ErrNotFound
 	}
-	return auth.DeviceAuthRecord{ID: device.item.ID, UserID: device.userID, TokenHash: device.tokenHash, ExpiresAt: device.item.ExpiresAt, RevokedAt: device.item.RevokedAt}, nil
+	return auth.DeviceAuthRecord{LastUsedAt: device.item.LastUsedAt, ID: device.item.ID, UserID: device.userID, TokenHash: device.tokenHash, ExpiresAt: device.item.ExpiresAt, RevokedAt: device.item.RevokedAt}, nil
 }
 
 func (r *MemoryRepository) TouchMemoryDevice(deviceID string, usedAt time.Time) error {
@@ -183,6 +183,9 @@ func (r *MemoryRepository) TouchMemoryDevice(deviceID string, usedAt time.Time) 
 	defer state.mu.Unlock()
 	device, ok := state.devices[deviceID]
 	if !ok {
+		return nil
+	}
+	if device.item.LastUsedAt != nil && device.item.LastUsedAt.Add(5*time.Minute).After(usedAt) {
 		return nil
 	}
 	device.item.LastUsedAt = &usedAt

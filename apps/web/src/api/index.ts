@@ -77,20 +77,26 @@ import {
 } from "@keeppage/domain";
 import type { ZodType } from "zod";
 
+import { ApiError } from "./errors";
+export { ApiError, isSessionInvalid } from "./errors";
+import { createSessionTransport } from "./session-transport";
+import { getStoredToken, setStoredToken, removeStoredToken } from "../app/token-storage";
+
 type DataSource = "api";
 
-export class ApiError extends Error {
-  readonly status: number;
-  readonly details?: unknown;
-  readonly code?: string;
+const sessionTransport = createSessionTransport({
+  fetch: (...args) => fetch(...args),
+  readToken: getStoredToken,
+  writeToken: setStoredToken,
+  clearToken: removeStoredToken,
+  parseSession: (value) => authSessionSchema.parse(value),
+  withLock: async (action) => typeof navigator !== "undefined" && navigator.locks
+    ? navigator.locks.request("keeppage-auth-session", action)
+    : action(),
+});
 
-  constructor(status: number, message: string, details?: unknown, code?: string) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.details = details;
-    this.code = code;
-  }
+export function logoutAccount() {
+  return sessionTransport.logout(resolveApiBase());
 }
 
 export type BookmarkQuery = {
@@ -332,23 +338,12 @@ async function request(path: string, options: RequestOptions = {}) {
     headers["content-type"] = "application/json";
   }
 
-  const response = await fetch(`${resolveApiBase()}${path}`, {
+  return sessionTransport.fetch(resolveApiBase(), path, {
     signal: options.signal,
     method: options.method ?? "GET",
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
-
-  if (response.status === 304) {
-    return response;
-  }
-
-  if (!response.ok) {
-    const errorPayload = await readErrorPayload(response);
-    throw new ApiError(response.status, errorPayload.message, errorPayload.details, errorPayload.code);
-  }
-
-  return response;
+  }, options.token);
 }
 
 type PendingRequest = {
@@ -468,28 +463,6 @@ function buildResponseCacheKey(path: string, options: RequestOptions) {
 
 async function requestVoid(path: string, options: RequestOptions = {}) {
   await request(path, options);
-}
-
-async function readErrorPayload(response: Response) {
-  try {
-    const payload = await response.json() as {
-      error?: string;
-      message?: string;
-      details?: unknown;
-    };
-    return {
-      code: payload.error,
-      message: payload.message ?? `API ${response.status}`,
-      details: payload.details,
-    };
-  } catch {
-    const text = await response.text();
-    return {
-      code: undefined,
-      message: text || `API ${response.status}`,
-      details: undefined,
-    };
-  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -622,17 +595,11 @@ function toImportItem(value: unknown): ImportTaskItem {
 }
 
 export async function registerAccount(input: AuthRegisterRequest): Promise<AuthSession> {
-  return requestJson("/auth/register", authSessionSchema, {
-    method: "POST",
-    body: input,
-  });
+  return sessionTransport.login(resolveApiBase(), "/auth/register", input);
 }
 
 export async function loginAccount(input: AuthLoginRequest): Promise<AuthSession> {
-  return requestJson("/auth/login", authSessionSchema, {
-    method: "POST",
-    body: input,
-  });
+  return sessionTransport.login(resolveApiBase(), "/auth/login", input);
 }
 
 export async function fetchCurrentUser(token: string): Promise<AuthUser> {
@@ -1021,19 +988,7 @@ export async function createArchiveObjectUrl(
   sourceUrl: string,
   privateToken?: string,
 ) {
-  const response = await fetch(
-    `${resolveApiBase()}/objects?key=${encodeURIComponent(objectKey)}`,
-    {
-      headers: {
-        authorization: `Bearer ${token}`,
-        ...(privateToken ? { "x-keeppage-private-token": privateToken } : {}),
-      },
-    },
-  );
-  if (!response.ok) {
-    const errorPayload = await readErrorPayload(response);
-    throw new ApiError(response.status, errorPayload.message, errorPayload.details, errorPayload.code);
-  }
+  const response = await request(`/objects?key=${encodeURIComponent(objectKey)}`, { token, privateToken });
   const html = ensureArchiveBaseHref(await response.text(), sourceUrl);
   const blob = new Blob([html], {
     type: response.headers.get("content-type") ?? "text/html;charset=utf-8",

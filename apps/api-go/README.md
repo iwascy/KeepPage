@@ -75,3 +75,27 @@ Imports, shares, backups:
 ```sh
 cd apps/api-go && go test ./...
 ```
+
+## Browser sessions
+
+Web login/register opt into refresh sessions with `X-KeepPage-Session: web`.
+The API returns a 20-minute bearer and a rotating 30-day refresh cookie
+(`HttpOnly`, `SameSite=Strict`, `Secure` in production). `POST /auth/refresh`
+rotates it; `POST /auth/logout` revokes the family and immediately invalidates
+its access tokens. Both require the custom header and a trusted `Origin`.
+Set `WEB_PUBLIC_BASE_URL` to the exact public Web origin. Serve Web and `/api`
+through the same origin; localhost Vite proxy is supported in development.
+
+`AUTH_ACCESS_TOKEN_TTL_MINUTES` defaults to 20;
+`AUTH_REFRESH_TOKEN_TTL_DAYS` defaults to 30 (absolute lifetime, not sliding).
+The old `AUTH_TOKEN_TTL_DAYS` still controls clients without the opt-in header,
+including legacy extension logins. Existing bearers remain valid until their
+original expiry; signing in again adopts the refresh flow.
+
+Apply `0017_auth_refresh_sessions.sql` using the normal migrator before deploying.
+Postgres stores token hashes and rotation state; memory mode loses sessions on
+restart. Expired records are cleaned on new browser login. API/device usage
+writes are throttled to 5 minutes while revocation is checked on every request.
+
+See [authentication design](../../docs/auth-sessions.md) for security boundaries
+and regression commands.

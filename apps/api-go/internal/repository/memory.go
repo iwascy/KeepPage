@@ -13,17 +13,18 @@ import (
 )
 
 type MemoryRepository struct {
-	mu         sync.RWMutex
-	bookmarks  map[string][]domain.Bookmark
-	users      map[string]auth.UserAuthRecord
-	emailIDs   map[string]string
-	apiTokens  map[string]memoryAPIToken
-	folders    map[string]map[string]domain.Folder
-	tags       map[string]map[string]domain.Tag
-	rateLimit  map[string]memoryRateLimitBucket
-	aiSettings map[string]domain.AIProviderSettingRecord
-	aiJobs     map[string]domain.AIOrganizationJob
-	aiJobItems map[string][]domain.AIOrganizationJobItem
+	refreshSessions map[string]auth.RefreshSession
+	mu              sync.RWMutex
+	bookmarks       map[string][]domain.Bookmark
+	users           map[string]auth.UserAuthRecord
+	emailIDs        map[string]string
+	apiTokens       map[string]memoryAPIToken
+	folders         map[string]map[string]domain.Folder
+	tags            map[string]map[string]domain.Tag
+	rateLimit       map[string]memoryRateLimitBucket
+	aiSettings      map[string]domain.AIProviderSettingRecord
+	aiJobs          map[string]domain.AIOrganizationJob
+	aiJobItems      map[string][]domain.AIOrganizationJobItem
 }
 
 type memoryAPIToken struct {
@@ -35,7 +36,8 @@ type memoryAPIToken struct {
 func NewMemoryRepository() *MemoryRepository {
 	now := time.Now().UTC()
 	return &MemoryRepository{
-		bookmarks: map[string][]domain.Bookmark{},
+		refreshSessions: map[string]auth.RefreshSession{},
+		bookmarks:       map[string][]domain.Bookmark{},
 		users: map[string]auth.UserAuthRecord{
 			"dev-user": {
 				User: domain.AuthUser{
@@ -145,7 +147,7 @@ func (r *MemoryRepository) GetAPIAuthRecord(_ context.Context, tokenID string) (
 		return auth.APIAuthRecord{}, ErrNotFound
 	}
 	return auth.APIAuthRecord{
-		ID: token.item.ID, UserID: token.userID, TokenHash: token.tokenHash, Scopes: append([]string(nil), token.item.Scopes...), ExpiresAt: token.item.ExpiresAt, RevokedAt: token.item.RevokedAt,
+		LastUsedAt: token.item.LastUsedAt, ID: token.item.ID, UserID: token.userID, TokenHash: token.tokenHash, Scopes: append([]string(nil), token.item.Scopes...), ExpiresAt: token.item.ExpiresAt, RevokedAt: token.item.RevokedAt,
 	}, nil
 }
 
@@ -157,7 +159,7 @@ func (r *MemoryRepository) TouchAPIToken(_ context.Context, tokenID string, used
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	token, ok := r.apiTokens[tokenID]
-	if ok {
+	if ok && (token.item.LastUsedAt == nil || !token.item.LastUsedAt.Add(5*time.Minute).After(usedAt)) {
 		token.item.LastUsedAt = &usedAt
 		r.apiTokens[tokenID] = token
 	}
