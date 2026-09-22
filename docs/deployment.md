@@ -5,7 +5,7 @@
 基于当前仓库实现，KeepPage 最稳妥的部署方式是：
 
 1. **后端单实例部署**
-2. **对象存储使用持久化本地磁盘目录**
+2. **对象存储选择持久化本地磁盘或 Cloudflare R2**
 3. **前端与 API 同域部署，通过 `/api` 反向代理访问 API**
 4. **浏览器插件通过 Side Panel 配置对外可访问的 API 地址**
 
@@ -29,9 +29,9 @@
 
 ### 基础依赖
 
-- Node.js 和 npm
+- 从源码构建 Web / 扩展需要 Node.js 24 和 npm；直接运行 Go API 需要 Go 1.24+
 - 一台可持久化磁盘的服务器
-- 可选：Postgres 数据库
+- PostgreSQL 数据库（长期使用推荐；memory 仅用于临时体验）
 - 可选：Nginx 或其他反向代理
 - 可选：HTTPS 域名
 
@@ -46,13 +46,13 @@ npm install
 > 生产默认使用 Go API 镜像，不依赖 Node.js。TS 回滚服务才需要安装 Node.js 依赖和 `tsx`。
 >
 > CI / Jenkins 场景下，仓库根目录的 `.puppeteerrc.cjs` 会默认跳过 Puppeteer 的浏览器下载，避免 `npm install` 因网络下载 Chromium 超时。
-> 如果部署环境需要启用云端归档，运行时仍需自行提供 Chrome / Chromium，或设置 `PUPPETEER_EXECUTABLE_PATH` 指向可执行文件。
+> 当前 Web 导入先保存链接，再通过浏览器扩展创建归档。不要把 TS 回滚后端的 Puppeteer 配置视为 Go API 已具备云端浏览器抓取。
 
 ### 当前版本的部署限制
 
 #### 1. API 更适合单实例
 
-当前对象文件写入本地目录：
+选择 `OBJECT_STORAGE_DRIVER=localfs` 时，对象文件写入本地目录：
 
 - Go 默认目录由 `OBJECT_STORAGE_ROOT` 控制；生产 Compose 挂载 `/data/apps/keeppage/shared/object-storage/`。
 
@@ -65,7 +65,7 @@ npm install
 因此当前推荐：
 
 - 单实例部署
-- 或者所有实例挂载同一个共享存储目录
+- 本地对象存储需要共享磁盘才能被多个实例读取。R2 可解决对象共享问题，但不能据此推断后台任务、锁和备份调度已支持多实例；当前仍推荐单实例 API。
 
 #### 2. Web 推荐同域代理
 
@@ -89,6 +89,8 @@ npm install
 否则 API 返回的 `uploadUrl` 可能仍然指向 `127.0.0.1`，导致扩展上传失败。
 
 ---
+
+仓库提供的 `deploy/docker-compose.yml` 使用 `/data/apps/keeppage/shared/` 等特定主机路径。自行部署时请先调整环境文件、挂载目录、端口和凭据；它是部署参考，不是通用一键安装器。
 
 ## 二、后端部署
 
@@ -153,8 +155,8 @@ npm run db:init -w @keeppage/api-go
 这个命令会：
 
 1. 检查目标数据库是否存在
-2. 不存在则自动创建数据库
-3. 执行 `packages/db/migrations/` 下的 SQL migration
+2. 不存在则自动创建数据库（连接账号需具有建库权限）
+3. 执行 `apps/api-go/migrations/` 下的 SQL migration；`packages/db/migrations/` 属于 TS 回滚后端
 
 ### 2.3 启动 API
 
@@ -189,7 +191,7 @@ export OBJECT_STORAGE_ROOT='/srv/keeppage/object-storage'
 ### 2.5 生产注意事项
 
 - 当前 API 没有内建 CORS，Web 不建议跨域直连
-- 当前对象存储不是云存储，暂不适合无状态多实例横向扩容
+- 支持本地文件与 R2；使用 R2 不代表后台任务和调度已支持多实例横向扩容
 - 当前上传地址依赖 `API_PUBLIC_BASE_URL`，该值错误会直接影响扩展上传
 
 ---

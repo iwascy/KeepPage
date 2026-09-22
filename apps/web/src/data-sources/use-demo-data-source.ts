@@ -22,6 +22,7 @@ import {
   type DemoWorkspace,
 } from "../features/demo";
 import type { ImportPanelAdapter } from "../features/imports";
+import { createShowcaseWorkspace } from "../features/demo/showcase";
 import { enqueueBookmarksToLocalExtension } from "../local-archive-bridge";
 
 const DEMO_TOKEN = "demo-token";
@@ -63,9 +64,15 @@ function buildFolderCountRecord(bookmarks: Bookmark[]) {
   }, {});
 }
 
+function createSelectedWorkspace(): DemoWorkspace {
+  return new URLSearchParams(window.location.search).get("showcase") === "1"
+    ? createShowcaseWorkspace()
+    : createDemoWorkspace();
+}
+
 export function useDemoDataSource(): AppDataSource {
   const kind = "demo";
-  const [demoState, setDemoState] = useState<DemoWorkspace>(() => createDemoWorkspace());
+  const [demoState, setDemoState] = useState<DemoWorkspace>(() => createSelectedWorkspace());
   const [demoApiTokens, setDemoApiTokens] = useState<ApiTokenItem[]>(() => createInitialDemoApiTokens());
 
   const importAdapter = useMemo<ImportPanelAdapter | undefined>(() => {
@@ -106,7 +113,7 @@ export function useDemoDataSource(): AppDataSource {
         resetSession() {
           let nextSession: AuthSession | null = null;
           setDemoState(() => {
-            const nextWorkspace = createDemoWorkspace();
+            const nextWorkspace = createSelectedWorkspace();
             nextSession = {
               token: DEMO_TOKEN,
               user: nextWorkspace.user,

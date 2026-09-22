@@ -22,7 +22,7 @@ KeepPage 当前是一个 **archive-first** 的网页收藏系统：先在浏览�
 
 ### 前置条件
 
-- 已安装 Node.js 和 npm
+- 已安装 Node.js 24、npm，以及 Go 1.24+（运行 Go API 时需要）
 - 已在仓库根目录执行过依赖安装
 - 若要体验完整同步链路，建议准备一个可用的 Postgres
 - 浏览器建议使用 Chrome，并开启扩展开发者模式
@@ -44,9 +44,17 @@ npm install
 
 ### 本地联调推荐命令
 
+以下三个服务分别在不同终端运行：
+
 ```bash
 npm run dev:api
+```
+
+```bash
 npm run dev:web
+```
+
+```bash
 npm run dev:extension
 ```
 
@@ -103,7 +111,7 @@ npm run dev -w @keeppage/web
 
 ### 生产访问地址配置
 
-前端运行时会读取：
+前端构建时会读取：
 
 - `VITE_API_BASE_URL`
 
@@ -169,7 +177,7 @@ npm run dev -w @keeppage/api-go
 | 内存 | `STORAGE_DRIVER=memory` | 快速联调、接口测试 |
 | Postgres | `STORAGE_DRIVER=postgres` | 本地完整链路、长期数据保留 |
 
-默认是内存模式。
+默认是内存模式，API 重启后账号与书签元数据会丢失。长期使用请使用 PostgreSQL。
 
 ### Postgres 初始化
 
@@ -182,10 +190,10 @@ npm run dev -w @keeppage/api-go
 
 ### 对象存储说明
 
-当前对象存储仅支持本地文件系统：
+Go API 支持本地文件与 Cloudflare R2 两种对象存储：
 
-- 驱动：`OBJECT_STORAGE_DRIVER=localfs`
-- 默认目录：`./data/object-storage`
+- 本地：`OBJECT_STORAGE_DRIVER=localfs`，默认目录为 `./data/object-storage`，长期使用时应显式设置持久化路径。
+- R2：`OBJECT_STORAGE_DRIVER=r2`，需配置 endpoint、bucket 与凭据，详见[部署说明](deployment.md)。
 
 通过 `npm run dev -w @keeppage/api-go` 启动时，这个目录会由 `OBJECT_STORAGE_ROOT` 控制；TS 回滚服务仍使用 `apps/api/data/object-storage/`。
 
@@ -273,11 +281,13 @@ curl -sS http://127.0.0.1:8787/health
 npm run dev -w @keeppage/extension
 ```
 
-生产构建：
+在仓库根目录一键构建：
 
 ```bash
-npm run build -w @keeppage/extension
+./build-extension.sh
 ```
+
+或在安装依赖后运行 `npm run build -w @keeppage/extension`。产物位于 `apps/extension/.output/chrome-mv3`。
 
 打包压缩包：
 
@@ -358,11 +368,10 @@ npm run zip -w @keeppage/extension
 适合先确认链路是否跑通：
 
 ```bash
-npm install
-npm run dev:api
-npm run dev:web
-npm run dev:extension
+npm ci
 ```
+
+随后在三个不同终端分别执行 `npm run dev:api`、`npm run dev:web` 和 `npm run dev:extension`。
 
 然后：
 
@@ -380,7 +389,15 @@ export STORAGE_DRIVER=postgres
 export DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/keeppage'
 npm run db:init -w @keeppage/api-go
 npm run dev -w @keeppage/api-go
+```
+
+另外两个终端分别运行：
+
+```bash
 npm run dev:web
+```
+
+```bash
 npm run dev:extension
 ```
 
@@ -390,11 +407,7 @@ npm run dev:extension
 
 ### Web 页面有内容，但不是实时数据
 
-说明前端可能回退到了 mock 数据源。请优先检查：
-
-- API 是否启动
-- Web 的 `/api` 代理是否正确
-- `GET /health`、`GET /bookmarks` 是否可访问
+正式模式不会自动回退到 mock。请检查是否使用了 `dev:web:mock`、`VITE_APP_MODE=mock` 或 `/demo.html` 演示入口。要读取真实数据，请使用 `npm run dev:web` 打开根路径，并确认 API 和 `/api` 代理可用。
 
 ### 插件测试连接失败
 
@@ -416,4 +429,4 @@ npm run dev:extension
 
 当前最常见原因是跨域。建议优先使用 **同域部署 + `/api` 反向代理**。
 
-> 可补充信息：若后续需要把文档扩展为团队内部 SOP，可继续补充截图、Nginx/PM2/Systemd 示例和 Chrome 商店发布流程。
+生产部署与扩展分发见[部署说明](deployment.md)；宣传演示与截图维护见[截图工作流](screenshots.md)。

@@ -1,5 +1,7 @@
 # 文档导航
 
+项目介绍：[English](../README.md) · [简体中文](../README.zh-CN.md)。开发协作见[贡献指南](../CONTRIBUTING.md)。
+
 UI 重构先读 [重构功能基线](ui-refactor-baseline.md)，再按模块查看当前源码。这里不指定新的视觉风格。
 
 ## 当前维护文档
@@ -13,6 +15,7 @@ UI 重构先读 [重构功能基线](ui-refactor-baseline.md)，再按模块查�
 | [部署说明](deployment.md) | Go API、Web、存储和回滚配置 |
 | [书签备份](bookmark-backup-to-r2.md) | R2 备份操作 |
 | [Docker 清理](docker-cleanup.md) | 部署主机维护 |
+| [宣传截图维护](screenshots.md) | 演示数据、截图复现与中英文 README 更新 |
 | [SingleFile 许可证](legal/singlefile-license.md) | 第三方许可证信息 |
 
 ## 产品需求与历史方案
@@ -25,5 +28,6 @@ UI 重构先读 [重构功能基线](ui-refactor-baseline.md)，再按模块查�
 
 - 正式 Web 与 Mock 预览共用组件，预览随源码更新。
 - 导出的单文件 HTML 放在 `apps/web/dist-standalone/`；临时截图放在被忽略的 `output/`。
+- `docs/assets/` 仅保存 README 引用的宣传截图；它们是当前产品展示，不是 UI 规范。
 - 不把静态原型、截图或历史设计 Skill 作为隐含的 UI 规范。
 - 修改行为时同步对应文档；不使用旧进度报告代替当前状态。
