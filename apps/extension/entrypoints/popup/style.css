@@ -6,12 +6,13 @@ html, body { width: 380px; min-width: 380px; }
 .popup-shell { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
 .popup-brand { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
 .popup-brand-mark { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 7px; background: var(--primary); color: white; }
-.status-card, .summary-card, .editor-card { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); min-width: 0; }
+.status-card, .summary-card, .editor-card, .private-card { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); min-width: 0; }
 .status-copy h1 { margin: 10px 0 0; font-size: 20px; font-weight: 650; letter-spacing: -.4px; line-height: 1.4; }
 .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; color: var(--muted); background: var(--soft); font-size: 12px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .status-card.success .status-pill { background: #eff8f3; color: var(--good); }
 .status-card.error .status-pill { background: #fff3f2; color: var(--bad); }
+.status-card.moved .status-pill { background: #f3f0fb; color: #5b45a8; }
 .status-description, .section-heading p, .inline-message { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .summary-row { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: start; }
 .summary-row + .summary-row { margin-top: 8px; }

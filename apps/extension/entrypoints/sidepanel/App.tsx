@@ -43,6 +43,8 @@ type AuthState = "idle" | "submitting" | "ok" | "error";
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
 const LOCKED_CAPTURE_PROFILE: CaptureProfile = "complete";
 const SIDE_PANEL_SAVE_MODE_INTENT_KEY = "sidePanelSaveModeIntent";
+const SIDE_PANEL_NOTICE_KEY = "sidePanelNotice";
+const SIDE_PANEL_NOTICE_TTL_MS = 2 * 60 * 1000;
 const SAVE_MODE_OPTIONS: Array<{ value: SaveMode; label: string }> = [
   {
     value: "standard",
@@ -141,6 +143,44 @@ export function App() {
       chrome.storage.onChanged.removeListener(listener);
     };
   }, [saveMode]);
+
+  useEffect(() => {
+    // Context-menu captures run in the background; it hands over the target mode and
+    // any failure message through session storage, including while the panel is open.
+    async function consumeSidePanelNotice() {
+      const result = await chrome.storage.session.get(SIDE_PANEL_NOTICE_KEY);
+      if (!result[SIDE_PANEL_NOTICE_KEY]) {
+        return;
+      }
+      await chrome.storage.session.remove(SIDE_PANEL_NOTICE_KEY);
+      const notice = parseSidePanelNotice(result[SIDE_PANEL_NOTICE_KEY]);
+      if (!notice) {
+        return;
+      }
+      setSaveMode(notice.saveMode);
+      setError(notice.message);
+    }
+
+    const listener: Parameters<typeof chrome.storage.onChanged.addListener>[0] = (changes, areaName) => {
+      if (areaName !== "session") {
+        return;
+      }
+      const requestedSaveMode = parseSaveModeIntent(changes[SIDE_PANEL_SAVE_MODE_INTENT_KEY]?.newValue);
+      if (requestedSaveMode) {
+        void chrome.storage.session.remove(SIDE_PANEL_SAVE_MODE_INTENT_KEY);
+        setSaveMode(requestedSaveMode);
+      }
+      if (changes[SIDE_PANEL_NOTICE_KEY]?.newValue) {
+        void consumeSidePanelNotice();
+      }
+    };
+
+    void consumeSidePanelNotice();
+    chrome.storage.onChanged.addListener(listener);
+    return () => {
+      chrome.storage.onChanged.removeListener(listener);
+    };
+  }, []);
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   const selectedProfileMeta = PROFILE_META[captureProfile] ?? PROFILE_META[LOCKED_CAPTURE_PROFILE];
@@ -365,6 +405,19 @@ export function App() {
     setVaultSummary(response.summary ?? null);
     setUnlockPassphrase("");
     await refreshTasks("private");
+  }
+
+  async function changePrivateAutoLockAction(autoLock: PrivateAutoLock) {
+    setError(null);
+    const response = await chrome.runtime.sendMessage({
+      type: MESSAGE_TYPE.SetPrivateAutoLock,
+      autoLock,
+    }) as PrivateVaultStateResponse;
+    if (!response?.ok) {
+      setError(response?.error ?? "更新自动锁定时间失败。");
+      return;
+    }
+    setVaultSummary(response.summary ?? null);
   }
 
   async function lockPrivateVaultAction() {
@@ -781,7 +834,19 @@ export function App() {
               <div className="vault-facts">
                 <span>条目数：{vaultSummary.totalItems}</span>
                 <span>待同步：{vaultSummary.pendingSyncCount}</span>
-                <span>自动锁定：{renderAutoLockLabel(vaultSummary.autoLock)}</span>
+                {!isVaultEnabled ? null : (
+                  <label>
+                    自动锁定：
+                    <select
+                      value={vaultSummary.autoLock}
+                      onChange={(event) => void changePrivateAutoLockAction(event.target.value as PrivateAutoLock)}
+                    >
+                      {AUTO_LOCK_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
             ) : null}
           </div>
@@ -807,6 +872,17 @@ export function App() {
                     placeholder="再次输入"
                   />
                 </label>
+                <label className="field-inline">
+                  <span>自动锁定</span>
+                  <select
+                    value={vaultAutoLock}
+                    onChange={(event) => setVaultAutoLock(event.target.value as PrivateAutoLock)}
+                  >
+                    {AUTO_LOCK_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
               <div className="settings-actions">
                 <button onClick={createPrivateVaultAction} type="button">
@@ -819,7 +895,9 @@ export function App() {
               <div className="vault-summary-card">
                 <strong>私密模式已进入</strong>
                 <span>
-                  当前会话可以查看私密标题、预览和质量提示。关闭浏览器后会默认退出。
+                  当前会话可以查看私密标题、预览和质量提示。{vaultSummary?.autoLock && vaultSummary.autoLock !== "browser"
+                    ? `${renderAutoLockLabel(vaultSummary.autoLock)}内没有私密操作会自动锁定，关闭浏览器也会退出。`
+                    : "关闭浏览器后会自动退出。"}
                 </span>
               </div>
               <div className="settings-actions">
@@ -1116,6 +1194,23 @@ export function App() {
 
 function parseSaveModeIntent(input: unknown): SaveMode | null {
   return input === "standard" || input === "private" ? input : null;
+}
+
+function parseSidePanelNotice(input: unknown): { message: string; saveMode: SaveMode } | null {
+  if (!input || typeof input !== "object") {
+    return null;
+  }
+  const record = input as Record<string, unknown>;
+  const saveMode = parseSaveModeIntent(record.saveMode);
+  if (
+    typeof record.message !== "string" ||
+    !saveMode ||
+    typeof record.createdAt !== "number" ||
+    Date.now() - record.createdAt > SIDE_PANEL_NOTICE_TTL_MS
+  ) {
+    return null;
+  }
+  return { message: record.message, saveMode };
 }
 
 async function resolveInitialSaveMode(

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Bookmark, Folder, Tag } from "@keeppage/domain";
+import type { Bookmark, Folder, PrivateVaultSummary, Tag } from "@keeppage/domain";
 import {
   MESSAGE_TYPE,
+  type MoveActiveTabBookmarkToPrivateResponse,
+  type PrivateVaultStateResponse,
   type SaveActiveTabAsBookmarkResponse,
   type ToggleActiveTabBookmarkResponse,
 } from "../../src/lib/messages";
@@ -22,9 +24,11 @@ import { isMissingReceiverError } from "../../src/lib/extension-errors";
 
 const FOLDER_SUGGESTION_LIMIT = 6;
 const TAG_SUGGESTION_LIMIT = 12;
+const SIDE_PANEL_SAVE_MODE_INTENT_KEY = "sidePanelSaveModeIntent";
 
 type MetadataState = "idle" | "loading" | "saving" | "saved" | "error";
-type BookmarkSaveState = "saving" | "success" | "removed" | "error";
+type BookmarkSaveState = "saving" | "success" | "removed" | "moved" | "error";
+type PrivateMoveState = "loading" | "idle" | "unlocking" | "moving" | "error";
 
 export function App() {
   const saveStartedRef = useRef(false);
@@ -47,6 +51,10 @@ export function App() {
   const [isTagMenuOpen, setIsTagMenuOpen] = useState(false);
   const [metadataState, setMetadataState] = useState<MetadataState>("idle");
   const [metadataMessage, setMetadataMessage] = useState<string | null>(null);
+  const [vaultSummary, setVaultSummary] = useState<PrivateVaultSummary | null>(null);
+  const [privateMoveState, setPrivateMoveState] = useState<PrivateMoveState>("loading");
+  const [privateMoveMessage, setPrivateMoveMessage] = useState<string | null>(null);
+  const [unlockPassphrase, setUnlockPassphrase] = useState("");
 
   useEffect(() => {
     if (saveStartedRef.current) {
@@ -86,10 +94,18 @@ export function App() {
     void loadMetadataOptions(bookmarkId);
   }, [bookmarkId, saveState]);
 
+  useEffect(() => {
+    if (saveState === "success") {
+      void loadPrivateVaultState();
+    }
+  }, [saveState]);
+
   const statusTitle = saveState === "success"
     ? "已收藏当前网页"
     : saveState === "removed"
     ? "已取消收藏"
+    : saveState === "moved"
+    ? "已移到私密模式"
     : saveState === "error"
     ? "收藏操作失败"
     : "正在检查收藏状态";
@@ -218,6 +234,71 @@ export function App() {
     window.close();
   }
 
+  async function handleOpenPrivateWorkspace() {
+    // Not awaited: sidePanel.open() must run while the click gesture is still active.
+    void chrome.storage.session.set({ [SIDE_PANEL_SAVE_MODE_INTENT_KEY]: "private" });
+    await handleOpenWorkspace();
+  }
+
+  async function loadPrivateVaultState() {
+    setPrivateMoveState("loading");
+    setPrivateMoveMessage(null);
+    try {
+      const response = await sendRuntimeMessage<PrivateVaultStateResponse>({
+        type: MESSAGE_TYPE.GetPrivateVaultState,
+      });
+      if (!response?.ok || !response.summary) {
+        throw new Error(response?.error ?? "读取私密模式状态失败。");
+      }
+      setVaultSummary(response.summary);
+      setPrivateMoveState("idle");
+    } catch (error) {
+      setPrivateMoveState("error");
+      setPrivateMoveMessage(error instanceof Error ? error.message : "读取私密模式状态失败。");
+    }
+  }
+
+  async function handleMoveToPrivate() {
+    if (!bookmarkId || !vaultSummary?.enabled) {
+      return;
+    }
+    setPrivateMoveMessage(null);
+    try {
+      if (!vaultSummary.unlocked) {
+        if (!unlockPassphrase) {
+          setPrivateMoveState("error");
+          setPrivateMoveMessage("请输入私密密码。");
+          return;
+        }
+        setPrivateMoveState("unlocking");
+        const unlockResponse = await sendRuntimeMessage<PrivateVaultStateResponse>({
+          type: MESSAGE_TYPE.UnlockPrivateVault,
+          passphrase: unlockPassphrase,
+        });
+        if (!unlockResponse?.ok || !unlockResponse.summary) {
+          throw new Error(unlockResponse?.error ?? "私密密码验证失败。");
+        }
+        setVaultSummary(unlockResponse.summary);
+        setUnlockPassphrase("");
+      }
+
+      setPrivateMoveState("moving");
+      const response = await sendRuntimeMessage<MoveActiveTabBookmarkToPrivateResponse>({
+        type: MESSAGE_TYPE.MoveActiveTabBookmarkToPrivate,
+        bookmarkId,
+      });
+      if (!response?.ok) {
+        throw new Error(response?.error ?? "移到私密模式失败，原书签已保留。");
+      }
+      setPrivateMoveState("idle");
+      setPrivateMoveMessage(response.warning ?? null);
+      setSaveState("moved");
+    } catch (error) {
+      setPrivateMoveState("error");
+      setPrivateMoveMessage(error instanceof Error ? error.message : "移到私密模式失败，原书签已保留。");
+    }
+  }
+
   async function handleOpenLogin() {
     await openExtensionAuthPage("toolbar-popup");
     window.close();
@@ -327,7 +408,7 @@ export function App() {
         <div className="status-copy">
           <div className="status-pill">
             <span className="status-dot" aria-hidden="true" />
-            <span>{saveState === "success" ? "书签已保存" : saveState === "removed" ? "已取消收藏" : saveState === "error" ? "操作失败" : "正在处理"}</span>
+            <span>{saveState === "success" ? "书签已保存" : saveState === "removed" ? "已取消收藏" : saveState === "moved" ? "已私密保存" : saveState === "error" ? "操作失败" : "正在处理"}</span>
           </div>
           <h1>{statusTitle}</h1>
           <p className="status-description">{statusDescription}</p>
@@ -343,7 +424,7 @@ export function App() {
         </div>
         <div className="summary-row">
           <span>模式</span>
-          <strong>书签（不存档）</strong>
+          <strong>{saveState === "moved" ? "私密存档" : "书签（不存档）"}</strong>
         </div>
       </section>
 
@@ -544,6 +625,83 @@ export function App() {
         </section>
       ) : null}
 
+      {saveState === "success" && bookmarkId ? (
+        <section className="private-card">
+          <div className="section-heading">
+            <h2>移到私密模式</h2>
+            <p>私密存档当前网页，并移除这条普通书签。私密书签暂不支持收藏夹和标签，上面的整理不会带过去。</p>
+          </div>
+
+          {privateMoveState === "loading" ? (
+            <p role="status" className="inline-message">正在读取私密模式状态…</p>
+          ) : vaultSummary && !vaultSummary.enabled ? (
+            <>
+              <p className="inline-message">还没有启用私密模式，启用后才能迁移。</p>
+              <div className="actions">
+                <button type="button" disabled>移到私密模式</button>
+                <button type="button" className="ghost" onClick={handleOpenPrivateWorkspace}>
+                  去启用
+                </button>
+              </div>
+            </>
+          ) : vaultSummary ? (
+            <>
+              {!vaultSummary.unlocked ? (
+                <label className="field">
+                  <span>私密密码</span>
+                  <input
+                    type="password"
+                    value={unlockPassphrase}
+                    autoComplete="current-password"
+                    placeholder="私密模式已锁定，输入密码后迁移"
+                    disabled={privateMoveState === "unlocking" || privateMoveState === "moving"}
+                    onChange={(event) => setUnlockPassphrase(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleMoveToPrivate();
+                      }
+                    }}
+                  />
+                </label>
+              ) : null}
+              <div className="actions">
+                <button
+                  type="button"
+                  onClick={() => void handleMoveToPrivate()}
+                  disabled={privateMoveState === "unlocking" || privateMoveState === "moving"}
+                >
+                  {privateMoveState === "unlocking"
+                    ? "验证密码中..."
+                    : privateMoveState === "moving"
+                    ? "私密存档中..."
+                    : vaultSummary.unlocked
+                    ? "移到私密模式"
+                    : "解锁并移到私密"}
+                </button>
+              </div>
+            </>
+          ) : null}
+
+          {privateMoveState === "moving" ? (
+            <p role="status" className="inline-message metadata-notice">
+              正在私密存档当前网页，可能需要十几秒。关闭弹窗不会中断，结果可以在侧边栏私密视图查看。
+            </p>
+          ) : privateMoveMessage ? (
+            <p role="alert" className="inline-message metadata-notice error-text">{privateMoveMessage}</p>
+          ) : null}
+          {privateMoveState === "error" && !vaultSummary ? (
+            <button type="button" className="ghost metadata-retry" onClick={() => void loadPrivateVaultState()}>
+              重新读取私密模式状态
+            </button>
+          ) : null}
+        </section>
+      ) : null}
+
+      {saveState === "moved" && privateMoveMessage ? (
+        <p role="alert" className="inline-message metadata-notice error-text">{privateMoveMessage}</p>
+      ) : null}
+
       {saveState !== "success" ? (
         <div className="actions">
           {saveState === "error" ? (
@@ -551,8 +709,12 @@ export function App() {
               重试收藏操作
             </button>
           ) : null}
-          <button type="button" className="ghost" onClick={handleOpenWorkspace}>
-            打开工作台
+          <button
+            type="button"
+            className="ghost"
+            onClick={saveState === "moved" ? handleOpenPrivateWorkspace : handleOpenWorkspace}
+          >
+            {saveState === "moved" ? "查看私密存档" : "打开工作台"}
           </button>
           {saveState === "error" && looksLikeAuthError(saveError) ? (
             <button type="button" className="ghost" onClick={handleOpenLogin}>
@@ -608,6 +770,9 @@ function getStatusDescription(
   }
   if (saveState === "removed") {
     return "当前网页已从 KeepPage 中移除，再点一次插件即可重新收藏。";
+  }
+  if (saveState === "moved") {
+    return "网页已私密存档，普通书签已移除；可以在侧边栏的私密视图中查看。";
   }
   return "正在检查当前网页的收藏状态。";
 }

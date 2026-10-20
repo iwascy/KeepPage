@@ -4,10 +4,23 @@ import type {
 } from "@keeppage/domain";
 import { getConfiguredApiBaseUrl } from "./auth-flow";
 import { getStoredSyncToken } from "./auth-storage";
-import { privateVaultSummarySchema } from "./domain-runtime";
+import { privateAutoLockSchema, privateVaultSummarySchema } from "./domain-runtime";
 import { createLogger } from "./logger";
 
 const PRIVATE_TOKEN_KEY = "privateModeToken";
+// Inactivity deadline (epoch ms) for the current private session; absent for "browser".
+const PRIVATE_TOKEN_EXPIRES_AT_KEY = "privateModeTokenExpiresAt";
+const PRIVATE_AUTO_LOCK_KEY = "privateAutoLock";
+const DEFAULT_PRIVATE_AUTO_LOCK: PrivateAutoLock = "15m";
+const AUTO_LOCK_DURATION_MS: Record<PrivateAutoLock, number | null> = {
+  "5m": 5 * 60 * 1000,
+  "15m": 15 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  // chrome.storage.session is cleared when the browser exits.
+  browser: null,
+};
+// Avoid rewriting the deadline to storage on every private request.
+const EXPIRY_TOUCH_INTERVAL_MS = 30 * 1000;
 const logger = createLogger("private-mode");
 
 class PrivateModeApiError extends Error {
@@ -21,28 +34,90 @@ class PrivateModeApiError extends Error {
 }
 
 let cachedPrivateToken: string | null = null;
+let cachedPrivateTokenExpiresAt: number | null = null;
 let privateTokenLoaded = false;
 
-function createEmptySummary(): PrivateVaultSummary {
+async function createEmptySummary(): Promise<PrivateVaultSummary> {
   return privateVaultSummarySchema.parse({
     enabled: false,
     unlocked: false,
-    autoLock: "browser",
+    autoLock: await getPrivateAutoLock(),
     totalItems: 0,
     pendingSyncCount: 0,
     syncEnabled: true,
   });
 }
 
-async function loadPrivateToken() {
-  if (privateTokenLoaded) {
-    return cachedPrivateToken;
+export async function getPrivateAutoLock(): Promise<PrivateAutoLock> {
+  const result = await chrome.storage.local.get(PRIVATE_AUTO_LOCK_KEY);
+  try {
+    return privateAutoLockSchema.parse(result[PRIVATE_AUTO_LOCK_KEY] ?? DEFAULT_PRIVATE_AUTO_LOCK);
+  } catch {
+    return DEFAULT_PRIVATE_AUTO_LOCK;
   }
-  const result = await chrome.storage.session.get(PRIVATE_TOKEN_KEY);
-  cachedPrivateToken = typeof result[PRIVATE_TOKEN_KEY] === "string"
-    ? result[PRIVATE_TOKEN_KEY].trim() || null
-    : null;
-  privateTokenLoaded = true;
+}
+
+export async function setPrivateAutoLock(autoLock: PrivateAutoLock) {
+  await chrome.storage.local.set({
+    [PRIVATE_AUTO_LOCK_KEY]: privateAutoLockSchema.parse(autoLock),
+  });
+  if (await loadPrivateToken()) {
+    await persistPrivateTokenExpiry(await computePrivateTokenExpiresAt());
+  }
+  return getPrivateVaultSummary();
+}
+
+async function computePrivateTokenExpiresAt() {
+  const duration = AUTO_LOCK_DURATION_MS[await getPrivateAutoLock()];
+  return duration == null ? null : Date.now() + duration;
+}
+
+async function persistPrivateTokenExpiry(expiresAt: number | null) {
+  cachedPrivateTokenExpiresAt = expiresAt;
+  if (expiresAt == null) {
+    await chrome.storage.session.remove(PRIVATE_TOKEN_EXPIRES_AT_KEY);
+    return;
+  }
+  await chrome.storage.session.set({
+    [PRIVATE_TOKEN_EXPIRES_AT_KEY]: expiresAt,
+  });
+}
+
+async function loadPrivateToken() {
+  if (!privateTokenLoaded) {
+    const result = await chrome.storage.session.get([PRIVATE_TOKEN_KEY, PRIVATE_TOKEN_EXPIRES_AT_KEY]);
+    cachedPrivateToken = typeof result[PRIVATE_TOKEN_KEY] === "string"
+      ? result[PRIVATE_TOKEN_KEY].trim() || null
+      : null;
+    cachedPrivateTokenExpiresAt = typeof result[PRIVATE_TOKEN_EXPIRES_AT_KEY] === "number"
+      ? result[PRIVATE_TOKEN_EXPIRES_AT_KEY]
+      : null;
+    privateTokenLoaded = true;
+  }
+  if (!cachedPrivateToken) {
+    return null;
+  }
+
+  if (cachedPrivateTokenExpiresAt != null && Date.now() >= cachedPrivateTokenExpiresAt) {
+    logger.info("Private session reached its auto-lock deadline.");
+    await lockPrivateVault().catch((error) => {
+      logger.warn("Server-side private lock after auto-lock failed.", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return null;
+  }
+
+  // Auto-lock counts inactivity: every private access pushes the deadline back.
+  const nextExpiresAt = await computePrivateTokenExpiresAt();
+  if (
+    nextExpiresAt !== cachedPrivateTokenExpiresAt &&
+    (nextExpiresAt == null ||
+      cachedPrivateTokenExpiresAt == null ||
+      nextExpiresAt - cachedPrivateTokenExpiresAt >= EXPIRY_TOUCH_INTERVAL_MS)
+  ) {
+    await persistPrivateTokenExpiry(nextExpiresAt);
+  }
   return cachedPrivateToken;
 }
 
@@ -53,9 +128,18 @@ async function persistPrivateToken(privateToken: string | null) {
     await chrome.storage.session.set({
       [PRIVATE_TOKEN_KEY]: privateToken,
     });
+    await persistPrivateTokenExpiry(await computePrivateTokenExpiresAt());
     return;
   }
   await chrome.storage.session.remove(PRIVATE_TOKEN_KEY);
+  await persistPrivateTokenExpiry(null);
+}
+
+async function withLocalAutoLock(summary: PrivateVaultSummary): Promise<PrivateVaultSummary> {
+  return {
+    ...summary,
+    autoLock: await getPrivateAutoLock(),
+  };
 }
 
 async function requireAuthHeaders(privateToken?: string | null) {
@@ -141,7 +225,7 @@ export async function getPrivateVaultSummary(_ownerUserId?: string): Promise<Pri
     if (!summary.unlocked && privateToken) {
       await persistPrivateToken(null);
     }
-    return summary;
+    return withLocalAutoLock(summary);
   } catch (error) {
     if (error instanceof PrivateModeApiError && (error.status === 401 || error.status === 403)) {
       logger.warn("Fetching private mode summary fell back to locked state.", {
@@ -159,7 +243,9 @@ export async function createPrivateVault(input: {
   passphrase: string;
   autoLock: PrivateAutoLock;
 }) {
-  void input.autoLock;
+  await chrome.storage.local.set({
+    [PRIVATE_AUTO_LOCK_KEY]: privateAutoLockSchema.parse(input.autoLock),
+  });
   const payload = parseUnlockResponse(
     await requestJson("/private-mode/setup", {
       method: "POST",
@@ -174,7 +260,7 @@ export async function createPrivateVault(input: {
   );
   await persistPrivateToken(payload.privateToken);
   return {
-    summary: payload.summary,
+    summary: await withLocalAutoLock(payload.summary),
   };
 }
 
@@ -192,7 +278,7 @@ export async function unlockPrivateVault(passphrase: string) {
     }),
   );
   await persistPrivateToken(payload.privateToken);
-  return payload.summary;
+  return withLocalAutoLock(payload.summary);
 }
 
 export async function lockPrivateVault() {
@@ -203,12 +289,12 @@ export async function lockPrivateVault() {
   }
 
   try {
-    return privateVaultSummarySchema.parse(
+    return withLocalAutoLock(privateVaultSummarySchema.parse(
       await requestJson("/private-mode/lock", {
         method: "POST",
         headers: await requireAuthHeaders(),
       }, true),
-    );
+    ));
   } catch (error) {
     if (error instanceof PrivateModeApiError && (error.status === 401 || error.status === 403)) {
       logger.warn("Locking private mode returned unauthorized, clearing local session only.", {

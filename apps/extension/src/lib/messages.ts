@@ -29,6 +29,8 @@ export const MESSAGE_TYPE = {
   UnlockPrivateVault: "keeppage/unlock-private-vault",
   LockPrivateVault: "keeppage/lock-private-vault",
   RefreshAllBookmarkIcons: "keeppage/refresh-all-bookmark-icons",
+  MoveActiveTabBookmarkToPrivate: "keeppage/move-active-tab-bookmark-to-private",
+  SetPrivateAutoLock: "keeppage/set-private-auto-lock",
   TaskUpdated: "keeppage/task-updated",
   DebugLog: "keeppage/debug-log",
 } as const;
@@ -65,7 +67,7 @@ export interface ShowInPageToastRequest {
   type: typeof MESSAGE_TYPE.ShowInPageToast;
   title: string;
   message?: string;
-  tone?: "success";
+  tone?: "success" | "error" | "info";
 }
 
 export interface ShowInPageToastResponse {
@@ -187,12 +189,30 @@ export interface UnlockPrivateVaultRequest {
   passphrase: string;
 }
 
+export interface SetPrivateAutoLockRequest {
+  type: typeof MESSAGE_TYPE.SetPrivateAutoLock;
+  autoLock: PrivateAutoLock;
+}
+
 export interface LockPrivateVaultRequest {
   type: typeof MESSAGE_TYPE.LockPrivateVault;
 }
 
 export interface RefreshAllBookmarkIconsRequest {
   type: typeof MESSAGE_TYPE.RefreshAllBookmarkIcons;
+}
+
+export interface MoveActiveTabBookmarkToPrivateRequest {
+  type: typeof MESSAGE_TYPE.MoveActiveTabBookmarkToPrivate;
+  bookmarkId: string;
+}
+
+export interface MoveActiveTabBookmarkToPrivateResponse {
+  ok: boolean;
+  task?: CaptureTask;
+  /** Set when the private copy was saved but the standard bookmark could not be removed. */
+  warning?: string;
+  error?: string;
 }
 
 export interface TaskUpdatedEvent {
@@ -227,7 +247,9 @@ export type BackgroundRequest =
   | CreatePrivateVaultRequest
   | UnlockPrivateVaultRequest
   | LockPrivateVaultRequest
-  | RefreshAllBookmarkIconsRequest;
+  | RefreshAllBookmarkIconsRequest
+  | MoveActiveTabBookmarkToPrivateRequest
+  | SetPrivateAutoLockRequest;
 
 export function isContentRequest(message: unknown): message is ContentRequest {
   if (!message || typeof message !== "object") {
@@ -269,6 +291,8 @@ export function isBackgroundRequest(message: unknown): message is BackgroundRequ
     maybe.type === MESSAGE_TYPE.CreatePrivateVault ||
     maybe.type === MESSAGE_TYPE.UnlockPrivateVault ||
     maybe.type === MESSAGE_TYPE.LockPrivateVault ||
-    maybe.type === MESSAGE_TYPE.RefreshAllBookmarkIcons
+    maybe.type === MESSAGE_TYPE.RefreshAllBookmarkIcons ||
+    maybe.type === MESSAGE_TYPE.MoveActiveTabBookmarkToPrivate ||
+    maybe.type === MESSAGE_TYPE.SetPrivateAutoLock
   );
 }

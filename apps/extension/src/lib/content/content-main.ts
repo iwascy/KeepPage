@@ -159,6 +159,7 @@ export default defineContentScript({
           showInPageToast({
             title: message.title,
             message: message.message,
+            tone: message.tone,
           });
           const response: ShowInPageToastResponse = {
             ok: true,
@@ -1465,8 +1466,11 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function showInPageToast(input: { title: string; message?: string }) {
+function showInPageToast(input: { title: string; message?: string; tone?: "success" | "error" | "info" }) {
   const ui = ensureToastElements();
+
+  ui.toast.dataset.tone = input.tone ?? "success";
+  ui.toast.setAttribute("role", input.tone === "error" ? "alert" : "status");
 
   ui.title.textContent = input.title;
   const normalizedMessage = input.message?.trim() ?? "";
@@ -1547,6 +1551,15 @@ function ensureToastElements() {
     .toast[data-state="visible"] {
       opacity: 1;
       transform: translateY(0);
+    }
+
+    .toast[data-tone="error"] {
+      border-color: #f3c3bf;
+      background: #fff8f7;
+    }
+
+    .toast[data-tone="error"] .title {
+      color: #b42318;
     }
 
     .toast[data-state="leaving"] {

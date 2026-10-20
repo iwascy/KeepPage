@@ -1,6 +1,7 @@
 import { defineBackground } from "wxt/utils/define-background";
 import {
   captureActiveTab,
+  captureTabById,
   listRecentTasks,
   openTaskPreview,
   retryTask,
@@ -10,6 +11,8 @@ import {
   MESSAGE_TYPE,
   isBackgroundRequest,
   type ListTasksResponse,
+  type MoveActiveTabBookmarkToPrivateResponse,
+  type ShowInPageToastRequest,
 } from "../src/lib/messages";
 import {
   getRefreshRequiredMessage,
@@ -41,6 +44,8 @@ import {
   createPrivateVault,
   getPrivateVaultSummary,
   lockPrivateVault,
+  requirePrivateVaultUnlocked,
+  setPrivateAutoLock,
   unlockPrivateVault,
 } from "../src/lib/private-vault";
 
@@ -48,7 +53,20 @@ const singleFileTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 const logger = createLogger("background");
 const BOOKMARKED_BADGE_COLOR = "#16a34a";
 const BOOKMARKED_BADGE_TEXT = "✓";
+const ERROR_BADGE_COLOR = "#dc2626";
+const ERROR_BADGE_TEXT = "!";
 const SIDE_PANEL_SAVE_MODE_INTENT_KEY = "sidePanelSaveModeIntent";
+const SIDE_PANEL_NOTICE_KEY = "sidePanelNotice";
+const PENDING_PRIVATE_CAPTURE_KEY = "pendingPrivateCapture";
+const PENDING_PRIVATE_CAPTURE_TTL_MS = 10 * 60 * 1000;
+
+type SaveModeValue = "standard" | "private";
+
+interface PendingPrivateCapture {
+  tabId: number;
+  url: string;
+  requestedAt: number;
+}
 
 export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
@@ -80,7 +98,7 @@ export default defineBackground(() => {
     void refreshActiveTabBookmarkBadge();
   });
 
-  chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (
       info.menuItemId !== "keeppage-save-page" &&
       info.menuItemId !== "keeppage-save-link" &&
@@ -92,44 +110,47 @@ export default defineBackground(() => {
       return;
     }
     if (info.menuItemId === "keeppage-save-link") {
-      if (!await ensureAuthenticated("context-menu-link-bookmark")) {
-        return;
-      }
-      await saveTabAsLinkBookmark(tab);
+      void (async () => {
+        if (!await ensureAuthenticated("context-menu-link-bookmark")) {
+          return;
+        }
+        await saveTabAsLinkBookmark(tab);
+      })();
       return;
     }
     const saveMode = info.menuItemId === "keeppage-save-page-private" ? "private" : "standard";
-    await chrome.storage.session.set({
-      [SIDE_PANEL_SAVE_MODE_INTENT_KEY]: saveMode,
-    });
     logger.info("Context menu capture requested.", {
       tabId: tab.id,
       url: tab.url,
       saveMode,
     });
-    if (tab.windowId != null) {
-      if (!await ensureAuthenticated("context-menu")) {
-        return;
-      }
-      await attemptQuickCapture(tab.windowId, saveMode);
-    }
+    startQuickCapture(tab, saveMode, "context-menu");
   });
 
-  chrome.commands.onCommand.addListener(async (command) => {
+  chrome.commands.onCommand.addListener((command, tab) => {
     logger.info("Command received.", { command });
     if (command === "save-current-page") {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      if (!await ensureAuthenticated("keyboard-shortcut")) {
+      if (tab?.id != null) {
+        startQuickCapture(tab, "standard", "keyboard-shortcut");
         return;
       }
-      await attemptQuickCapture(tab?.windowId);
+      void chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([activeTab]) => {
+        if (activeTab?.id != null) {
+          startQuickCapture(activeTab, "standard", "keyboard-shortcut");
+        }
+      });
       return;
     }
     if (command === "open-side-panel") {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (tab?.windowId != null) {
-        await openSidePanelForWindow(tab.windowId);
+        void openSidePanelForWindow(tab.windowId);
+        return;
       }
+      void chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([activeTab]) => {
+        if (activeTab?.windowId != null) {
+          void openSidePanelForWindow(activeTab.windowId);
+        }
+      });
     }
   });
 
@@ -317,10 +338,17 @@ export default defineBackground(() => {
           ok: true,
           summary: result.summary,
         });
+        void resumePendingPrivateCapture();
         return;
       }
       if (message.type === MESSAGE_TYPE.UnlockPrivateVault) {
         const summary = await unlockPrivateVault(message.passphrase);
+        sendResponse({ ok: true, summary });
+        void resumePendingPrivateCapture();
+        return;
+      }
+      if (message.type === MESSAGE_TYPE.SetPrivateAutoLock) {
+        const summary = await setPrivateAutoLock(privateAutoLockSchema.parse(message.autoLock));
         sendResponse({ ok: true, summary });
         return;
       }
@@ -336,6 +364,22 @@ export default defineBackground(() => {
         }
         const result = await refreshAllBookmarkIcons();
         sendResponse({ ok: true, ...result });
+        return;
+      }
+      if (message.type === MESSAGE_TYPE.MoveActiveTabBookmarkToPrivate) {
+        if (!await ensureAuthenticated("toolbar-move-to-private")) {
+          sendResponse({ ok: false, error: "请先登录 KeepPage。" });
+          return;
+        }
+        const [activeTab] = await chrome.tabs.query({
+          active: true,
+          lastFocusedWindow: true,
+        });
+        if (typeof activeTab?.id !== "number" || !isBookmarkablePageUrl(activeTab.url)) {
+          sendResponse({ ok: false, error: "当前页面不支持私密保存。" });
+          return;
+        }
+        sendResponse(await moveTabBookmarkToPrivate(activeTab, message.bookmarkId));
         return;
       }
     })().catch((error) => {
@@ -368,10 +412,6 @@ export default defineBackground(() => {
       void refreshTabBookmarkBadge(tabId, tab.url);
     }
   });
-
-  chrome.runtime.onSuspend.addListener(() => {
-    void lockPrivateVault();
-  });
 });
 
 async function ensureAuthenticated(trigger: string) {
@@ -401,28 +441,180 @@ async function ensureAuthenticated(trigger: string) {
   return false;
 }
 
-async function attemptQuickCapture(windowId: number | undefined, saveMode: "standard" | "private" = "standard") {
-  let capturedTabId: number | undefined;
+/**
+ * Runs a context-menu / shortcut capture. Must be called synchronously from the
+ * user-gesture listener: chrome.sidePanel.open() is rejected once the gesture
+ * has been consumed by an await.
+ */
+function startQuickCapture(tab: chrome.tabs.Tab, saveMode: SaveModeValue, trigger: string) {
+  void chrome.storage.session.set({
+    [SIDE_PANEL_SAVE_MODE_INTENT_KEY]: saveMode,
+  });
+  if (tab.windowId != null) {
+    void openSidePanelForWindow(tab.windowId);
+  }
+  void attemptQuickCapture(tab, saveMode, trigger);
+}
+
+async function attemptQuickCapture(tab: chrome.tabs.Tab, saveMode: SaveModeValue, trigger: string) {
+  if (typeof tab.id !== "number") {
+    return;
+  }
+  const tabId = tab.id;
   try {
-    const [activeTab] = await chrome.tabs.query({
-      active: true,
-      lastFocusedWindow: true,
-    });
-    capturedTabId = activeTab?.id;
-    await captureActiveTab(undefined, saveMode);
-  } catch (error) {
-    logger.warn("Quick capture failed.", {
+    if (!await ensureAuthenticated(trigger)) {
+      return;
+    }
+    if (saveMode === "private") {
+      const summary = await getPrivateVaultSummary();
+      if (!summary.enabled || !summary.unlocked) {
+        await deferPrivateCapture(tab, summary.enabled);
+        return;
+      }
+    }
+    const task = await captureTabById(tabId, undefined, saveMode);
+    if (task.status === "synced") {
+      // Also clears an error badge left by an earlier failed attempt.
+      void refreshTabBookmarkBadge(tabId);
+      return;
+    }
+    await reportQuickCaptureFailure(
+      tabId,
       saveMode,
+      task.failureReason ?? "保存没有完成，请在侧边栏查看详情。",
+    );
+  } catch (error) {
+    await reportQuickCaptureFailure(
+      tabId,
+      saveMode,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+async function deferPrivateCapture(tab: chrome.tabs.Tab, vaultEnabled: boolean) {
+  if (typeof tab.id !== "number" || !tab.url) {
+    return;
+  }
+  const pending: PendingPrivateCapture = {
+    tabId: tab.id,
+    url: tab.url,
+    requestedAt: Date.now(),
+  };
+  await chrome.storage.session.set({
+    [PENDING_PRIVATE_CAPTURE_KEY]: pending,
+  });
+  const message = vaultEnabled
+    ? "私密模式已锁定，请在侧边栏输入私密密码，解锁后会自动保存当前页。"
+    : "还没有启用私密模式，请先在侧边栏设置私密密码，启用后会自动保存当前页。";
+  logger.info("Private capture deferred until vault is unlocked.", {
+    tabId: tab.id,
+    vaultEnabled,
+  });
+  await setSidePanelNotice(message, "private");
+  await showTabToast(tab.id, {
+    title: vaultEnabled ? "私密模式已锁定" : "私密模式未启用",
+    message,
+    tone: "info",
+  });
+}
+
+async function resumePendingPrivateCapture() {
+  const result = await chrome.storage.session.get(PENDING_PRIVATE_CAPTURE_KEY);
+  const pending = result[PENDING_PRIVATE_CAPTURE_KEY] as PendingPrivateCapture | undefined;
+  if (!pending) {
+    return;
+  }
+  await chrome.storage.session.remove(PENDING_PRIVATE_CAPTURE_KEY);
+  if (Date.now() - pending.requestedAt > PENDING_PRIVATE_CAPTURE_TTL_MS) {
+    logger.info("Pending private capture expired.", { tabId: pending.tabId });
+    return;
+  }
+  const tab = await chrome.tabs.get(pending.tabId).catch(() => null);
+  if (!tab?.id || tab.url !== pending.url) {
+    await setSidePanelNotice("待私密保存的网页已关闭或已跳转，请回到该页面重新保存。", "private");
+    return;
+  }
+  logger.info("Resuming pending private capture.", { tabId: tab.id });
+  await attemptQuickCapture(tab, "private", "private-vault-unlocked");
+}
+
+async function reportQuickCaptureFailure(tabId: number, saveMode: SaveModeValue, reason: string) {
+  logger.warn("Quick capture failed.", { tabId, saveMode, error: reason });
+  const title = saveMode === "private" ? "私密保存失败" : "保存到 KeepPage 失败";
+  await setSidePanelNotice(`${title}：${reason}`, saveMode);
+  await showTabToast(tabId, { title, message: reason, tone: "error" });
+  try {
+    await chrome.action.setBadgeText({ tabId, text: ERROR_BADGE_TEXT });
+    await chrome.action.setBadgeBackgroundColor({ tabId, color: ERROR_BADGE_COLOR });
+    await chrome.action.setBadgeTextColor?.({ tabId, color: "#ffffff" });
+  } catch {
+    // Ignore: the tab may already be closed.
+  }
+}
+
+async function setSidePanelNotice(message: string, saveMode: SaveModeValue) {
+  await chrome.storage.session.set({
+    [SIDE_PANEL_NOTICE_KEY]: {
+      message,
+      saveMode,
+      createdAt: Date.now(),
+    },
+  });
+}
+
+async function showTabToast(
+  tabId: number,
+  toast: Pick<ShowInPageToastRequest, "title" | "message" | "tone">,
+) {
+  try {
+    await sendMessageToTab(tabId, {
+      type: MESSAGE_TYPE.ShowInPageToast,
+      ...toast,
+    });
+  } catch (error) {
+    // Pages without the content script (chrome://, Web Store) cannot show a toast;
+    // the side panel notice still surfaces the message.
+    logger.debug("In-page toast unavailable.", {
+      tabId,
       error: error instanceof Error ? error.message : String(error),
     });
-  } finally {
-    if (typeof capturedTabId === "number" && saveMode === "standard") {
-      void refreshTabBookmarkBadge(capturedTabId);
-    }
-    if (windowId != null) {
-      await openSidePanelForWindow(windowId);
-    }
   }
+}
+
+async function moveTabBookmarkToPrivate(
+  tab: chrome.tabs.Tab,
+  bookmarkId: string,
+): Promise<MoveActiveTabBookmarkToPrivateResponse> {
+  const tabId = tab.id as number;
+  await requirePrivateVaultUnlocked();
+  logger.info("Moving bookmark to private mode.", { tabId, bookmarkId });
+  const task = await captureTabById(tabId, undefined, "private");
+  if (task.status !== "synced") {
+    return {
+      ok: false,
+      task,
+      error: `私密保存没有完成，原书签已保留：${task.failureReason ?? "请在侧边栏查看详情。"}`,
+    };
+  }
+  // Only remove the standard bookmark after the private copy is safely stored.
+  try {
+    await deleteBookmark(bookmarkId);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.warn("Private copy saved but standard bookmark removal failed.", {
+      bookmarkId,
+      error: reason,
+    });
+    return {
+      ok: true,
+      task,
+      warning: `已私密保存，但普通书签删除失败：${reason}`,
+    };
+  } finally {
+    await refreshTabBookmarkBadge(tabId, tab.url);
+  }
+  return { ok: true, task };
 }
 
 async function saveTabAsLinkBookmark(tab: chrome.tabs.Tab) {

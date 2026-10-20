@@ -68,6 +68,28 @@ export async function captureActiveTab(
   return captureTab(activeTab.id, profile, owner, saveMode, captureScope);
 }
 
+export async function captureTabById(
+  tabId: number,
+  profile: CaptureProfile = DEFAULT_PROFILE,
+  saveMode: SaveMode = "standard",
+) {
+  const owner = await requireCurrentTaskOwner();
+  if (saveMode === "private") {
+    await requirePrivateVaultUnlocked();
+  }
+  const tab = await chrome.tabs.get(tabId);
+  logCapture(saveMode, "info", tabId, "Starting capture for tab.", {
+    tabId,
+    url: tab.url,
+    profile,
+    ownerUserId: owner.userId,
+  });
+  // captureVisibleTab only sees the window's active tab, so skip the screenshot otherwise.
+  return captureTab(tabId, profile, owner, saveMode, "page", {
+    captureScreenshot: tab.active,
+  });
+}
+
 export async function retryTask(
   taskId: string,
   profileOverride?: CaptureProfile,
