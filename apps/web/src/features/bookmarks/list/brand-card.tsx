@@ -141,15 +141,16 @@ export const BrandBookmarkCard = memo(function BrandBookmarkCard({
       </div>
 
       <div className="brand-bookmark-body">
-        <div className="brand-bookmark-meta">
-          <span className="brand-bookmark-domain">{domain}</span>
-          <span className="brand-bookmark-dot" aria-hidden="true">·</span>
-          <span className="brand-bookmark-time">{formatCompactRelativeWhen(bookmark.updatedAt)}</span>
+        <div className="brand-bookmark-info">
+          <div className="brand-bookmark-meta">
+            <span className="brand-bookmark-domain">{domain}</span>
+            <span className="brand-bookmark-dot" aria-hidden="true">·</span>
+            <span className="brand-bookmark-time">{formatCompactRelativeWhen(bookmark.updatedAt)}</span>
+          </div>
+          <div className="brand-bookmark-status"><span className={hasArchive ? "is-archived" : ""}>{hasArchive ? "已存档" : "仅链接"}</span>{folderName ? <span className="brand-bookmark-collection" title={bookmark.folder?.path}>{folderName}</span> : null}</div>
         </div>
         <h2 className="brand-bookmark-title" title={bookmark.title}>{displayTitle}</h2>
         {excerpt ? <p className="brand-bookmark-excerpt">{searchInput.trim() ? "命中摘要：" : ""}{excerpt}</p> : null}
-
-        <div className="brand-bookmark-status"><span className={hasArchive ? "is-archived" : ""}>{hasArchive ? "已存档" : "仅链接"}</span>{folderName ? <span className="brand-bookmark-collection" title={bookmark.folder?.path}>{folderName}</span> : null}</div>
 
         {!selectionMode ? (
           <footer className="brand-bookmark-actions">
