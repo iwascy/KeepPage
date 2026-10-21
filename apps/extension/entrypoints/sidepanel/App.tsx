@@ -14,9 +14,7 @@ import {
   type TaskUpdatedEvent,
 } from "../../src/lib/messages";
 import { getStoredAuthToken, getStoredAuthUser } from "../../src/lib/auth-storage";
-import {
-  ensureArchiveBaseHref,
-} from "../../src/lib/domain-runtime";
+import { ensureArchiveBaseHref } from "../../src/lib/domain-runtime";
 import {
   clearStoredAuthSession,
   normalizeApiBaseUrl,
@@ -39,22 +37,15 @@ type SettingsState = "idle" | "saving" | "saved" | "error";
 type IconRefreshState = "idle" | "refreshing" | "saved" | "error";
 type ConnectionState = "idle" | "testing" | "ok" | "error";
 type AuthState = "idle" | "submitting" | "ok" | "error";
+type NavTab = "queue" | "settings";
+type MobileView = "list" | "detail";
 
 const DEFAULT_API_BASE_URL = "https://keeppage.cccy.fun/api";
 const LOCKED_CAPTURE_PROFILE: CaptureProfile = "complete";
 const SIDE_PANEL_SAVE_MODE_INTENT_KEY = "sidePanelSaveModeIntent";
 const SIDE_PANEL_NOTICE_KEY = "sidePanelNotice";
 const SIDE_PANEL_NOTICE_TTL_MS = 2 * 60 * 1000;
-const SAVE_MODE_OPTIONS: Array<{ value: SaveMode; label: string }> = [
-  {
-    value: "standard",
-    label: "普通",
-  },
-  {
-    value: "private",
-    label: "私密",
-  },
-];
+
 const AUTO_LOCK_OPTIONS: Array<{ value: PrivateAutoLock; label: string }> = [
   { value: "5m", label: "5 分钟" },
   { value: "15m", label: "15 分钟" },
@@ -88,8 +79,11 @@ export function App() {
   const [vaultPassphraseConfirm, setVaultPassphraseConfirm] = useState("");
   const [unlockPassphrase, setUnlockPassphrase] = useState("");
   const [vaultAutoLock, setVaultAutoLock] = useState<PrivateAutoLock>("15m");
-  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // 导航与响应式视图切换
+  const [activeNavTab, setActiveNavTab] = useState<NavTab>("queue");
+  const [mobileView, setMobileView] = useState<MobileView>("list");
 
   useEffect(() => {
     void Promise.all([loadSettings(), refreshPrivateVaultState()]);
@@ -145,8 +139,6 @@ export function App() {
   }, [saveMode]);
 
   useEffect(() => {
-    // Context-menu captures run in the background; it hands over the target mode and
-    // any failure message through session storage, including while the panel is open.
     async function consumeSidePanelNotice() {
       const result = await chrome.storage.session.get(SIDE_PANEL_NOTICE_KEY);
       if (!result[SIDE_PANEL_NOTICE_KEY]) {
@@ -183,8 +175,6 @@ export function App() {
   }, []);
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
-  const selectedProfileMeta = PROFILE_META[captureProfile] ?? PROFILE_META[LOCKED_CAPTURE_PROFILE];
-  const authBannerTone = authState === "ok" ? "ok" : authState;
   const isPrivateView = saveMode === "private";
   const isVaultEnabled = Boolean(vaultSummary?.enabled);
   const isVaultUnlocked = Boolean(vaultSummary?.unlocked);
@@ -204,10 +194,11 @@ export function App() {
     ? "继续同步"
     : selectedTask?.source.captureScope === "selection"
     ? "需回页面重选"
-    : "按当前 Profile 重抓";
+    : "按当前方案重抓";
+
   const primaryActionLabel = useMemo(() => {
     if (!authUser) {
-      return "连接账号";
+      return "连接账号后保存";
     }
     if (state === "capturing") {
       return isPrivateView ? "私密保存中..." : "保存中...";
@@ -216,7 +207,7 @@ export function App() {
       return "先启用私密模式";
     }
     if (isPrivateView && !isVaultUnlocked) {
-      return "先输入私密密码";
+      return "先解锁私密密码";
     }
     return isPrivateView ? "私密保存当前页" : "保存当前页";
   }, [authUser, state, isPrivateView, isVaultEnabled, isVaultUnlocked]);
@@ -330,7 +321,6 @@ export function App() {
     if (!await ensureReadyForCaptureAction()) {
       return;
     }
-
     await captureCurrentPage();
   }
 
@@ -384,7 +374,6 @@ export function App() {
       return;
     }
     setVaultSummary(response.summary ?? null);
-    setRecoveryCode(null);
     setVaultPassphrase("");
     setVaultPassphraseConfirm("");
     setUnlockPassphrase("");
@@ -528,7 +517,7 @@ export function App() {
       });
       setApiBaseUrl(normalizedApiBaseUrl);
       setSettingsState("saved");
-      setSettingsMessage("已保存扩展侧设置。后续保存和同步会立即使用新配置。");
+      setSettingsMessage("设置已保存，后续保存和同步将立即生效。");
       setConnectionState("idle");
       setConnectionMessage(null);
     } catch (saveError) {
@@ -644,6 +633,13 @@ export function App() {
     }
   }
 
+  // 点击任务卡片切换
+  function handleSelectTask(id: string) {
+    setSelectedTaskId(id);
+    setMobileView("detail");
+  }
+
+  // 网页授权落地页视图 (?view=auth)
   if (AUTH_PAGE_VIEW) {
     const authPageTitle = authUser ? "KeepPage 已连接" : "连接 KeepPage";
     const authPageSubtitle = authUser
@@ -654,540 +650,737 @@ export function App() {
     const authPageApiHost = normalizeApiBaseUrl(apiBaseUrl || DEFAULT_API_BASE_URL).replace(/^https?:\/\//, "");
 
     return (
-      <div className="auth-page">
-        <main className="auth-page-shell">
-          <header className="auth-page-header">
-            <p className="eyebrow">KeepPage · 浏览器扩展</p>
-            <h1>{authPageTitle}</h1>
-            <p className="auth-page-subtitle">{authPageSubtitle}</p>
-            <p className="auth-service">当前服务：{authPageApiHost}</p>
+      <div className="sp-auth-container">
+        <main className="sp-auth-card">
+          <header style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="sp-brand-logo">K</div>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--sp-text-muted)" }}>KeepPage 浏览器扩展</span>
+            </div>
+            <h1 style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 700 }}>{authPageTitle}</h1>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--sp-text-secondary)" }}>{authPageSubtitle}</p>
+            <span style={{ fontSize: 11, color: "var(--sp-text-muted)" }}>当前后端：{authPageApiHost}</span>
           </header>
 
-          <section className="auth-page-card">
-            <div className="auth-page-card-main">
-              <div className="auth-page-card-header">
-                <div>
-                  <p className="settings-title">账号</p>
-                  <p className="muted">
-                    {authUser
-                      ? "当前扩展会把后续归档同步到这个账号。"
-                      : "通过网页登录授权后，扩展中的新归档任务会自动归到当前账号。"}
-                  </p>
-                </div>
-              </div>
+          <section className="sp-settings-section" style={{ padding: 14 }}>
+            <div className="sp-settings-header">
+              <span className="sp-settings-title">账号连接</span>
+            </div>
 
-              {authUser ? (
-                <div className="auth-page-account">
-                  <div className="auth-account-card">
-                    <div className="auth-account-avatar">{(authUser.name || authUser.email).slice(0, 1)}</div>
-                    <div className="account-chip">
-                      <strong>{authUser.name || authUser.email}</strong>
-                      <span>{authUser.email}</span>
-                    </div>
+            {authUser ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 8, background: "#f8fafc", borderRadius: 8 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: "var(--sp-primary)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700 }}>
+                    {(authUser.name || authUser.email).slice(0, 1).toUpperCase()}
                   </div>
-                  <div className="auth-page-actions">
-                    <button onClick={() => void openSidePanelForCurrentWindow()} type="button">
-                      打开侧边栏
-                    </button>
-                    <button className="ghost-btn" onClick={logoutAuth} type="button">
-                      退出登录
-                    </button>
+                  <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+                    <strong style={{ fontSize: 13 }}>{authUser.name || authUser.email}</strong>
+                    <span style={{ fontSize: 11, color: "var(--sp-text-muted)" }}>{authUser.email}</span>
                   </div>
                 </div>
-              ) : (
-                <div className="auth-page-actions">
-                  <button onClick={connectAccount} disabled={authState === "submitting"} type="button">
-                    {authState === "submitting" ? "打开中..." : "打开网页授权"}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="sp-btn-primary" onClick={() => void openSidePanelForCurrentWindow()} type="button">
+                    打开侧边栏
+                  </button>
+                  <button className="sp-btn-secondary" onClick={logoutAuth} type="button">
+                    退出登录
                   </button>
                 </div>
-              )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <p style={{ margin: 0, fontSize: 12, color: "var(--sp-text-secondary)" }}>
+                  登录后，保存的网页归档将自动与你的 KeepPage 个人书签库保持同步。
+                </p>
+                <button className="sp-btn-primary" onClick={connectAccount} disabled={authState === "submitting"} type="button">
+                  {authState === "submitting" ? "正在跳转授权..." : "前往网页登录授权"}
+                </button>
+              </div>
+            )}
 
-              {authMessage ? (
-                <section role="status" aria-live="polite" className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
-              ) : null}
+            {authMessage && (
+              <div className={`sp-banner ${authState === "error" ? "sp-banner-error" : "sp-banner-info"}`}>
+                {authMessage}
+              </div>
+            )}
+          </section>
+
+          <section className="sp-settings-section" style={{ padding: 14 }}>
+            <div className="sp-settings-header">
+              <span className="sp-settings-title">服务器地址</span>
+              <span className="sp-settings-desc">如需使用自建实例，可在此修改。</span>
             </div>
-
-            <div className="auth-page-settings">
-              <div className="settings-copy">
-                <p className="settings-title">连接设置</p>
-                <p className="muted">如果你使用自部署服务，可以在这里修改 API 地址。</p>
-              </div>
-              <div className="settings-fields">
-                <label className="field-inline">
-                  <span>API 地址</span>
-                  <input
-                    value={apiBaseUrl}
-                    onChange={(event) => setApiBaseUrl(event.target.value)}
-                    placeholder={DEFAULT_API_BASE_URL}
-                    spellCheck={false}
-                  />
-                </label>
-                <label className="toggle-inline">
-                  <input
-                    checked={incognitoPrivateDefault}
-                    onChange={(event) => setIncognitoPrivateDefault(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>无痕窗口默认私密</span>
-                </label>
-                <label className="toggle-inline">
-                  <input
-                    checked={debugMode}
-                    onChange={(event) => setDebugMode(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>开启调试模式（打印详细日志）</span>
-                </label>
-              </div>
-              <div className="auth-page-actions auth-page-actions-wrap">
-                <button onClick={saveSettings} disabled={settingsState === "saving"} type="button">
-                  {settingsState === "saving" ? "保存中..." : "保存设置"}
-                </button>
-                <button className="ghost-btn" onClick={testConnection} disabled={connectionState === "testing"} type="button">
-                  {connectionState === "testing" ? "测试中..." : "测试连接"}
-                </button>
-                <button className="ghost-btn" onClick={resetApiBaseUrl} type="button">
-                  恢复默认
-                </button>
-              </div>
+            <div className="sp-field">
+              <input
+                className="sp-input"
+                value={apiBaseUrl}
+                onChange={(event) => setApiBaseUrl(event.target.value)}
+                placeholder={DEFAULT_API_BASE_URL}
+                spellCheck={false}
+              />
             </div>
-
-            {settingsMessage ? (
-              <section role="status" aria-live="polite" className={`settings-banner settings-${settingsState}`}>{settingsMessage}</section>
-            ) : null}
-            {connectionMessage ? (
-              <section role="status" aria-live="polite" className={`settings-banner settings-${connectionState}`}>{connectionMessage}</section>
-            ) : null}
+            <div className="sp-btn-row">
+              <button className="sp-btn-sm" onClick={saveSettings} disabled={settingsState === "saving"} type="button">
+                {settingsState === "saving" ? "保存中..." : "保存地址"}
+              </button>
+              <button className="sp-btn-sm" onClick={testConnection} disabled={connectionState === "testing"} type="button">
+                {connectionState === "testing" ? "测试中..." : "测试连接"}
+              </button>
+              <button className="sp-btn-sm" onClick={resetApiBaseUrl} type="button">
+                恢复默认
+              </button>
+            </div>
           </section>
         </main>
-
-        {error && <footer role="alert" className="error-banner">{error}</footer>}
       </div>
     );
   }
 
   return (
-    <div className="layout">
-      <header className="header">
-        <div className="header-copy">
-          <p className="eyebrow">KeepPage 队列</p>
-          <h1>{isPrivateView ? "私密归档队列" : "本地归档队列"}</h1>
-          <p className="header-subtitle">
-            {isPrivateView
-              ? "输入私密密码后，查看和同步私密归档。"
-              : "保存网页快照，查看本地预览和同步进度。"}
-          </p>
+    <div className="sp-shell">
+      {/* 顶部常驻导航栏 */}
+      <header className="sp-header">
+        <div className="sp-brand">
+          <div className="sp-brand-logo">K</div>
+          <span className="sp-brand-text">KeepPage</span>
         </div>
-        <div className="header-actions">
-          <label className="compact-field">
-            <span>保存模式</span>
-            <select
-              value={saveMode}
-              onChange={(event) => setSaveMode(event.target.value as SaveMode)}
+
+        {/* 模式切换胶囊 */}
+        <div className="sp-mode-switch">
+          <button
+            className={`sp-mode-btn ${saveMode === "standard" ? "active" : ""}`}
+            onClick={() => setSaveMode("standard")}
+            type="button"
+          >
+            普通
+          </button>
+          <button
+            className={`sp-mode-btn is-private ${saveMode === "private" ? "active" : ""}`}
+            onClick={() => setSaveMode("private")}
+            type="button"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            私密
+          </button>
+        </div>
+
+        {/* 右侧工具入口 */}
+        <div className="sp-header-actions">
+          {authUser ? (
+            <div className="sp-user-badge" title={`已连接账号: ${authUser.email}`}>
+              <div className="sp-user-dot" />
+              <span className="sp-user-email">{authUser.name || authUser.email}</span>
+            </div>
+          ) : (
+            <div
+              className="sp-user-badge unauth"
+              onClick={connectAccount}
+              title="未连接账号，点击连接"
             >
-              {SAVE_MODE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="compact-field">
-            <span>抓取配置</span>
-            <div className="compact-field-value" title={selectedProfileMeta.description}>
-              {selectedProfileMeta.label}
+              <div className="sp-user-dot" />
+              <span>未连接</span>
             </div>
-          </label>
-          <div className="capture-actions">
-            <div className="capture-action-row">
-              <button className="ghost-btn" onClick={startSelectionCaptureAction} type="button">
-                选择区域保存
-              </button>
-              <button
-                className={`capture-btn ${isPrivateView ? "capture-btn-private" : ""}`}
-                disabled={state === "capturing"}
-                onClick={handlePrimaryAction}
-                type="button"
-              >
-                {primaryActionLabel}
-              </button>
-            </div>
-            <p className="capture-helper">
-              只保存正文或局部内容，可点击「选择区域保存」。
-            </p>
-          </div>
+          )}
+
+          <button
+            className={`sp-icon-btn ${activeNavTab === "settings" ? "active" : ""}`}
+            onClick={() => setActiveNavTab(activeNavTab === "queue" ? "settings" : "queue")}
+            title={activeNavTab === "queue" ? "扩展设置" : "返回队列"}
+            type="button"
+          >
+            {activeNavTab === "queue" ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            )}
+          </button>
         </div>
       </header>
 
-      {isPrivateView && (
-        <section className="private-strip">
-          <div className="settings-copy">
-            <p className="settings-title">私密模式状态</p>
-            <p className="muted">
-              {!isVaultEnabled
-                ? "首次启用后，扩展和 Web 都可以把内容保存到服务端私密工作区。"
-                : isVaultUnlocked
-                ? "当前设备已进入私密模式，可以查看私密标题、质量信息和预览。"
-                : "私密模式当前已锁定，只有输入密码后才能进入。"}
-            </p>
-            {vaultSummary ? (
-              <div className="vault-facts">
-                <span>条目数：{vaultSummary.totalItems}</span>
-                <span>待同步：{vaultSummary.pendingSyncCount}</span>
-                {!isVaultEnabled ? null : (
-                  <label>
-                    自动锁定：
-                    <select
-                      value={vaultSummary.autoLock}
-                      onChange={(event) => void changePrivateAutoLockAction(event.target.value as PrivateAutoLock)}
-                    >
-                      {AUTO_LOCK_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          {!isVaultEnabled ? (
-            <>
-              <div className="vault-form">
-                <label className="field-inline">
-                  <span>私密密码</span>
-                  <input
-                    type="password"
-                    value={vaultPassphrase}
-                    onChange={(event) => setVaultPassphrase(event.target.value)}
-                    placeholder="至少 8 位"
-                  />
-                </label>
-                <label className="field-inline">
-                  <span>确认密码</span>
-                  <input
-                    type="password"
-                    value={vaultPassphraseConfirm}
-                    onChange={(event) => setVaultPassphraseConfirm(event.target.value)}
-                    placeholder="再次输入"
-                  />
-                </label>
-                <label className="field-inline">
-                  <span>自动锁定</span>
-                  <select
-                    value={vaultAutoLock}
-                    onChange={(event) => setVaultAutoLock(event.target.value as PrivateAutoLock)}
-                  >
-                    {AUTO_LOCK_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="settings-actions">
-                <button onClick={createPrivateVaultAction} type="button">
-                  启用私密模式
-                </button>
-              </div>
-            </>
-          ) : isVaultUnlocked ? (
-            <>
-              <div className="vault-summary-card">
-                <strong>私密模式已进入</strong>
-                <span>
-                  当前会话可以查看私密标题、预览和质量提示。{vaultSummary?.autoLock && vaultSummary.autoLock !== "browser"
-                    ? `${renderAutoLockLabel(vaultSummary.autoLock)}内没有私密操作会自动锁定，关闭浏览器也会退出。`
-                    : "关闭浏览器后会自动退出。"}
-                </span>
-              </div>
-              <div className="settings-actions">
-                <button className="ghost-btn" onClick={lockPrivateVaultAction} type="button">
-                  退出私密模式
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="vault-form">
-                <label className="field-inline">
-                  <span>私密密码</span>
-                  <input
-                    type="password"
-                    value={unlockPassphrase}
-                    onChange={(event) => setUnlockPassphrase(event.target.value)}
-                    placeholder="输入私密密码"
-                  />
-                </label>
-              </div>
-              <div className="settings-actions">
-                <button onClick={unlockPrivateVaultAction} type="button">
-                  进入私密模式
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-      )}
-
-      <section className="account-strip">
-        <div className="settings-copy">
-          <p className="settings-title">账号状态</p>
-          <p className="muted">
-            {authUser
-              ? isPrivateView
-                ? "当前私密保存会同步到这个账号的服务端私密工作区。"
-                : "当前扩展会把新归档同步到这个账号。"
-              : "请先通过网页连接 KeepPage，新的本地归档任务会绑定到当前账号。"}
-          </p>
-        </div>
-
-        {authUser ? (
-          <div className="account-summary">
-            <div className="account-chip">
-              <strong>{authUser.name || authUser.email}</strong>
-              <span>{authUser.email}</span>
+      {/* 视图主体 */}
+      <div className="sp-body">
+        {activeNavTab === "settings" ? (
+          /* ================= 设置视图 ================= */
+          <div className="sp-settings-view">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>扩展设置</h2>
+              <button className="sp-btn-sm" onClick={() => setActiveNavTab("queue")} type="button">
+                返回队列
+              </button>
             </div>
-            <button className="ghost-btn" onClick={logoutAuth} type="button">
-              退出登录
-            </button>
+
+            {/* 账号卡片 */}
+            <section className="sp-settings-section">
+              <div className="sp-settings-header">
+                <span className="sp-settings-title">KeepPage 账号</span>
+                <span className="sp-settings-desc">同步本地归档与书签数据</span>
+              </div>
+              {authUser ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 8, background: "var(--sp-primary)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700 }}>
+                      {(authUser.name || authUser.email).slice(0, 1).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{authUser.name || authUser.email}</div>
+                      <div style={{ fontSize: 11, color: "var(--sp-text-muted)" }}>{authUser.email}</div>
+                    </div>
+                  </div>
+                  <button className="sp-btn-sm" onClick={logoutAuth} type="button">
+                    退出登录
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <p style={{ margin: 0, fontSize: 12, color: "var(--sp-text-secondary)" }}>
+                    尚未连接 KeepPage 账号。连接后，本地抓取的快照将自动同步到云端。
+                  </p>
+                  <button className="sp-btn-primary" onClick={connectAccount} disabled={authState === "submitting"} type="button">
+                    {authState === "submitting" ? "打开中..." : "打开网页授权"}
+                  </button>
+                </div>
+              )}
+              {authMessage && (
+                <div className={`sp-banner ${authState === "error" ? "sp-banner-error" : "sp-banner-info"}`}>
+                  {authMessage}
+                </div>
+              )}
+            </section>
+
+            {/* API 连接卡片 */}
+            <section className="sp-settings-section">
+              <div className="sp-settings-header">
+                <span className="sp-settings-title">服务端地址</span>
+                <span className="sp-settings-desc">自部署或私有服务配置</span>
+              </div>
+              <div className="sp-field">
+                <input
+                  className="sp-input"
+                  value={apiBaseUrl}
+                  onChange={(event) => setApiBaseUrl(event.target.value)}
+                  placeholder={DEFAULT_API_BASE_URL}
+                  spellCheck={false}
+                />
+              </div>
+              <div className="sp-btn-row">
+                <button className="sp-btn-sm" onClick={saveSettings} disabled={settingsState === "saving"} type="button">
+                  {settingsState === "saving" ? "保存中..." : "保存地址"}
+                </button>
+                <button className="sp-btn-sm" onClick={testConnection} disabled={connectionState === "testing"} type="button">
+                  {connectionState === "testing" ? "测试中..." : "测试连接"}
+                </button>
+                <button className="sp-btn-sm" onClick={resetApiBaseUrl} type="button">
+                  恢复默认
+                </button>
+              </div>
+              {settingsMessage && (
+                <div className={`sp-banner ${settingsState === "error" ? "sp-banner-error" : "sp-banner-success"}`}>
+                  {settingsMessage}
+                </div>
+              )}
+              {connectionMessage && (
+                <div className={`sp-banner ${connectionState === "error" ? "sp-banner-error" : "sp-banner-info"}`}>
+                  {connectionMessage}
+                </div>
+              )}
+            </section>
+
+            {/* 抓取与常规偏好 */}
+            <section className="sp-settings-section">
+              <div className="sp-settings-header">
+                <span className="sp-settings-title">偏好设置</span>
+                <span className="sp-settings-desc">自定义保存行为</span>
+              </div>
+              <label className="sp-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={incognitoPrivateDefault}
+                  onChange={(event) => {
+                    setIncognitoPrivateDefault(event.target.checked);
+                    void chrome.storage.local.set({ incognitoPrivateDefault: event.target.checked });
+                  }}
+                />
+                <span>在 Chrome 无痕窗口下默认启用私密模式</span>
+              </label>
+              <label className="sp-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={debugMode}
+                  onChange={(event) => {
+                    setDebugMode(event.target.checked);
+                    void chrome.storage.local.set({ debugMode: event.target.checked });
+                  }}
+                />
+                <span>开启调试模式（控制台打印抓取与同步日志）</span>
+              </label>
+            </section>
+
+            {/* 维护工具 */}
+            <section className="sp-settings-section">
+              <div className="sp-settings-header">
+                <span className="sp-settings-title">数据维护</span>
+                <span className="sp-settings-desc">书签图标等资源刷新</span>
+              </div>
+              <div className="sp-btn-row">
+                <button
+                  className="sp-btn-sm"
+                  disabled={iconRefreshState === "refreshing"}
+                  onClick={refreshAllIcons}
+                  type="button"
+                >
+                  {iconRefreshState === "refreshing" ? "刷新中..." : "重新抓取所有书签 Favicon"}
+                </button>
+              </div>
+              {iconRefreshMessage && (
+                <div className={`sp-banner ${iconRefreshState === "error" ? "sp-banner-error" : "sp-banner-info"}`}>
+                  {iconRefreshMessage}
+                </div>
+              )}
+            </section>
           </div>
         ) : (
-          <div className="settings-actions">
-            <button onClick={connectAccount} disabled={authState === "submitting"} type="button">
-              {authState === "submitting" ? "打开中..." : "打开网页授权"}
-            </button>
-          </div>
-        )}
-      </section>
-      {authMessage && (
-        <section role="status" aria-live="polite" className={`settings-banner settings-${authBannerTone}`}>{authMessage}</section>
-      )}
-
-      <section className="settings-strip">
-        <div className="settings-copy">
-          <p className="settings-title">同步与默认规则</p>
-          <p className="muted">
-            当前保存会使用 <strong>{selectedProfileMeta?.label ?? PROFILE_META[LOCKED_CAPTURE_PROFILE].label}</strong>。
-            {selectedProfileMeta?.description ? ` ${selectedProfileMeta.description}` : ""}
-          </p>
-        </div>
-        <div className="settings-fields">
-          <label className="field-inline">
-            <span>API 地址</span>
-            <input
-              value={apiBaseUrl}
-              onChange={(event) => setApiBaseUrl(event.target.value)}
-              placeholder={DEFAULT_API_BASE_URL}
-              spellCheck={false}
-            />
-          </label>
-          <label className="toggle-inline">
-            <input
-              checked={incognitoPrivateDefault}
-              onChange={(event) => setIncognitoPrivateDefault(event.target.checked)}
-              type="checkbox"
-            />
-            <span>无痕窗口默认私密</span>
-          </label>
-          <label className="toggle-inline">
-            <input
-              checked={debugMode}
-              onChange={(event) => setDebugMode(event.target.checked)}
-              type="checkbox"
-            />
-            <span>开启调试模式（打印详细日志）</span>
-          </label>
-        </div>
-        <div className="settings-actions">
-          <button onClick={saveSettings} disabled={settingsState === "saving"} type="button">
-            {settingsState === "saving" ? "保存中..." : "保存设置"}
-          </button>
-          <button className="ghost-btn" onClick={testConnection} disabled={connectionState === "testing"} type="button">
-            {connectionState === "testing" ? "测试中..." : "测试连接"}
-          </button>
-          <button className="ghost-btn" onClick={resetApiBaseUrl} type="button">
-            恢复默认
-          </button>
-          <button
-            className="ghost-btn"
-            disabled={iconRefreshState === "refreshing"}
-            onClick={refreshAllIcons}
-            type="button"
-          >
-            {iconRefreshState === "refreshing" ? "刷新中..." : "重刷全部图标"}
-          </button>
-        </div>
-      </section>
-      {iconRefreshMessage && (
-        <section role="status" aria-live="polite" className={`settings-banner settings-${iconRefreshState === "error" ? "error" : "saved"}`}>
-          {iconRefreshMessage}
-        </section>
-      )}
-      {settingsMessage && (
-        <section role="status" aria-live="polite" className={`settings-banner settings-${settingsState}`}>{settingsMessage}</section>
-      )}
-      {connectionMessage && (
-        <section role="status" aria-live="polite" className={`settings-banner settings-${connectionState}`}>{connectionMessage}</section>
-      )}
-
-      <main className="main">
-        <section className="task-list" aria-label="归档记录">
-          <h2 className="task-list-heading">归档记录<span>{tasks.length} 条</span></h2>
-          {tasks.length === 0 && (
-            <p className="muted">
-              {isPrivateView
-                ? !isVaultEnabled
-                  ? "启用私密模式后，新的私密保存记录会出现在这里。"
-                  : "当前私密模式还没有保存记录。"
-                : authUser
-                ? "当前账号还没有保存记录。点击「保存当前页」，先生成本地归档，再异步进入上传队列。"
-                : "连接账号后，这里只会显示当前账号的本地保存记录。"}
-            </p>
-          )}
-          {tasks.map((task) => {
-            const active = task.id === selectedTaskId;
-            const lockedTask = isPrivateLockedView && task.isPrivate;
-            const isSelectionTask = task.source.captureScope === "selection";
-            return (
-              <button
-                className={`task-card ${active ? "active" : ""} ${task.isPrivate ? "task-card-private" : ""}`}
-                aria-pressed={active}
-                key={task.id}
-                onClick={() => setSelectedTaskId(task.id)}
-                type="button"
-              >
-                <p className="task-title">{lockedTask ? "私密条目（已锁定）" : task.source.title}</p>
-                <p className="task-url">
-                  {lockedTask ? "已锁定" : `${task.source.domain}${isSelectionTask ? " · 选中区域" : ""}`}
-                </p>
-                {!lockedTask && isSelectionTask && task.source.selectionText ? (
-                  <p className="task-selection">{task.source.selectionText}</p>
-                ) : null}
-                <div className="task-meta">
-                  <span className={`status status-${task.status}`}>{captureStatusLabel(task.status)}</span>
-                  {lockedTask ? (
-                    <span className="grade grade-private">已锁定</span>
+          /* ================= 队列主视图 ================= */
+          <>
+            {/* 快捷保存条 */}
+            <div className="sp-capture-bar">
+              <div className="sp-capture-buttons">
+                <button
+                  className={`sp-btn-primary ${isPrivateView ? "is-private" : ""}`}
+                  disabled={state === "capturing"}
+                  onClick={handlePrimaryAction}
+                  type="button"
+                >
+                  {state === "capturing" ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}>
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                    </svg>
+                  ) : isPrivateView ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
                   ) : (
-                    <span className={`grade grade-${task.quality?.grade ?? "none"}`}>
-                      {task.quality
-                        ? `${qualityGradeLabel(task.quality.grade)} · ${task.quality.score} 分`
-                        : "待评估"}
-                    </span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                      <polyline points="17 21 17 13 7 13 7 21"/>
+                      <polyline points="7 3 7 8 15 8"/>
+                    </svg>
                   )}
-                </div>
-              </button>
-            );
-          })}
-        </section>
+                  {primaryActionLabel}
+                </button>
 
-        <section className="preview-panel">
-          {!selectedTask && (
-            <p className="muted">
-              {isPrivateView
-                ? "选择一条私密记录，查看摘要或解锁后的详情。"
-                : "选择一条记录，查看归档质量和本地预览。"}
-            </p>
-          )}
+                <button
+                  className="sp-btn-secondary"
+                  disabled={state === "capturing"}
+                  onClick={startSelectionCaptureAction}
+                  title="在当前页面框选特定正文保存"
+                  type="button"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" strokeDasharray="3 3"/>
+                  </svg>
+                  选区保存
+                </button>
+              </div>
 
-          {selectedTask && isPrivateLockedView && (
-            <div className="vault-locked-panel">
-              <h2>私密模式已锁定</h2>
-              <p className="muted">
-                当前只展示最小摘要信息。输入私密密码后，才能查看标题、域名、质量诊断和本地预览。
-              </p>
-              <div className="task-facts">
-                <span>状态：{captureStatusLabel(selectedTask.status)}</span>
-                <span>模式：密码进入</span>
-                {vaultSummary?.lastUpdatedAt ? (
-                  <span>最近更新：{formatDateTime(vaultSummary.lastUpdatedAt)}</span>
-                ) : null}
+              <div className="sp-capture-subtext">
+                <span>方案：{captureProfileLabel(captureProfile)}</span>
+                {isPrivateView ? (
+                  <span style={{ color: "var(--sp-private)", fontWeight: 500 }}>
+                    {isVaultUnlocked ? "私密状态：已解锁" : "私密状态：已锁定"}
+                  </span>
+                ) : (
+                  <span>保存离线快照，排队同步云端</span>
+                )}
               </div>
             </div>
-          )}
 
-          {selectedTask && !isPrivateLockedView && (
-            <>
-              <div className="preview-toolbar">
-                <h2>{selectedTask.source.title}</h2>
-                <div className="actions">
-                  <button
-                    disabled={selectedTask.source.captureScope === "selection" && !canResumeSync}
-                    onClick={retryCurrentTask}
-                    type="button"
-                  >
-                    {retryLabel}
-                  </button>
-                  <button onClick={openPreviewInNewTab} type="button">
-                    新标签预览
-                  </button>
-                  {isPrivateView && (
-                  <button className="ghost-btn" onClick={lockPrivateVaultAction} type="button">
-                      退出私密模式
-                  </button>
-                )}
+            {/* 私密模式卡片（未启用 / 未解锁 / 已解锁） */}
+            {isPrivateView && (
+              <div className="sp-vault-card">
+                <div className="sp-vault-header">
+                  <div className="sp-vault-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    <span>私密工作区</span>
+                  </div>
+                  {isVaultUnlocked && (
+                    <button className="sp-btn-sm" onClick={lockPrivateVaultAction} style={{ padding: "3px 8px", minHeight: 24, fontSize: 11 }} type="button">
+                      立即锁定
+                    </button>
+                  )}
                 </div>
-              </div>
-              <p className="muted">{selectedTask.source.url}</p>
-              {selectedTask.source.captureScope === "selection" && selectedTask.source.selectionText ? (
-                <p className="selection-summary">选区摘要：{selectedTask.source.selectionText}</p>
-              ) : null}
-              <div className="task-facts">
-                {selectedTask.owner ? <span>账号：{selectedTask.owner.email}</span> : null}
-                <span>状态：{captureStatusLabel(selectedTask.status)}</span>
-                <span>抓取配置：{captureProfileLabel(selectedTask.profile)}</span>
-                <span>范围：{captureScopeLabel(selectedTask.source.captureScope)}</span>
-                {selectedTask.isPrivate ? <span>私密模式：{privateModeLabel(selectedTask.privateMode)}</span> : null}
-                {privateSyncStateLabel(selectedTask.syncState) ? (
-                  <span>同步状态：{privateSyncStateLabel(selectedTask.syncState)}</span>
-                ) : null}
-                {selectedTask.bookmarkId && <span>书签记录：{selectedTask.bookmarkId}</span>}
-              </div>
-              <div className="quality-box">
-                <p>
-                  归档质量：
-                  {" "}
-                  <strong>
-                    {selectedTask.quality
-                      ? `${qualityGradeLabel(selectedTask.quality.grade)} · ${selectedTask.quality.score} 分`
-                      : "待评估"}
-                  </strong>
-                </p>
-                {(selectedTask.quality?.reasons ?? []).slice(0, 3).map((reason) => (
-                  <p className="reason" key={reason.code}>
-                    {reason.message}
-                  </p>
-                ))}
-                {!selectedTask.quality && !selectedTask.failureReason ? (
-                  <p className="reason">当前任务还没有生成质量诊断，稍后会补充评分与原因。</p>
-                ) : null}
-                {selectedTask.failureReason && (
-                  <p className="reason error">{selectedTask.failureReason}</p>
-                )}
-              </div>
-              <div className="preview-frame-wrap">
-                {selectedTask.artifacts?.archiveHtml ? (
-                  <iframe
-                    className="preview-frame"
-                    sandbox="allow-same-origin"
-                    srcDoc={ensureArchiveBaseHref(
-                      selectedTask.artifacts.archiveHtml,
-                      selectedTask.source.canonicalUrl ?? selectedTask.source.url,
-                    )}
-                    title="archive-preview"
-                  />
+
+                {!isVaultEnabled ? (
+                  /* 未启用私密模式 */
+                  <div className="sp-vault-form">
+                    <p style={{ margin: 0, color: "var(--sp-text-secondary)" }}>首次使用请设置私密密码，数据经端到端加密保护。</p>
+                    <div className="sp-input-row">
+                      <input
+                        className="sp-input"
+                        type="password"
+                        placeholder="私密密码（至少 8 位）"
+                        value={vaultPassphrase}
+                        onChange={(e) => setVaultPassphrase(e.target.value)}
+                      />
+                      <input
+                        className="sp-input"
+                        type="password"
+                        placeholder="确认密码"
+                        value={vaultPassphraseConfirm}
+                        onChange={(e) => setVaultPassphraseConfirm(e.target.value)}
+                      />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <select
+                        className="sp-select"
+                        value={vaultAutoLock}
+                        onChange={(e) => setVaultAutoLock(e.target.value as PrivateAutoLock)}
+                      >
+                        {AUTO_LOCK_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                      <button className="sp-btn-primary is-private" onClick={createPrivateVaultAction} style={{ minHeight: 34, padding: "6px 12px" }} type="button">
+                        启用私密库
+                      </button>
+                    </div>
+                  </div>
+                ) : !isVaultUnlocked ? (
+                  /* 已启用但锁定中 */
+                  <div className="sp-vault-form">
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        className="sp-input"
+                        type="password"
+                        placeholder="输入私密密码解锁"
+                        value={unlockPassphrase}
+                        onChange={(e) => setUnlockPassphrase(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && void unlockPrivateVaultAction()}
+                      />
+                      <button className="sp-btn-primary is-private" onClick={unlockPrivateVaultAction} style={{ minHeight: 34, padding: "6px 14px", flexShrink: 0 }} type="button">
+                        解锁
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="preview-placeholder">
-                    <p>等待生成预览</p>
-                    <p>网页归档生成后会显示在这里。</p>
+                  /* 已解锁状态 */
+                  <div className="sp-vault-facts">
+                    <span className="sp-vault-fact-pill">已保存: {vaultSummary?.totalItems ?? 0}</span>
+                    <span className="sp-vault-fact-pill">待同步: {vaultSummary?.pendingSyncCount ?? 0}</span>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      <span>自动锁定:</span>
+                      <select
+                        className="sp-select"
+                        style={{ height: 26, minHeight: 26, padding: "2px 6px" }}
+                        value={vaultSummary?.autoLock ?? "15m"}
+                        onChange={(e) => void changePrivateAutoLockAction(e.target.value as PrivateAutoLock)}
+                      >
+                        {AUTO_LOCK_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                 )}
               </div>
-            </>
-          )}
-        </section>
-      </main>
+            )}
 
-      {error && <footer role="alert" className="error-banner">{error}</footer>}
+            {/* 错误通知 */}
+            {error && (
+              <div className="sp-banner sp-banner-error" style={{ margin: "8px 14px 0" }}>
+                <span>{error}</span>
+                <button
+                  onClick={() => setError(null)}
+                  style={{ border: "none", background: "transparent", color: "inherit", cursor: "pointer", padding: 0 }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* 窄屏下的视图切换 Tab（仅在宽度 < 840px 侧边栏生效） */}
+            <div className="sp-view-nav">
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--sp-text-secondary)" }}>
+                {mobileView === "list" ? `队列记录 (${tasks.length})` : "归档预览与质量"}
+              </span>
+              <div className="sp-view-nav-tabs">
+                <button
+                  className={`sp-view-nav-tab ${mobileView === "list" ? "active" : ""}`}
+                  onClick={() => setMobileView("list")}
+                  type="button"
+                >
+                  列表
+                </button>
+                <button
+                  className={`sp-view-nav-tab ${mobileView === "detail" ? "active" : ""}`}
+                  onClick={() => setMobileView("detail")}
+                  type="button"
+                >
+                  详情
+                </button>
+              </div>
+            </div>
+
+            {/* 工作区：双栏自适应 / 移动单栏 */}
+            <div className={`sp-workspace ${mobileView === "detail" ? "show-detail" : "show-list"}`}>
+              {/* 任务列表列 */}
+              <section className="sp-list-column">
+                <div className="sp-list-header">
+                  <span>保存记录</span>
+                  <span>{tasks.length} 条</span>
+                </div>
+
+                <div className="sp-list-items">
+                  {tasks.length === 0 ? (
+                    <div className="sp-empty-state">
+                      <div className="sp-empty-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                          <polyline points="14 2 14 8 20 8"/>
+                          <line x1="16" y1="13" x2="8" y2="13"/>
+                          <line x1="16" y1="17" x2="8" y2="17"/>
+                          <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                      </div>
+                      <p>
+                        {isPrivateView
+                          ? !isVaultEnabled
+                            ? "启用私密模式后，新保存的私密条目会出现在这里。"
+                            : "私密库中暂无保存记录。"
+                          : authUser
+                          ? "暂无归档。点击「保存当前页」即刻保存高质量网页快照。"
+                          : "连接账号后，所有归档记录将在这里实时展示。"}
+                      </p>
+                    </div>
+                  ) : (
+                    tasks.map((task) => {
+                      const active = task.id === selectedTaskId;
+                      const lockedTask = isPrivateLockedView && task.isPrivate;
+                      const isSelectionTask = task.source.captureScope === "selection";
+
+                      return (
+                        <button
+                          className={`sp-task-card ${active ? "active" : ""} ${task.isPrivate ? "is-private" : ""}`}
+                          key={task.id}
+                          onClick={() => handleSelectTask(task.id)}
+                          type="button"
+                        >
+                          <div className="sp-task-header">
+                            <h3 className="sp-task-title">
+                              {lockedTask ? "私密快照（已加密锁定）" : task.source.title || "未命名网页"}
+                            </h3>
+                          </div>
+
+                          <div className="sp-task-meta">
+                            <span className="sp-task-domain">
+                              {lockedTask ? "安全保密域" : task.source.domain}
+                            </span>
+                            <span>•</span>
+                            <span>{formatDateTime(task.updatedAt)}</span>
+                          </div>
+
+                          {!lockedTask && isSelectionTask && task.source.selectionText && (
+                            <div className="sp-task-selection">
+                              {task.source.selectionText}
+                            </div>
+                          )}
+
+                          <div className="sp-task-badges">
+                            <span className={`sp-badge sp-badge-${task.status}`}>
+                              <span className="sp-badge-dot" />
+                              {captureStatusLabel(task.status)}
+                            </span>
+
+                            {lockedTask ? (
+                              <span className="sp-badge-grade" style={{ color: "var(--sp-private)" }}>已加密</span>
+                            ) : task.quality ? (
+                              <span className={`sp-badge-grade sp-badge-grade-${task.quality.grade}`}>
+                                {qualityGradeLabel(task.quality.grade)} · {task.quality.score}分
+                              </span>
+                            ) : (
+                              <span className="sp-badge-grade">评估中</span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+
+              {/* 详情与预览列 */}
+              <section className="sp-detail-column">
+                {!selectedTask ? (
+                  <div className="sp-empty-state">
+                    <div className="sp-empty-icon">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                      </svg>
+                    </div>
+                    <p>在左侧选择一条记录，即可在此查看归档诊断、完整内容与离线预览。</p>
+                  </div>
+                ) : isPrivateLockedView && selectedTask.isPrivate ? (
+                  /* 私密锁定时详情 */
+                  <div className="sp-detail-content">
+                    <div className="sp-detail-toolbar" style={{ borderLeft: "4px solid var(--sp-private)" }}>
+                      <div className="sp-detail-main-info">
+                        <h2 className="sp-detail-main-title">私密内容已锁定</h2>
+                        <span style={{ fontSize: 12, color: "var(--sp-text-muted)" }}>
+                          当前条目内容经过加密保护，请输入私密密码后解锁查看标题、诊断和离线预览。
+                        </span>
+                      </div>
+                    </div>
+                    <div className="sp-quality-card">
+                      <div className="sp-quality-header">
+                        <strong>状态信息</strong>
+                        <span className="sp-badge sp-badge-default">{captureStatusLabel(selectedTask.status)}</span>
+                      </div>
+                      <p style={{ margin: "6px 0 0", color: "var(--sp-text-secondary)" }}>
+                        模式：端到端加密保护 · 最近更新：{formatDateTime(selectedTask.updatedAt)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  /* 正常详情与完整离线预览 */
+                  <div className="sp-detail-content">
+                    {/* 工具条 */}
+                    <div className="sp-detail-toolbar">
+                      <div className="sp-detail-main-info">
+                        <h2 className="sp-detail-main-title">{selectedTask.source.title}</h2>
+                        <a
+                          className="sp-detail-url"
+                          href={selectedTask.source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {selectedTask.source.url} ↗
+                        </a>
+                      </div>
+
+                      <div className="sp-detail-actions">
+                        <button
+                          className="sp-btn-sm"
+                          disabled={selectedTask.source.captureScope === "selection" && !canResumeSync}
+                          onClick={retryCurrentTask}
+                          type="button"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                          </svg>
+                          {retryLabel}
+                        </button>
+
+                        <button className="sp-btn-sm" onClick={openPreviewInNewTab} type="button">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                            <polyline points="15 3 21 3 21 9"/>
+                            <line x1="10" y1="14" x2="21" y2="3"/>
+                          </svg>
+                          新标签打开
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 选区摘要（如有） */}
+                    {selectedTask.source.captureScope === "selection" && selectedTask.source.selectionText && (
+                      <div style={{ background: "#f8fafc", padding: "10px 14px", borderRadius: 8, border: "1px solid var(--sp-border)", fontSize: 12 }}>
+                        <strong style={{ color: "var(--sp-text-primary)", display: "block", marginBottom: 4 }}>选区内容：</strong>
+                        <div style={{ color: "var(--sp-text-secondary)", lineHeight: 1.5 }}>{selectedTask.source.selectionText}</div>
+                      </div>
+                    )}
+
+                    {/* 质量诊断卡片 */}
+                    <div className="sp-quality-card">
+                      <div className="sp-quality-header">
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <strong>归档质量评分：</strong>
+                          {selectedTask.quality ? (
+                            <span className={`sp-badge-grade sp-badge-grade-${selectedTask.quality.grade}`}>
+                              {qualityGradeLabel(selectedTask.quality.grade)} · {selectedTask.quality.score} 分
+                            </span>
+                          ) : (
+                            <span className="sp-badge-grade">待评估</span>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <span className="sp-badge sp-badge-default">{captureScopeLabel(selectedTask.source.captureScope)}</span>
+                          <span className={`sp-badge sp-badge-${selectedTask.status}`}>{captureStatusLabel(selectedTask.status)}</span>
+                        </div>
+                      </div>
+
+                      {selectedTask.quality?.reasons && selectedTask.quality.reasons.length > 0 && (
+                        <div className="sp-quality-reasons">
+                          {selectedTask.quality.reasons.slice(0, 3).map((reason) => (
+                            <div className="sp-reason-item" key={reason.code}>
+                              <div className="sp-reason-dot" />
+                              <span>{reason.message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {selectedTask.failureReason && (
+                        <div style={{ color: "var(--sp-danger)", fontSize: 12, marginTop: 4 }}>
+                          失败原因：{selectedTask.failureReason}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 模拟浏览器内嵌离线预览容器 */}
+                    <div className="sp-preview-box">
+                      <div className="sp-preview-bar">
+                        <div className="sp-preview-dots">
+                          <div className="sp-preview-dot" />
+                          <div className="sp-preview-dot" />
+                          <div className="sp-preview-dot" />
+                        </div>
+                        <span className="sp-preview-title">
+                          离线沙箱快照预览 · {selectedTask.source.title}
+                        </span>
+                      </div>
+
+                      {selectedTask.artifacts?.archiveHtml ? (
+                        <iframe
+                          className="sp-preview-iframe"
+                          sandbox="allow-same-origin"
+                          srcDoc={ensureArchiveBaseHref(
+                            selectedTask.artifacts.archiveHtml,
+                            selectedTask.source.canonicalUrl ?? selectedTask.source.url,
+                          )}
+                          title="archive-preview"
+                        />
+                      ) : (
+                        <div className="sp-preview-empty">
+                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                          </svg>
+                          <span>正在生成网页完整快照，完成后即可在此直接预览...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -1231,16 +1424,15 @@ async function resolveInitialSaveMode(
   }
 }
 
-function renderAutoLockLabel(autoLock: PrivateAutoLock) {
-  return AUTO_LOCK_OPTIONS.find((option) => option.value === autoLock)?.label ?? autoLock;
-}
-
 function formatDateTime(input: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(input));
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(input));
+  } catch {
+    return input;
+  }
 }
