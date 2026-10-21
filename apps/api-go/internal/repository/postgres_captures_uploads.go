@@ -148,7 +148,7 @@ func (r *PostgresRepository) completePostgresCapture(ctx context.Context, userID
 	versionID := auth.NewUUID()
 	qualityJSON, _ := json.Marshal(input.Quality)
 	qualityReasonsJSON, _ := json.Marshal(input.Quality.Reasons)
-	sourceJSON, _ := json.Marshal(map[string]any{"source": input.Source, "mediaFiles": input.MediaFiles, "screenshotObjectKey": input.ScreenshotObjectKey, "thumbnailObjectKey": input.ThumbnailObjectKey})
+	sourceJSON, _ := json.Marshal(map[string]any{"source": input.Source, "mediaFiles": input.MediaFiles, "screenshotObjectKey": input.ScreenshotObjectKey, "thumbnailObjectKey": input.ThumbnailObjectKey, "iconCandidates": input.IconCandidates})
 	_, err = tx.Exec(ctx, fmt.Sprintf(`insert into %s (id,bookmark_id,version_no,html_object_key,reader_html_object_key,html_sha256,text_sha256,text_simhash,capture_profile,capture_options_json,quality_score,quality_grade,quality_reasons_json,quality_report_json,source_meta_json,extracted_text,created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,now())`, versionTable), versionID, bookmarkID, versionNo, input.ObjectKey, input.ReaderHTMLObjectKey, input.HTMLSHA256, input.TextSHA256, input.TextSimhash, profile, []byte(`{}`), input.Quality.Score, input.Quality.Grade, qualityReasonsJSON, qualityJSON, sourceJSON, input.ExtractedText)
 	if err != nil {
 		return domain.CaptureCompleteResult{}, err

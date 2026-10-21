@@ -218,7 +218,27 @@ export function App() {
       getStoredAuthUser(),
     ]);
 
-    if (!token || !user) {
+    if (!token) {
+      setAuthUser(null);
+      setTasks([]);
+      setSelectedTaskId(null);
+      setAuthState("idle");
+      setAuthMessage("插件设备未连接或已退出，请通过网页连接后再继续保存。");
+      return;
+    }
+
+    if (!user) {
+      // The device token is present but the cached profile is missing (legacy
+      // record or schema change). Restore it from /auth/me instead of asking the
+      // user to authorize this browser again.
+      const session = await validateStoredAuthSession();
+      if (session.ok) {
+        setAuthUser(session.user);
+        setAuthState("ok");
+        setAuthMessage(`已连接 ${session.user.email}，现在可以继续使用扩展。`);
+        await refreshTasks(saveMode);
+        return;
+      }
       setAuthUser(null);
       setTasks([]);
       setSelectedTaskId(null);
@@ -253,12 +273,14 @@ export function App() {
     });
   }
 
-  async function refreshPrivateVaultState() {
+  async function refreshPrivateVaultState(silent = false) {
     const response = await chrome.runtime.sendMessage({
       type: MESSAGE_TYPE.GetPrivateVaultState,
     }) as PrivateVaultStateResponse;
     if (!response?.ok) {
-      setError(response?.error ?? "加载私密模式状态失败。");
+      if (!silent) {
+        setError(response?.error ?? "加载私密模式状态失败。");
+      }
       return;
     }
     setVaultSummary(response.summary ?? null);
@@ -275,6 +297,11 @@ export function App() {
     if (!response?.ok) {
       setState("error");
       setError(response?.error ?? "触发保存失败。");
+      if (saveMode === "private") {
+        // The underlying private session may have been cleared by the failure;
+        // refresh silently so the vault card switches back to the unlock form.
+        void refreshPrivateVaultState(true);
+      }
       return;
     }
     setState("idle");

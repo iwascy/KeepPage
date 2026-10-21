@@ -21,12 +21,25 @@ type CaptureInitResponse struct {
 }
 
 type CaptureSource struct {
-	URL           string  `json:"url"`
-	Title         string  `json:"title"`
-	CanonicalURL  *string `json:"canonicalUrl,omitempty"`
-	Domain        string  `json:"domain"`
-	FaviconURL    *string `json:"faviconUrl,omitempty"`
-	CoverImageURL *string `json:"coverImageUrl,omitempty"`
+	URL           string           `json:"url"`
+	Title         string           `json:"title"`
+	CanonicalURL  *string          `json:"canonicalUrl,omitempty"`
+	Domain        string           `json:"domain"`
+	FaviconURL    *string          `json:"faviconUrl,omitempty"`
+	CoverImageURL *string          `json:"coverImageUrl,omitempty"`
+	Referrer      *string          `json:"referrer,omitempty"`
+	SelectionText *string          `json:"selectionText,omitempty"`
+	CaptureScope  string           `json:"captureScope,omitempty"`
+	Viewport      *CaptureViewport `json:"viewport,omitempty"`
+	SavedAt       *string          `json:"savedAt,omitempty"`
+}
+
+// CaptureViewport mirrors the extension capture source payload. The extension
+// sends the full captureSourceSchema object; unknown fields are rejected by
+// decodeJSON (DisallowUnknownFields), so every field must be declared here.
+type CaptureViewport struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 type CaptureMediaFile struct {
@@ -54,7 +67,10 @@ type CaptureCompleteRequest struct {
 	ThumbnailObjectKey  *string            `json:"thumbnailObjectKey,omitempty"`
 	Quality             QualityReport      `json:"quality"`
 	Source              CaptureSource      `json:"source"`
-	DeviceID            string             `json:"deviceId"`
+	// Sent by the extension for server-side icon resolution (same contract as
+	// apps/api). The field is stored in the version source meta.
+	IconCandidates []BookmarkIconCandidate `json:"iconCandidates,omitempty"`
+	DeviceID       string                  `json:"deviceId"`
 }
 
 type CaptureCompleteResponse struct {

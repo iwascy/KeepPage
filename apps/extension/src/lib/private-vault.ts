@@ -10,7 +10,12 @@ import { createLogger } from "./logger";
 const PRIVATE_TOKEN_KEY = "privateModeToken";
 // Inactivity deadline (epoch ms) for the current private session; absent for "browser".
 const PRIVATE_TOKEN_EXPIRES_AT_KEY = "privateModeTokenExpiresAt";
+// When the current server-issued private token was obtained locally.
+const PRIVATE_TOKEN_ISSUED_AT_KEY = "privateModeTokenIssuedAt";
 const PRIVATE_AUTO_LOCK_KEY = "privateAutoLock";
+// Must match the server private-token TTL (api-go privateModeTokenTTL / api PRIVATE_TOKEN_TTL_MS).
+// Otherwise a locally "unlocked" session could keep sending a token the API already rejected.
+const SERVER_PRIVATE_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_PRIVATE_AUTO_LOCK: PrivateAutoLock = "15m";
 const AUTO_LOCK_DURATION_MS: Record<PrivateAutoLock, number | null> = {
   "5m": 5 * 60 * 1000,
@@ -35,6 +40,7 @@ class PrivateModeApiError extends Error {
 
 let cachedPrivateToken: string | null = null;
 let cachedPrivateTokenExpiresAt: number | null = null;
+let cachedPrivateTokenIssuedAt: number | null = null;
 let privateTokenLoaded = false;
 
 async function createEmptySummary(): Promise<PrivateVaultSummary> {
@@ -69,7 +75,10 @@ export async function setPrivateAutoLock(autoLock: PrivateAutoLock) {
 
 async function computePrivateTokenExpiresAt() {
   const duration = AUTO_LOCK_DURATION_MS[await getPrivateAutoLock()];
-  return duration == null ? null : Date.now() + duration;
+  // The server always expires private tokens after a fixed TTL. Cap the local
+  // deadline so "browser" auto-lock or steady activity cannot outlive it.
+  const serverDeadline = (cachedPrivateTokenIssuedAt ?? Date.now()) + SERVER_PRIVATE_TOKEN_TTL_MS;
+  return duration == null ? serverDeadline : Math.min(Date.now() + duration, serverDeadline);
 }
 
 async function persistPrivateTokenExpiry(expiresAt: number | null) {
@@ -85,13 +94,27 @@ async function persistPrivateTokenExpiry(expiresAt: number | null) {
 
 async function loadPrivateToken() {
   if (!privateTokenLoaded) {
-    const result = await chrome.storage.session.get([PRIVATE_TOKEN_KEY, PRIVATE_TOKEN_EXPIRES_AT_KEY]);
+    const result = await chrome.storage.session.get([
+      PRIVATE_TOKEN_KEY,
+      PRIVATE_TOKEN_EXPIRES_AT_KEY,
+      PRIVATE_TOKEN_ISSUED_AT_KEY,
+    ]);
     cachedPrivateToken = typeof result[PRIVATE_TOKEN_KEY] === "string"
       ? result[PRIVATE_TOKEN_KEY].trim() || null
       : null;
     cachedPrivateTokenExpiresAt = typeof result[PRIVATE_TOKEN_EXPIRES_AT_KEY] === "number"
       ? result[PRIVATE_TOKEN_EXPIRES_AT_KEY]
       : null;
+    cachedPrivateTokenIssuedAt = typeof result[PRIVATE_TOKEN_ISSUED_AT_KEY] === "number"
+      ? result[PRIVATE_TOKEN_ISSUED_AT_KEY]
+      : null;
+    if (cachedPrivateToken && cachedPrivateTokenIssuedAt == null) {
+      // Session created before issued-at tracking existed: start its 12h cap now.
+      cachedPrivateTokenIssuedAt = Date.now();
+      await chrome.storage.session.set({
+        [PRIVATE_TOKEN_ISSUED_AT_KEY]: cachedPrivateTokenIssuedAt,
+      });
+    }
     privateTokenLoaded = true;
   }
   if (!cachedPrivateToken) {
@@ -125,13 +148,16 @@ async function persistPrivateToken(privateToken: string | null) {
   cachedPrivateToken = privateToken;
   privateTokenLoaded = true;
   if (privateToken) {
+    cachedPrivateTokenIssuedAt = Date.now();
     await chrome.storage.session.set({
       [PRIVATE_TOKEN_KEY]: privateToken,
+      [PRIVATE_TOKEN_ISSUED_AT_KEY]: cachedPrivateTokenIssuedAt,
     });
     await persistPrivateTokenExpiry(await computePrivateTokenExpiresAt());
     return;
   }
-  await chrome.storage.session.remove(PRIVATE_TOKEN_KEY);
+  cachedPrivateTokenIssuedAt = null;
+  await chrome.storage.session.remove([PRIVATE_TOKEN_KEY, PRIVATE_TOKEN_ISSUED_AT_KEY]);
   await persistPrivateTokenExpiry(null);
 }
 
@@ -207,6 +233,14 @@ export async function getPrivateSessionToken() {
   return loadPrivateToken();
 }
 
+/**
+ * Drop the local private session without touching the login session.
+ * Called when the API reports PrivateModeLocked (expired or revoked private token).
+ */
+export async function clearPrivateSessionToken() {
+  await persistPrivateToken(null);
+}
+
 export async function getPrivateVaultSummary(_ownerUserId?: string): Promise<PrivateVaultSummary> {
   const authToken = await getStoredSyncToken();
   if (!authToken) {
@@ -227,13 +261,24 @@ export async function getPrivateVaultSummary(_ownerUserId?: string): Promise<Pri
     }
     return withLocalAutoLock(summary);
   } catch (error) {
-    if (error instanceof PrivateModeApiError && (error.status === 401 || error.status === 403)) {
-      logger.warn("Fetching private mode summary fell back to locked state.", {
+    if (error instanceof PrivateModeApiError && error.status === 401) {
+      logger.warn("Fetching private mode summary hit an unauthorized session.", {
         status: error.status,
         message: error.message,
       });
       await persistPrivateToken(null);
-      return createEmptySummary();
+      // Do not report an empty vault here: enabled=false would make the UI offer
+      // "enable private mode" and send the user through setup while login is dead.
+      throw new Error("登录状态已失效，请先重新连接 KeepPage 后再使用私密模式。");
+    }
+    if (error instanceof PrivateModeApiError && error.status === 403) {
+      // Route-level rejection (scope/origin/ownership): keep the private session,
+      // it says nothing about whether the login or the vault password is valid.
+      logger.warn("Fetching private mode summary was forbidden.", {
+        status: error.status,
+        message: error.message,
+      });
+      throw new Error(error.message || "当前账号无权访问私密模式。");
     }
     throw error;
   }

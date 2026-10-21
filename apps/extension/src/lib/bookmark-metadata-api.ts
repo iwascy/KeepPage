@@ -15,7 +15,11 @@ import {
   type Tag,
 } from "@keeppage/domain";
 import { getStoredSyncToken } from "./auth-storage";
-import { getConfiguredApiBaseUrl, recoverUnauthorizedSession } from "./auth-flow";
+import {
+  confirmAuthSessionRejected,
+  getConfiguredApiBaseUrl,
+  recoverUnauthorizedSession,
+} from "./auth-flow";
 
 class ExtensionApiError extends Error {
   readonly status: number;
@@ -123,7 +127,9 @@ async function request(
 
   if (!response.ok) {
     const message = await readApiErrorMessage(response);
-    if (response.status === 401 || response.status === 403) {
+    // Only a confirmed 401 means the device authorization is gone. 403 is a
+    // route-level rejection and must not reopen the web authorization flow.
+    if (response.status === 401 && await confirmAuthSessionRejected()) {
       await recoverUnauthorizedSession("popup-metadata");
     }
     throw new ExtensionApiError(response.status, message);

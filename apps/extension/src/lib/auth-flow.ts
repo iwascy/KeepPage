@@ -110,7 +110,7 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
       apiBaseUrl,
     };
   } catch (error) {
-    if (error instanceof ApiResponseError && (error.status === 401 || error.status === 403)) {
+    if (error instanceof ApiResponseError && error.status === 401) {
       logger.warn("Stored auth session is unauthorized.", {
         apiBaseUrl,
         status: error.status,
@@ -120,6 +120,23 @@ export async function validateStoredAuthSession(): Promise<SessionValidationResu
         ok: false,
         reason: "unauthorized",
         message: "登录已失效，请重新登录。",
+        apiBaseUrl,
+      };
+    }
+    if (error instanceof ApiResponseError && error.status === 403) {
+      // 403 means the request was authenticated but rejected by a route-level rule
+      // (origin/scope/ownership). Clearing the device token here would force the
+      // user through web authorization without fixing anything.
+      logger.warn("Stored auth session validation was forbidden, keeping session.", {
+        apiBaseUrl,
+        status: error.status,
+        userId: storedUser?.id,
+        message: error.message,
+      });
+      return {
+        ok: false,
+        reason: "unreachable",
+        message: error.message,
         apiBaseUrl,
       };
     }
@@ -190,13 +207,51 @@ export async function recoverUnauthorizedSession(reason = "session-expired") {
   await openExtensionAuthPage(reason);
 }
 
+/**
+ * Double-check a 401 against /auth/me before wiping the device authorization.
+ * A single rejected request (private-mode lock, proxy/edge response, revoked
+ * route scope) must not send the user through the web authorization flow again.
+ * Any ambiguous outcome keeps the stored session.
+ */
+export async function confirmAuthSessionRejected() {
+  const [apiBaseUrl, token] = await Promise.all([
+    getConfiguredApiBaseUrl(),
+    getStoredAuthToken(),
+  ]);
+  if (!token) {
+    return true;
+  }
+
+  try {
+    await fetchCurrentAccount(apiBaseUrl, token);
+    logger.warn("Session still valid after a 401, keeping the current device authorization.", {
+      apiBaseUrl,
+      tokenKind: getTokenKind(token),
+    });
+    return false;
+  } catch (error) {
+    if (error instanceof ApiResponseError) {
+      return error.status === 401;
+    }
+    logger.warn("Could not confirm a rejected session, keeping the current device authorization.", {
+      apiBaseUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 export async function openExtensionAuthPage(reason = "login") {
   logger.debug("Opening web extension connect page.", { reason });
   const connectNonce = crypto.randomUUID();
   await chrome.storage.local.set({
     extensionConnectNonce: connectNonce,
   });
-  await openExtensionPage(await buildWebExtensionConnectUrl(reason, connectNonce));
+  const pageUrl = await buildWebExtensionConnectUrl(reason, connectNonce);
+  // Reuse the already-open connect tab instead of stacking a new authorization
+  // tab (with a stale nonce) on every prompt.
+  const connectPrefix = `${pageUrl.split("#")[0]}#/extension/connect`;
+  await openExtensionPage(pageUrl, connectPrefix);
 }
 
 export async function redeemExtensionConnectCode(input: {
@@ -440,11 +495,13 @@ function detectBrowserName() {
   return "KeepPage";
 }
 
-async function openExtensionPage(pageUrl: string) {
-  const pageBaseUrl = chrome.runtime.getURL(AUTH_PAGE_FILE);
+async function openExtensionPage(
+  pageUrl: string,
+  reusePrefix = chrome.runtime.getURL(AUTH_PAGE_FILE),
+) {
   const existingTabs = await chrome.tabs.query({});
   const existingTab = existingTabs.find(
-    (tab) => typeof tab.id === "number" && tab.url?.startsWith(pageBaseUrl),
+    (tab) => typeof tab.id === "number" && tab.url?.startsWith(reusePrefix),
   );
 
   if (existingTab?.id != null) {

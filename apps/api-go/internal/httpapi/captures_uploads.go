@@ -214,6 +214,14 @@ func publicBaseURL(r *http.Request, cfg config.Config) string {
 	if base := strings.TrimRight(strings.TrimSpace(cfg.APIPublicBaseURL), "/"); base != "" {
 		return base
 	}
+	// The extension sends the API base URL it is actually using; honour it like
+	// apps/api does, so upload links stay on the same origin/scheme even when the
+	// deployment sits behind a TLS terminator that does not forward the proto.
+	if requested := strings.TrimRight(strings.TrimSpace(r.Header.Get("X-KeepPage-Public-Base-URL")), "/"); requested != "" {
+		if parsed, err := url.Parse(requested); err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+			return requested
+		}
+	}
 	protocol := r.Header.Get("X-Forwarded-Proto")
 	if protocol == "" {
 		protocol = "http"
