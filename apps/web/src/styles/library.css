@@ -31,12 +31,13 @@ body, .home-page { font-family: var(--font-display); }
 .bookmark-library .brand-bookmark-domain, .bookmark-library .brand-bookmark-time, .bookmark-library .brand-bookmark-excerpt { color: #606a75; }
 .bookmark-library .brand-bookmark-excerpt { font-size: 12px; line-height: 1.6; }
 .brand-bookmark-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bookmark-library .brand-bookmark-info { order: 1; margin-top: auto; padding-top: 4px; }
 .brand-bookmark-info > .brand-bookmark-meta { flex: 0 1 auto; min-width: 0; }
 .brand-bookmark-status { display: flex; flex: 0 3 auto; min-width: 0; align-items: center; gap: 7px; font-size: 11px; color: #626d76; }
 .brand-bookmark-status > span:first-child { flex-shrink: 0; background: #f0f2f4; padding: 2px 6px; border-radius: 4px; line-height: 1.5; }
 .brand-bookmark-status > span.is-archived { background: #edf4ef; color: #365f48; }
 .brand-bookmark-collection { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 150px; }
-.bookmark-library .brand-bookmark-actions { padding-top: 3px; gap: 3px; }
+.bookmark-library .brand-bookmark-actions { order: 2; margin-top: 0; padding-top: 3px; gap: 3px; }
 .brand-bookmark-open-hint { color: #66717c; font-size: 10px; margin-right: auto; }
 .bookmark-library .home-bookmark-iconbtn { color: #5c6874; }
 .bookmark-library .home-bookmark-star.is-active { color: #936515; }
