@@ -94,6 +94,7 @@ import { updateScopedSearch } from "./app/search-scope";
 import { fetchBookmarkWindow } from "./lib/bookmark-window";
 import { runBoundedBatch, mergeTagIds } from "./lib/batch-actions";
 import { Icon } from "./components/Icon";
+import { AuthDialog, LandingPage, type AuthMode } from "./features/landing";
 
 const BookmarkDetailRoute = lazy(async () => {
   const module = await import("./features/bookmarks/detail");
@@ -163,128 +164,12 @@ const PublicSharePage = lazy(async () => {
 type QualityFilter = "all" | QualityGrade;
 type LoadState = "idle" | "loading" | "ready" | "error";
 type DetailLoadState = "idle" | "loading" | "ready" | "not-found" | "error";
-type AuthMode = "login" | "register";
-
 type InlineFeedback = {
   kind: "success" | "error";
   message: string;
 };
 
 const BOOKMARKS_PAGE_SIZE = 24;
-
-function AuthPanel({
-  isDemoMode,
-  mode,
-  name,
-  email,
-  password,
-  submitting,
-  error,
-  onModeChange,
-  onNameChange,
-  onEmailChange,
-  onPasswordChange,
-  onSubmit,
-}: {
-  isDemoMode: boolean;
-  mode: AuthMode;
-  name: string;
-  email: string;
-  password: string;
-  submitting: boolean;
-  error: string | null;
-  onModeChange: (mode: AuthMode) => void;
-  onNameChange: (value: string) => void;
-  onEmailChange: (value: string) => void;
-  onPasswordChange: (value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  const isRegister = mode === "register";
-  return (
-    <main className="auth-shell">
-      <section className="auth-card" aria-labelledby="auth-title">
-        <div className="auth-brand">
-          <span className="auth-brand-mark" aria-hidden="true"><Icon name="bookmark" /></span>
-          <span>KeepPage</span>
-        </div>
-        <header className="auth-heading">
-          <h1 id="auth-title">{isRegister ? "创建你的账号" : "欢迎回来"}</h1>
-          <p>{isRegister ? "建立自己的网页资料库，留住值得收藏的内容。" : "登录后，继续整理和浏览你的网页收藏。"}</p>
-        </header>
-
-        <div className="auth-switch" role="group" aria-label="账号操作">
-          <button
-            className={mode === "login" ? "auth-switch-btn is-active" : "auth-switch-btn"}
-            type="button"
-            aria-pressed={mode === "login"}
-            disabled={submitting}
-            onClick={() => onModeChange("login")}
-          >
-            登录
-          </button>
-          <button
-            className={mode === "register" ? "auth-switch-btn is-active" : "auth-switch-btn"}
-            type="button"
-            aria-pressed={mode === "register"}
-            disabled={submitting}
-            onClick={() => onModeChange("register")}
-          >
-            注册
-          </button>
-        </div>
-
-        <form className="auth-form" onSubmit={onSubmit} aria-busy={submitting}>
-          {isRegister ? (
-            <label className="field">
-              <span>昵称 <small>可选</small></span>
-              <input
-                name="name"
-                value={name}
-                onChange={(event) => onNameChange(event.target.value)}
-                placeholder="怎么称呼你"
-                autoComplete="nickname"
-                disabled={submitting}
-              />
-            </label>
-          ) : null}
-          <label className="field">
-            <span>邮箱</span>
-            <input
-              name="email"
-              type="email"
-              value={email}
-              onChange={(event) => onEmailChange(event.target.value)}
-              placeholder={isDemoMode ? "演示模式可留空" : "name@example.com"}
-              autoComplete="email"
-              required={!isDemoMode}
-              disabled={submitting}
-            />
-          </label>
-          <label className="field">
-            <span>密码</span>
-            <input
-              name="password"
-              type="password"
-              value={password}
-              onChange={(event) => onPasswordChange(event.target.value)}
-              placeholder={isDemoMode ? "演示模式不校验密码" : isRegister ? "设置至少 8 位密码" : "输入你的密码"}
-              autoComplete={isRegister ? "new-password" : "current-password"}
-              required={!isDemoMode}
-              disabled={submitting}
-              aria-describedby={isRegister && !isDemoMode ? "auth-password-hint" : undefined}
-            />
-            {isRegister && !isDemoMode ? <small id="auth-password-hint" className="auth-field-hint">至少 8 位，建议组合使用字母、数字和符号。</small> : null}
-          </label>
-          {error ? <p className="auth-error" role="alert"><Icon name="info" aria-hidden="true" />{error}</p> : null}
-          <button className="primary-button auth-submit" type="submit" disabled={submitting}>
-            {submitting ? <><span className="auth-spinner" aria-hidden="true" />{isRegister ? "正在创建账号…" : "正在登录…"}</> : isRegister ? "创建账号" : "登录"}
-          </button>
-        </form>
-        <p className="auth-footnote"><Icon name="bookmarks" aria-hidden="true" />收藏、整理，随时回看。</p>
-      </section>
-    </main>
-  );
-}
 
 export function App({
   dataSourceKind = "live",
@@ -310,6 +195,8 @@ export function App({
   const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
+  // Deep links such as extension authorization skip the landing page and open sign-in directly.
+  const [authDialogOpen, setAuthDialogOpen] = useState(() => parseRoute(window.location.hash).page !== "list");
   const initialFilters = useMemo(() => parseListFilters(window.location.hash), []);
   const [searchInput, setSearchInput] = useState(initialFilters.search);
   const [privateSearchInput, setPrivateSearchInput] = useState("");
@@ -2220,6 +2107,7 @@ export function App({
         error: null,
       });
       setAuthPassword("");
+      setAuthDialogOpen(false);
       if (route.page !== "extension-connect") {
         goToList();
       }
@@ -2279,23 +2167,39 @@ export function App({
         </section>
       </main>
     ) : (
-      <AuthPanel
-        isDemoMode={isDemoMode}
-        mode={authMode}
-        name={authName}
-        email={authEmail}
-        password={authPassword}
-        submitting={authSubmitting}
-        error={authError ?? session.error}
-        onModeChange={(mode) => {
-          setAuthMode(mode);
-          setAuthError(null);
-        }}
-        onNameChange={setAuthName}
-        onEmailChange={setAuthEmail}
-        onPasswordChange={setAuthPassword}
-        onSubmit={handleAuthSubmit}
-      />
+      <>
+        <LandingPage
+          onOpenAuth={(mode) => {
+            setAuthMode(mode);
+            setAuthError(null);
+            setAuthDialogOpen(true);
+          }}
+        />
+        {authDialogOpen || session.error ? (
+          <AuthDialog
+            isDemoMode={isDemoMode}
+            mode={authMode}
+            name={authName}
+            email={authEmail}
+            password={authPassword}
+            submitting={authSubmitting}
+            error={authError ?? session.error}
+            onClose={() => {
+              setAuthDialogOpen(false);
+              setAuthError(null);
+              if (session.error) setSession({ ...session, error: null });
+            }}
+            onModeChange={(mode) => {
+              setAuthMode(mode);
+              setAuthError(null);
+            }}
+            onNameChange={setAuthName}
+            onEmailChange={setAuthEmail}
+            onPasswordChange={setAuthPassword}
+            onSubmit={handleAuthSubmit}
+          />
+        ) : null}
+      </>
     );
   }
 
