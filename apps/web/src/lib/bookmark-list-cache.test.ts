@@ -3,7 +3,7 @@ import { test } from "node:test";
 // @ts-expect-error Native Node TypeScript tests require explicit .ts extensions.
 import { buildBookmarkListCacheKey, clearBookmarkListCache, readCachedBookmarkList, writeCachedBookmarkList } from "./bookmark-list-cache.ts";
 // @ts-expect-error Native Node TypeScript tests require explicit .ts extensions.
-import { buildListHash, parseListFilters } from "../app/routes.ts";
+import { buildDetailHash, buildListHash, parseListFilters, parseRoute } from "../app/routes.ts";
 
 const query = { search: "gorm", quality: "all", view: "all", folderId: "go", limit: 24, offset: 0 } as const;
 
@@ -29,7 +29,23 @@ test("list cache isolates accounts and complete query and clears only the target
 });
 
 test("URL round trips folder, query, tag, quality, view and sorting", () => {
-  const filters = { search: "go & 中文", view: "favorites", quality: "high", folderId: "f/1", tagId: "t 1", sort: "relevance" } as const;
+  const filters = { scope: "standard", search: "go & 中文", view: "favorites", quality: "high", folderId: "f/1", tagId: "t 1", sort: "relevance" } as const;
   assert.deepEqual(parseListFilters(buildListHash(filters)), filters);
   assert.equal(parseListFilters("#/?sort=invalid&quality=unknown&view=bad").sort, "created");
+});
+
+test("private list URLs keep filters but never the search keyword", () => {
+  const filters = { scope: "private", search: "secret", view: "all", quality: "all", folderId: "pf", tagId: "pt", sort: "created" } as const;
+  const hash = buildListHash(filters);
+  assert.equal(hash.startsWith("#/private"), true);
+  assert.equal(hash.includes("secret"), false);
+  assert.deepEqual(parseListFilters(hash), { ...filters, search: "" });
+});
+
+test("routes distinguish standard and private workspaces", () => {
+  assert.deepEqual(parseRoute("#/"), { page: "list", scope: "standard" });
+  assert.deepEqual(parseRoute("#/private?folder=pf"), { page: "list", scope: "private" });
+  assert.deepEqual(parseRoute(buildDetailHash("b 1", "v1", "private")), { page: "detail", scope: "private", bookmarkId: "b 1", versionId: "v1" });
+  assert.deepEqual(parseRoute(buildDetailHash("b1")), { page: "detail", scope: "standard", bookmarkId: "b1", versionId: undefined });
+  assert.deepEqual(parseRoute("#/settings/private-mode"), { page: "private-mode" });
 });

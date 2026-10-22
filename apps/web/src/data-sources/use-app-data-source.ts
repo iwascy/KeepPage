@@ -28,8 +28,6 @@ import {
   fetchBookmarkDetail,
   fetchBookmarkFolderCounts,
   fetchBookmarks,
-  fetchPrivateBookmarkDetail,
-  fetchPrivateBookmarks,
   fetchPrivateModeStatus,
   fetchCurrentUser,
   fetchFolders,
@@ -61,6 +59,27 @@ import { restoreStoredSession, type RestoredSessionState } from "../app/restore-
 export type { RestoredSessionState } from "../app/restore-session";
 
 export type AppDataSourceKind = "live" | "demo";
+export type WorkspaceScope = "standard" | "private";
+
+/** Bookmark and taxonomy operations shared by the standard and private workspaces. */
+export type WorkspaceSource = Pick<
+  AppDataSource,
+  | "fetchFolders"
+  | "fetchTags"
+  | "fetchBookmarkFolderCounts"
+  | "fetchWorkspaceBootstrap"
+  | "searchBookmarks"
+  | "fetchBookmarkDetail"
+  | "createArchivePreviewUrl"
+  | "deleteBookmark"
+  | "updateBookmarkMetadata"
+  | "createFolder"
+  | "updateFolder"
+  | "deleteFolder"
+  | "createTag"
+  | "updateTag"
+  | "deleteTag"
+>;
 
 export type AppDataSource = {
   kind: AppDataSourceKind;
@@ -91,12 +110,8 @@ export type AppDataSource = {
     token: string,
   ): Promise<PrivateModeUnlockResponse>;
   lockPrivateMode(token: string): Promise<PrivateVaultSummary>;
-  searchPrivateBookmarks(query: BookmarkQuery, token: string, privateToken: string, signal?: AbortSignal): Promise<BookmarkResult>;
-  fetchPrivateBookmarkDetail(
-    bookmarkId: string,
-    token: string,
-    privateToken: string,
-  ): Promise<BookmarkDetailResult | null>;
+  /** Binds the workspace operations to the unlocked private vault. */
+  privateWorkspace(privateToken: string): WorkspaceSource;
   deleteBookmark(bookmarkId: string, token: string): Promise<void>;
   updateBookmarkMetadata(
     bookmarkId: string,
@@ -136,12 +151,12 @@ const liveDataSource: AppDataSource = {
       },
       login: loginAccount,
       register: registerAccount,
-      fetchFolders,
-      fetchTags,
-      fetchBookmarkFolderCounts,
-      fetchWorkspaceBootstrap,
-      searchBookmarks: fetchBookmarks,
-      fetchBookmarkDetail,
+      fetchFolders: (token) => fetchFolders(token),
+      fetchTags: (token) => fetchTags(token),
+      fetchBookmarkFolderCounts: (token) => fetchBookmarkFolderCounts(token),
+      fetchWorkspaceBootstrap: (token) => fetchWorkspaceBootstrap(token),
+      searchBookmarks: (query, token, signal) => fetchBookmarks(query, token, signal),
+      fetchBookmarkDetail: (bookmarkId, token) => fetchBookmarkDetail(bookmarkId, token),
       async createArchivePreviewUrl(_versionId, objectKey, sourceUrl, token, privateToken) {
         if (!objectKey || !sourceUrl) {
           return null;
@@ -153,19 +168,47 @@ const liveDataSource: AppDataSource = {
       unlockPrivateMode,
       changePrivateModePassword,
       lockPrivateMode,
-      searchPrivateBookmarks: fetchPrivateBookmarks,
-      fetchPrivateBookmarkDetail,
+      privateWorkspace(privateToken) {
+        return {
+          fetchFolders: (token) => fetchFolders(token, privateToken),
+          fetchTags: (token) => fetchTags(token, privateToken),
+          fetchBookmarkFolderCounts: (token) => fetchBookmarkFolderCounts(token, privateToken),
+          fetchWorkspaceBootstrap: (token) => fetchWorkspaceBootstrap(token, privateToken),
+          searchBookmarks: (query, token, signal) => fetchBookmarks(query, token, signal, privateToken),
+          fetchBookmarkDetail: (bookmarkId, token) => fetchBookmarkDetail(bookmarkId, token, privateToken),
+          async createArchivePreviewUrl(_versionId, objectKey, sourceUrl, token) {
+            if (!objectKey || !sourceUrl) {
+              return null;
+            }
+            return createArchiveObjectUrl(token, objectKey, sourceUrl, privateToken);
+          },
+          async deleteBookmark(bookmarkId, token) {
+            await deleteBookmark(bookmarkId, token, privateToken);
+          },
+          updateBookmarkMetadata: (bookmarkId, input, token) => updateBookmarkMetadata(bookmarkId, input, token, privateToken),
+          createFolder: (input, token) => createFolder(input, token, privateToken),
+          updateFolder: (folderId, input, token) => updateFolder(folderId, input, token, privateToken),
+          async deleteFolder(folderId, token) {
+            await deleteFolder(folderId, token, privateToken);
+          },
+          createTag: (input, token) => createTag(input, token, privateToken),
+          updateTag: (tagId, input, token) => updateTag(tagId, input, token, privateToken),
+          async deleteTag(tagId, token) {
+            await deleteTag(tagId, token, privateToken);
+          },
+        };
+      },
       async deleteBookmark(bookmarkId, token) {
         await deleteBookmark(bookmarkId, token);
       },
-      updateBookmarkMetadata,
-      createFolder,
-      updateFolder,
+      updateBookmarkMetadata: (bookmarkId, input, token) => updateBookmarkMetadata(bookmarkId, input, token),
+      createFolder: (input, token) => createFolder(input, token),
+      updateFolder: (folderId, input, token) => updateFolder(folderId, input, token),
       async deleteFolder(folderId, token) {
         await deleteFolder(folderId, token);
       },
-      createTag,
-      updateTag,
+      createTag: (input, token) => createTag(input, token),
+      updateTag: (tagId, input, token) => updateTag(tagId, input, token),
       async deleteTag(tagId, token) {
         await deleteTag(tagId, token);
       },

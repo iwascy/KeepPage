@@ -16,7 +16,7 @@ import type {
 } from "@keeppage/domain";
 import { useDialogFocus } from "./use-dialog-focus";
 import { Icon } from "../components/Icon";
-import type { ViewRoute } from "./routes";
+import type { ViewRoute, WorkspaceScope } from "./routes";
 import { displayUserName, userInitials } from "./user-format";
 
 export function AppShell({
@@ -27,6 +27,9 @@ export function AppShell({
   tags,
   privateModeSummary,
   privateModeUnlocked,
+  workspaceScope,
+  workspaceLocked,
+  onSwitchWorkspaceScope,
   routePage,
   bookmarkView,
   selectedFolderId,
@@ -65,6 +68,10 @@ export function AppShell({
   tags: Tag[];
   privateModeSummary: PrivateVaultSummary | null;
   privateModeUnlocked: boolean;
+  workspaceScope: WorkspaceScope;
+  /** The private workspace is selected but the vault is locked. */
+  workspaceLocked: boolean;
+  onSwitchWorkspaceScope: (scope: WorkspaceScope) => void;
   routePage: ViewRoute["page"];
   bookmarkView: BookmarkListView;
   selectedFolderId: string;
@@ -268,7 +275,7 @@ export function AppShell({
   }
 
   return (
-    <main className={`home-page${isSettingsPage ? " settings-workspace" : ""}`}>
+    <main className={`home-page${isSettingsPage ? " settings-workspace" : ""}${workspaceScope === "private" ? " is-private-scope" : ""}`}>
       <button
         className={mobileSidebarOpen ? "home-mobile-sidebar-backdrop is-visible" : "home-mobile-sidebar-backdrop"}
         type="button"
@@ -297,8 +304,8 @@ export function AppShell({
             <nav className="home-settings-list" aria-label="设置分类">
               <p className="settings-nav-group">资料库</p>
               <button
-                aria-current={routePage === "private-mode" || routePage === "private-detail" ? "page" : undefined}
-                className={routePage === "private-mode" || routePage === "private-detail"
+                aria-current={routePage === "private-mode" ? "page" : undefined}
+                className={routePage === "private-mode"
                   ? "home-settings-item is-active"
                   : "home-settings-item"}
                 type="button"
@@ -425,10 +432,30 @@ export function AppShell({
                 type="search"
                 value={searchInput}
                 onChange={(event) => onSearchChange(event.target.value)}
-                aria-label="搜索书签"
-                placeholder="搜索标题、域名、标签..."
+                aria-label={workspaceScope === "private" ? "搜索私密书签" : "搜索书签"}
+                placeholder={workspaceScope === "private" ? "搜索私密书签..." : "搜索标题、域名、标签..."}
               />
             </label>
+
+            {privateModeSummary?.enabled || workspaceScope === "private" ? (
+              <div className="home-scope-switch" role="group" aria-label="内容模式">
+                {(["standard", "private"] as const).map((scope) => (
+                  <button
+                    key={scope}
+                    type="button"
+                    className={workspaceScope === scope ? "home-scope-option is-active" : "home-scope-option"}
+                    aria-pressed={workspaceScope === scope}
+                    onClick={() => {
+                      setMobileSidebarOpen(false);
+                      onSwitchWorkspaceScope(scope);
+                    }}
+                  >
+                    {scope === "private" ? <Icon name={privateModeUnlocked ? "lock_open" : "lock"} /> : <Icon name="bookmark" />}
+                    <span>{scope === "private" ? "私密" : "书签"}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
             <nav className="home-quick-nav" aria-label="快捷导航">
               <button
@@ -465,7 +492,7 @@ export function AppShell({
                     className="home-section-action"
                     type="button"
                     onClick={() => { setMobileSidebarOpen(false); onCreateRootFolder(); }}
-                    disabled={managerBusy}
+                    disabled={managerBusy || workspaceLocked}
                     aria-label="新建收藏夹"
                     title="新建收藏夹"
                   >
@@ -474,7 +501,7 @@ export function AppShell({
                 </header>
                 <input className="home-folder-search" type="search" aria-label="查找收藏夹" placeholder="查找收藏夹…" value={folderSearch} onChange={(event) => setFolderSearch(event.target.value)} />
                 <div className="home-folder-list" ref={folderListRef}>
-                  {visibleFolderRows.length === 0 ? <p className="home-folder-empty">没有匹配的收藏夹</p> : null}
+                  {visibleFolderRows.length === 0 ? <p className="home-folder-empty">{workspaceLocked ? "解锁后显示私密收藏夹" : "没有匹配的收藏夹"}</p> : null}
                   {visibleFolderRows.map(({ folder, depth, hasChildren }) => (
                     <div
                       className="home-folder-row"
@@ -536,7 +563,7 @@ export function AppShell({
                     className="home-section-action"
                     type="button"
                     onClick={() => { setMobileSidebarOpen(false); onCreateTag(); }}
-                    disabled={managerBusy}
+                    disabled={managerBusy || workspaceLocked}
                     aria-label="新建标签"
                     title="新建标签"
                   >
@@ -568,10 +595,13 @@ export function AppShell({
             </div>
 
             <div className="home-sidebar-footer">
-              <button className="home-add-new-btn" type="button" onClick={onOpenImportNew}>
-                <Icon name="add" />
-                <span>导入书签</span>
-              </button>
+              {/* Imports always land in the standard library, so hide the entry inside the vault. */}
+              {workspaceScope === "private" ? null : (
+                <button className="home-add-new-btn" type="button" onClick={onOpenImportNew}>
+                  <Icon name="add" />
+                  <span>导入书签</span>
+                </button>
+              )}
 
               <div className="home-user-profile">
                 <div className="home-avatar">{userInitials(user)}</div>
@@ -667,10 +697,12 @@ export function AppShell({
                 >
                   <Icon name="tune" />
                 </button>
-                <button className="home-mobile-cta" type="button" onClick={onOpenImportNew}>
-                  <Icon name="add" />
-                  <span>导入书签</span>
-                </button>
+                {workspaceScope === "private" ? null : (
+                  <button className="home-mobile-cta" type="button" onClick={onOpenImportNew}>
+                    <Icon name="add" />
+                    <span>导入书签</span>
+                  </button>
+                )}
                 <button
                   className={mobileSidebarOpen && sidebarView === "settings" ? "home-mobile-action is-active" : "home-mobile-action"}
                   type="button"
@@ -695,9 +727,11 @@ export function AppShell({
 
         {routePage === "list" ? (
           <>
-            <button className="home-mobile-fab" type="button" onClick={onOpenImportNew} aria-label="新建归档导入">
-              <Icon name="add" />
-            </button>
+            {workspaceScope === "private" ? null : (
+              <button className="home-mobile-fab" type="button" onClick={onOpenImportNew} aria-label="新建归档导入">
+                <Icon name="add" />
+              </button>
+            )}
 
             <nav className="home-mobile-bottom-nav" aria-label="移动端主导航">
               <button

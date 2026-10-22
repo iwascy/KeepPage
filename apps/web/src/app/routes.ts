@@ -1,6 +1,9 @@
 import type { BookmarkListView, QualityGrade } from "@keeppage/domain";
 
+export type WorkspaceScope = "standard" | "private";
+
 export type ListFilters = {
+  scope: WorkspaceScope;
   search: string;
   view: BookmarkListView;
   quality: "all" | QualityGrade;
@@ -9,13 +12,23 @@ export type ListFilters = {
   sort: "created" | "updated" | "title" | "relevance";
 };
 
+function parseHashPath(hash: string) {
+  const normalized = hash.startsWith("#") ? hash.slice(1) : hash;
+  const [pathPart, queryString = ""] = normalized.split("?");
+  return { path: pathPart.replace(/\/+$/, ""), queryString };
+}
+
 export function parseListFilters(hash: string): ListFilters {
-  const params = new URLSearchParams(hash.split("?")[1] ?? "");
+  const { path, queryString } = parseHashPath(hash);
+  const params = new URLSearchParams(queryString);
+  const scope: WorkspaceScope = path === "/private" ? "private" : "standard";
   const view = params.get("view");
   const quality = params.get("quality");
   const sort = params.get("sort");
   return {
-    search: params.get("q") ?? "",
+    scope,
+    // Private keywords never enter the URL, so they cannot leak into browser history.
+    search: scope === "private" ? "" : params.get("q") ?? "",
     view: view === "favorites" || view === "recent" ? view : "all",
     quality: quality === "high" || quality === "medium" || quality === "low" ? quality : "all",
     folderId: params.get("folder") ?? "",
@@ -26,20 +39,20 @@ export function parseListFilters(hash: string): ListFilters {
 
 export function buildListHash(filters: ListFilters) {
   const params = new URLSearchParams();
-  if (filters.search) params.set("q", filters.search);
+  if (filters.search && filters.scope !== "private") params.set("q", filters.search);
   if (filters.view !== "all") params.set("view", filters.view);
   if (filters.quality !== "all") params.set("quality", filters.quality);
   if (filters.folderId) params.set("folder", filters.folderId);
   if (filters.tagId) params.set("tag", filters.tagId);
   if (filters.sort !== "created") params.set("sort", filters.sort);
-  return `#/${params.size ? `?${params}` : ""}`;
+  const base = filters.scope === "private" ? "#/private" : "#/";
+  return `${base}${params.size ? `?${params}` : ""}`;
 }
 
 export type ViewRoute =
-  | { page: "list" }
-  | { page: "detail"; bookmarkId: string; versionId?: string }
+  | { page: "list"; scope: WorkspaceScope }
+  | { page: "detail"; scope: WorkspaceScope; bookmarkId: string; versionId?: string }
   | { page: "private-mode" }
-  | { page: "private-detail"; bookmarkId: string; versionId?: string }
   | { page: "imports-new" }
   | { page: "imports-list" }
   | { page: "imports-detail"; taskId: string }
@@ -50,13 +63,13 @@ export type ViewRoute =
   | { page: "extension-connect" };
 
 export function parseRoute(hash: string): ViewRoute {
-  const normalized = hash.startsWith("#") ? hash.slice(1) : hash;
-  if (!normalized) {
-    return { page: "list" };
+  const { path, queryString } = parseHashPath(hash);
+  if (!path) {
+    return { page: "list", scope: "standard" };
   }
-
-  const [pathPart, queryString = ""] = normalized.split("?");
-  const path = pathPart.replace(/\/+$/, "");
+  if (path === "/private") {
+    return { page: "list", scope: "private" };
+  }
   if (path === "/imports/new") {
     return { page: "imports-new" };
   }
@@ -91,49 +104,33 @@ export function parseRoute(hash: string): ViewRoute {
       taskId,
     };
   }
-  if (!path.startsWith("/bookmarks/")) {
-    if (path.startsWith("/private/bookmarks/")) {
-      const bookmarkId = decodeURIComponent(path.slice("/private/bookmarks/".length));
-      if (!bookmarkId) {
-        return { page: "private-mode" };
-      }
-      const versionId = new URLSearchParams(queryString).get("version") ?? undefined;
-      return {
-        page: "private-detail",
-        bookmarkId,
-        versionId,
-      };
-    }
-    return { page: "list" };
-  }
 
-  const bookmarkId = decodeURIComponent(path.slice("/bookmarks/".length));
+  const scope: WorkspaceScope = path.startsWith("/private/bookmarks/") ? "private" : "standard";
+  const detailPrefix = scope === "private" ? "/private/bookmarks/" : "/bookmarks/";
+  if (!path.startsWith(detailPrefix)) {
+    return { page: "list", scope: "standard" };
+  }
+  const bookmarkId = decodeURIComponent(path.slice(detailPrefix.length));
   if (!bookmarkId) {
-    return { page: "list" };
+    return { page: "list", scope };
   }
 
   const versionId = new URLSearchParams(queryString).get("version") ?? undefined;
   return {
     page: "detail",
+    scope,
     bookmarkId,
     versionId,
   };
 }
 
-export function buildDetailHash(bookmarkId: string, versionId?: string) {
+export function buildDetailHash(bookmarkId: string, versionId?: string, scope: WorkspaceScope = "standard") {
   const params = new URLSearchParams();
   if (versionId) {
     params.set("version", versionId);
   }
-  return `#/bookmarks/${encodeURIComponent(bookmarkId)}${params.toString() ? `?${params.toString()}` : ""}`;
-}
-
-export function buildPrivateDetailHash(bookmarkId: string, versionId?: string) {
-  const params = new URLSearchParams();
-  if (versionId) {
-    params.set("version", versionId);
-  }
-  return `#/private/bookmarks/${encodeURIComponent(bookmarkId)}${params.toString() ? `?${params.toString()}` : ""}`;
+  const base = scope === "private" ? "#/private/bookmarks/" : "#/bookmarks/";
+  return `${base}${encodeURIComponent(bookmarkId)}${params.toString() ? `?${params.toString()}` : ""}`;
 }
 
 export function goToList() {
@@ -185,10 +182,6 @@ export function openImportTask(taskId: string) {
   window.location.hash = `#/imports/${encodeURIComponent(taskId)}`;
 }
 
-export function openBookmark(bookmarkId: string, versionId?: string) {
-  window.location.hash = buildDetailHash(bookmarkId, versionId);
-}
-
-export function openPrivateBookmark(bookmarkId: string, versionId?: string) {
-  window.location.hash = buildPrivateDetailHash(bookmarkId, versionId);
+export function openBookmark(bookmarkId: string, versionId?: string, scope: WorkspaceScope = "standard") {
+  window.location.hash = buildDetailHash(bookmarkId, versionId, scope);
 }

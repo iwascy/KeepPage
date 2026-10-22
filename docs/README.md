@@ -20,7 +20,7 @@ UI 重构先读 [重构功能基线](ui-refactor-baseline.md)，再按模块查�
 
 ## 产品需求与历史方案
 
-[批量导入](batch-import-prd.md)、[私密模式](private-mode-prd.md)、[分享](share-prd.md)、[AI 整理](ai-auto-organize-prd.md) 保留业务规则和设计背景。它们包含制定时的设想和验收项，不是当前待办清单；实现状态以源码和实际验证为准。重构不继承其中的旧布局、固定入口位置或视觉风格。
+[批量导入](batch-import-prd.md)、[私密模式](private-mode-prd.md)（当前私密工作区契约见 [private-workspace.md](private-workspace.md)）、[分享](share-prd.md)、[AI 整理](ai-auto-organize-prd.md) 保留业务规则和设计背景。它们包含制定时的设想和验收项，不是当前待办清单；实现状态以源码和实际验证为准。重构不继承其中的旧布局、固定入口位置或视觉风格。
 
 `superpowers/specs/`、`superpowers/plans/` 保存有日期的后端迁移方案，仅用于追溯迁移决策，不作为当前执行任务。
 

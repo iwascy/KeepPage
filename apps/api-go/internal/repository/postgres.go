@@ -240,12 +240,16 @@ func (r *PostgresRepository) TouchDevice(ctx context.Context, deviceID string, u
 }
 
 func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string, query domain.BookmarkSearchQuery) (domain.BookmarkSearchResponse, error) {
+	return r.searchTaxonomyBookmarks(ctx, publicTaxonomy, userID, query)
+}
+
+func (r *PostgresRepository) searchTaxonomyBookmarks(ctx context.Context, t taxonomyTables, userID string, query domain.BookmarkSearchQuery) (domain.BookmarkSearchResponse, error) {
 	args := []any{userID}
 	conditions := []string{"b.user_id = $1"}
-	joins := `
-		left join bookmark_versions bv on b.latest_version_id = bv.id
-		left join folders f on b.folder_id = f.id
-	`
+	joins := t.sql(`
+		left join {versions} bv on b.latest_version_id = bv.id
+		left join {folders} f on b.folder_id = f.id
+	`)
 	if query.View == "favorites" {
 		conditions = append(conditions, "b.is_favorite = true")
 	}
@@ -262,7 +266,7 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 		conditions = append(conditions, fmt.Sprintf("bv.quality_grade = $%d", len(args)))
 	}
 	if query.FolderID != "" {
-		folderIDs, err := r.loadFolderSubtreeIDs(ctx, userID, query.FolderID)
+		folderIDs, err := r.loadTaxonomyFolderSubtreeIDs(ctx, t, userID, query.FolderID)
 		if err != nil {
 			return domain.BookmarkSearchResponse{}, err
 		}
@@ -274,10 +278,10 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 	}
 	if query.TagID != "" {
 		args = append(args, query.TagID)
-		conditions = append(conditions, fmt.Sprintf(`exists (
-			select 1 from bookmark_tags bt
+		conditions = append(conditions, fmt.Sprintf(t.sql(`exists (
+			select 1 from {bookmark_tags} bt
 			where bt.bookmark_id = b.id and bt.tag_id = $%d
-		)`, len(args)))
+		)`), len(args)))
 	}
 	searchPlaceholder := ""
 	snippetSelect := "''"
@@ -285,21 +289,21 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 		args = append(args, "%"+escapeSearchLike(strings.TrimSpace(query.Q))+"%")
 		placeholder := fmt.Sprintf("$%d", len(args))
 		searchPlaceholder = placeholder
-		conditions = append(conditions, fmt.Sprintf(`(
+		conditions = append(conditions, fmt.Sprintf(t.sql(`(
 			b.title ilike %[1]s or b.source_url ilike %[1]s or b.domain ilike %[1]s or b.note ilike %[1]s
 			or f.path ilike %[1]s
 			or bv.extracted_text ilike %[1]s
 			or exists (
-				select 1 from bookmark_tags bt
-				inner join tags t on t.id = bt.tag_id
+				select 1 from {bookmark_tags} bt
+				inner join {tags} t on t.id = bt.tag_id
 				where bt.bookmark_id = b.id and t.name ilike %[1]s
 			)
-		)`, placeholder))
+		)`), placeholder))
 	}
 	whereClause := strings.Join(conditions, " and ")
 
 	var total int
-	countSQL := `select count(*) from bookmarks b ` + joins + ` where ` + whereClause
+	countSQL := t.sql(`select count(*) from {bookmarks} b `) + joins + ` where ` + whereClause
 	if err := r.pool.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
 		return domain.BookmarkSearchResponse{}, err
 	}
@@ -313,7 +317,7 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 		snippetSelect = "case when strpos(lower(coalesce(bv.extracted_text, '')), lower(" + literal + ")) > 0 then substring(bv.extracted_text from greatest(1, strpos(lower(bv.extracted_text), lower(" + literal + ")) - 60) for 220) else '' end"
 	}
 	args = append(args, query.Limit, query.Offset)
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.pool.Query(ctx, t.sql(`
 		select
 			b.id::text,
 			b.source_url,
@@ -334,12 +338,12 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 			bi.icon_url,
 			(
 				select count(*)
-				from bookmark_versions count_bv
+				from {versions} count_bv
 				where count_bv.bookmark_id = b.id
 			)::int,
-			`+snippetSelect+`
-		from bookmarks b
-	`+joins+`
+			`)+snippetSelect+t.sql(`
+		from {bookmarks} b
+	`)+joins+`
 		left join bookmark_icons bi on bi.hostname = b.domain
 		where `+whereClause+`
 		order by `+bookmarkOrderSQL("b.", query.Sort, searchPlaceholder)+`
@@ -364,7 +368,7 @@ func (r *PostgresRepository) SearchBookmarks(ctx context.Context, userID string,
 		return domain.BookmarkSearchResponse{}, err
 	}
 	if len(items) > 0 {
-		if err := r.attachTags(ctx, items); err != nil {
+		if err := r.attachTaxonomyTags(ctx, t, items); err != nil {
 			return domain.BookmarkSearchResponse{}, err
 		}
 	}
@@ -495,20 +499,24 @@ func updateExistingBookmark(ctx context.Context, tx pgx.Tx, userID string, bookm
 }
 
 func (r *PostgresRepository) loadBookmark(ctx context.Context, userID string, bookmarkID string) (domain.Bookmark, error) {
-	row := r.pool.QueryRow(ctx, `
+	return r.loadTaxonomyBookmark(ctx, publicTaxonomy, userID, bookmarkID)
+}
+
+func (r *PostgresRepository) loadTaxonomyBookmark(ctx context.Context, t taxonomyTables, userID string, bookmarkID string) (domain.Bookmark, error) {
+	row := r.pool.QueryRow(ctx, t.sql(`
 		select
 			b.id::text, b.source_url, b.canonical_url, b.title, b.domain, b.note,
 			b.is_favorite, b.latest_version_id::text, b.created_at, b.updated_at,
 			f.id::text, f.name, f.path, f.parent_id::text,
 			bv.quality_report_json, bv.source_meta_json, bi.icon_url,
-			(select count(*) from bookmark_versions count_bv where count_bv.bookmark_id = b.id)::int
-		from bookmarks b
-		left join bookmark_versions bv on b.latest_version_id = bv.id
-		left join folders f on b.folder_id = f.id
+			(select count(*) from {versions} count_bv where count_bv.bookmark_id = b.id)::int
+		from {bookmarks} b
+		left join {versions} bv on b.latest_version_id = bv.id
+		left join {folders} f on b.folder_id = f.id
 		left join bookmark_icons bi on bi.hostname = b.domain
 		where b.user_id = $1 and b.id = $2
 		limit 1
-	`, userID, bookmarkID)
+	`), userID, bookmarkID)
 	bookmark, err := scanBookmark(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Bookmark{}, ErrNotFound
@@ -517,7 +525,7 @@ func (r *PostgresRepository) loadBookmark(ctx context.Context, userID string, bo
 		return domain.Bookmark{}, err
 	}
 	items := []domain.Bookmark{bookmark}
-	if err := r.attachTags(ctx, items); err != nil {
+	if err := r.attachTaxonomyTags(ctx, t, items); err != nil {
 		return domain.Bookmark{}, err
 	}
 	return items[0], nil
@@ -596,20 +604,20 @@ func readCaptureSource(raw []byte, bookmark *domain.Bookmark) {
 	}
 }
 
-func (r *PostgresRepository) attachTags(ctx context.Context, bookmarks []domain.Bookmark) error {
+func (r *PostgresRepository) attachTaxonomyTags(ctx context.Context, t taxonomyTables, bookmarks []domain.Bookmark) error {
 	ids := make([]string, 0, len(bookmarks))
 	indexByID := map[string]int{}
 	for i, item := range bookmarks {
 		ids = append(ids, item.ID)
 		indexByID[item.ID] = i
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.pool.Query(ctx, t.sql(`
 		select bt.bookmark_id::text, t.id::text, t.name, t.color
-		from bookmark_tags bt
-		inner join tags t on t.id = bt.tag_id
+		from {bookmark_tags} bt
+		inner join {tags} t on t.id = bt.tag_id
 		where bt.bookmark_id = any($1::uuid[])
 		order by t.name asc
-	`, ids)
+	`), ids)
 	if err != nil {
 		return err
 	}
@@ -627,20 +635,20 @@ func (r *PostgresRepository) attachTags(ctx context.Context, bookmarks []domain.
 	return rows.Err()
 }
 
-func (r *PostgresRepository) loadFolderSubtreeIDs(ctx context.Context, userID string, folderID string) ([]string, error) {
-	rows, err := r.pool.Query(ctx, `
+func (r *PostgresRepository) loadTaxonomyFolderSubtreeIDs(ctx context.Context, t taxonomyTables, userID string, folderID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, t.sql(`
 		with recursive subtree as (
 			select id
-			from folders
+			from {folders}
 			where user_id = $1 and id = $2
 			union all
 			select f.id
-			from folders f
+			from {folders} f
 			inner join subtree s on f.parent_id = s.id
 			where f.user_id = $1
 		)
 		select id::text from subtree
-	`, userID, folderID)
+	`), userID, folderID)
 	if err != nil {
 		return nil, err
 	}
@@ -657,6 +665,10 @@ func (r *PostgresRepository) loadFolderSubtreeIDs(ctx context.Context, userID st
 }
 
 func (r *PostgresRepository) ensureFolderPathID(ctx context.Context, tx pgx.Tx, userID string, folderPath string, now time.Time) (*string, error) {
+	return r.ensureTaxonomyFolderPathID(ctx, tx, publicTaxonomy, userID, folderPath, now)
+}
+
+func (r *PostgresRepository) ensureTaxonomyFolderPathID(ctx context.Context, tx pgx.Tx, t taxonomyTables, userID string, folderPath string, now time.Time) (*string, error) {
 	trimmed := strings.Trim(strings.TrimSpace(folderPath), "/")
 	if trimmed == "" {
 		return nil, nil
@@ -675,13 +687,13 @@ func (r *PostgresRepository) ensureFolderPathID(ctx context.Context, tx pgx.Tx, 
 		} else {
 			currentPath += "/" + name
 		}
-		err := tx.QueryRow(ctx, `
-			insert into folders (user_id, name, path, parent_id, created_at, updated_at)
+		err := tx.QueryRow(ctx, t.sql(`
+			insert into {folders} (user_id, name, path, parent_id, created_at, updated_at)
 			values ($1, $2, $3, $4, $5, $5)
 			on conflict (user_id, path)
 			do update set name = excluded.name
 			returning id::text
-		`, userID, name, currentPath, parentID, now).Scan(&currentID)
+		`), userID, name, currentPath, parentID, now).Scan(&currentID)
 		if err != nil {
 			return nil, err
 		}
@@ -694,26 +706,30 @@ func (r *PostgresRepository) ensureFolderPathID(ctx context.Context, tx pgx.Tx, 
 }
 
 func (r *PostgresRepository) attachTagNames(ctx context.Context, tx pgx.Tx, userID string, bookmarkID string, tagNames []string, now time.Time) error {
+	return r.attachTaxonomyTagNames(ctx, tx, publicTaxonomy, userID, bookmarkID, tagNames, now)
+}
+
+func (r *PostgresRepository) attachTaxonomyTagNames(ctx context.Context, tx pgx.Tx, t taxonomyTables, userID string, bookmarkID string, tagNames []string, now time.Time) error {
 	for _, rawName := range tagNames {
 		name := strings.TrimSpace(rawName)
 		if name == "" {
 			continue
 		}
 		var tagID string
-		if err := tx.QueryRow(ctx, `
-			insert into tags (user_id, name, created_at)
+		if err := tx.QueryRow(ctx, t.sql(`
+			insert into {tags} (user_id, name, created_at)
 			values ($1, $2, $3)
 			on conflict (user_id, name)
 			do update set name = excluded.name
 			returning id::text
-		`, userID, name, now).Scan(&tagID); err != nil {
+		`), userID, name, now).Scan(&tagID); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `
-			insert into bookmark_tags (bookmark_id, tag_id, created_at)
+		if _, err := tx.Exec(ctx, t.sql(`
+			insert into {bookmark_tags} (bookmark_id, tag_id, created_at)
 			values ($1, $2, $3)
 			on conflict do nothing
-		`, bookmarkID, tagID, now); err != nil {
+		`), bookmarkID, tagID, now); err != nil {
 			return err
 		}
 	}

@@ -206,15 +206,8 @@ export function useDemoDataSource(): AppDataSource {
             syncEnabled: true,
           };
         },
-        async searchPrivateBookmarks() {
-          return {
-            items: [],
-            total: 0,
-            source: "api" as const,
-          };
-        },
-        async fetchPrivateBookmarkDetail() {
-          return null;
+        privateWorkspace() {
+          throw new Error("Mock 模式暂不支持私密模式。");
         },
         async deleteBookmark(bookmarkId) {
           setDemoState((current) => deleteDemoBookmark(current, bookmarkId));

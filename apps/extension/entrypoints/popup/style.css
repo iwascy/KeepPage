@@ -4,15 +4,15 @@
    create a circular width constraint before the popup viewport is established. */
 html, body { width: 380px; min-width: 380px; }
 .popup-shell { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
-.popup-brand { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
-.popup-brand-mark { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 7px; background: var(--primary); color: white; }
+.popup-brand { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; font-weight: 700; letter-spacing: -.2px; }
+.popup-brand .brand-mark { flex: none; }
 .status-card, .summary-card, .editor-card, .private-card { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); min-width: 0; }
 .status-copy h1 { margin: 10px 0 0; font-size: 20px; font-weight: 650; letter-spacing: -.4px; line-height: 1.4; }
 .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 5px; color: var(--muted); background: var(--soft); font-size: 12px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.status-card.success .status-pill { background: #eff8f3; color: var(--good); }
-.status-card.error .status-pill { background: #fff3f2; color: var(--bad); }
-.status-card.moved .status-pill { background: #f3f0fb; color: #5b45a8; }
+.status-card.success .status-pill { background: var(--moss-soft); color: var(--moss-text); }
+.status-card.error .status-pill { background: var(--bad-soft); color: var(--bad); }
+.status-card.moved .status-pill { background: var(--neutral-soft); color: var(--primary); }
 .status-description, .section-heading p, .inline-message { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .summary-row { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: start; }
 .summary-row + .summary-row { margin-top: 8px; }
@@ -25,7 +25,7 @@ html, body { width: 380px; min-width: 380px; }
 .field > span, .field > label { display: block; margin-bottom: 6px; color: var(--text); font-weight: 550; }
 .picker-shell { position: relative; min-width: 0; }
 .picker-input { display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border: 1px solid #d9dee5; border-radius: 8px; background: var(--surface); }
-.picker-input:focus-within { outline: 2px solid #477cb8; outline-offset: 1px; }
+.picker-input:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
 .picker-input input { border: 0; background: transparent; padding: 9px 0; }
 .picker-input input:focus-visible { outline: none; }
 .picker-icon, .picker-list-icon, .folder-create-icon, .tag-add-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
@@ -40,11 +40,11 @@ button.ghost:hover:not(:disabled), .picker-clear:hover:not(:disabled) { backgrou
 .picker-list { display: flex; flex-direction: column; gap: 2px; }
 .picker-list-item, .folder-create-card { display: flex; align-items: center; gap: 9px; width: 100%; border: 1px solid transparent; background: var(--surface); color: var(--text); text-align: left; padding: 9px 8px; font-weight: 400; }
 .picker-list-item:hover:not(:disabled), .folder-create-card:hover:not(:disabled) { background: var(--soft); border-color: transparent; }
-.picker-list-item.selected { background: #eef2f8; color: #284a78; }
+.picker-list-item.selected { background: var(--moss-soft); color: var(--moss-text); }
 .picker-list-item.create, .folder-create-card { border-bottom: 1px solid var(--border); }
 .picker-list-copy, .folder-create-copy { min-width: 0; }
 .picker-list-copy strong, .folder-create-copy strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
-.picker-list-check { margin-left: auto; color: #284a78; }
+.picker-list-check { margin-left: auto; color: var(--moss-text); }
 .tag-add-button { width: 30px; height: 30px; min-height: 30px; padding: 0; }
 .tag-chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag-chip-list:not(:empty) { margin-bottom: 8px; }
@@ -58,5 +58,5 @@ button.ghost:hover:not(:disabled), .picker-clear:hover:not(:disabled) { backgrou
 .success-text { color: var(--good); }
 .error-text { color: var(--bad); }
 .metadata-notice { padding: 10px 12px; border-radius: 8px; background: var(--soft); }
-.metadata-notice.error-text { background: #fff3f2; }
+.metadata-notice.error-text { background: var(--bad-soft); }
 .metadata-retry { margin-top: 8px; }

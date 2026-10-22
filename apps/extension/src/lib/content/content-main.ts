@@ -1554,12 +1554,12 @@ function ensureToastElements() {
     }
 
     .toast[data-tone="error"] {
-      border-color: #f3c3bf;
-      background: #fff8f7;
+      border-color: #f0c9cc;
+      background: #fff3f2;
     }
 
     .toast[data-tone="error"] .title {
-      color: #b42318;
+      color: #a32e36;
     }
 
     .toast[data-state="leaving"] {
@@ -1582,7 +1582,7 @@ function ensureToastElements() {
       width: 12px;
       height: 14px;
       border-radius: 2px;
-      background: #262a31;
+      background: #14171c;
       clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
       flex: none;
     }
@@ -1673,8 +1673,8 @@ function ensureSelectionOverlay() {
       position: fixed;
       box-sizing: border-box;
       border-radius: 8px;
-      border: 2px solid #477cb8;
-      background: #477cb812;
+      border: 2px solid #47655d;
+      background: #47655d14;
       box-shadow: 0 0 0 1px #ffffff;
       opacity: 0;
       transition:

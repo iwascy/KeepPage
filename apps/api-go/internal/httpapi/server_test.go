@@ -63,6 +63,11 @@ func TestRefactoredRoutesAreRegistered(t *testing.T) {
 		"GET /public/objects", "GET /objects", "GET /objects/{encodedObjectKey}", "PUT /uploads/{encodedObjectKey}", "PUT /uploads/{encodedObjectKey}/chunks/{uploadID}",
 		"GET /bookmarks/sidebar-stats", "GET /bookmarks/status", "GET /bookmarks/{bookmarkID}", "DELETE /bookmarks/{bookmarkID}", "PATCH /bookmarks/{bookmarkID}/metadata",
 		"GET /private/bookmarks", "GET /private/bookmarks/{bookmarkID}",
+		"GET /private/workspace/bootstrap", "GET /private/folders", "POST /private/folders", "PATCH /private/folders/{folderID}", "DELETE /private/folders/{folderID}",
+		"GET /private/tags", "POST /private/tags", "PATCH /private/tags/{tagID}", "DELETE /private/tags/{tagID}",
+		"GET /private/bookmarks/sidebar-stats", "PATCH /private/bookmarks/{bookmarkID}/metadata", "DELETE /private/bookmarks/{bookmarkID}",
+		"GET /workspace/bootstrap", "GET /folders", "POST /folders", "PATCH /folders/{folderID}", "DELETE /folders/{folderID}",
+		"GET /tags", "POST /tags", "PATCH /tags/{tagID}", "DELETE /tags/{tagID}",
 		"POST /imports/preview", "POST /imports", "GET /imports", "GET /imports/{taskID}",
 		"GET /shares", "POST /shares", "GET /shares/{shareID}", "PATCH /shares/{shareID}", "POST /shares/{shareID}/revoke", "GET /public/shares/{token}",
 	}
@@ -475,6 +480,10 @@ func registerTestUser(t *testing.T, server *Server, email string) string {
 }
 
 func newTestServer() *Server {
+	return newTestServerWithRepo(repository.NewMemoryRepository())
+}
+
+func newTestServerWithRepo(repo *repository.MemoryRepository) *Server {
 	cfg := config.Config{
 		APIHost:             "127.0.0.1",
 		APIPort:             8788,
@@ -484,7 +493,6 @@ func newTestServer() *Server {
 		AuthTokenTTLDays:    30,
 		UploadBodyLimitMB:   32,
 	}
-	repo := repository.NewMemoryRepository()
 	objectStorage := storage.NewLocalFS(tTempRoot())
 	return NewServer(
 		cfg,

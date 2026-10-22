@@ -57,7 +57,7 @@ import {
   buildListHash,
   parseListFilters,
   type ListFilters,
-  buildPrivateDetailHash,
+  type WorkspaceScope,
   goToApiTokens,
   goToAIOrganize,
   goToExtensionDevices,
@@ -68,7 +68,6 @@ import {
   goToShares,
   openBookmark,
   openImportTask,
-  openPrivateBookmark,
   parsePublicShareToken,
   parseRoute,
   type ViewRoute,
@@ -89,8 +88,7 @@ import {
   buildBookmarkListCacheKey,
   writeCachedBookmarkList,
 } from "./lib/bookmark-list-cache";
-import { type AppDataSource, useAppDataSource } from "./data-sources/use-app-data-source";
-import { updateScopedSearch } from "./app/search-scope";
+import { type AppDataSource, type WorkspaceSource, useAppDataSource } from "./data-sources/use-app-data-source";
 import { fetchBookmarkWindow } from "./lib/bookmark-window";
 import { runBoundedBatch, mergeTagIds } from "./lib/batch-actions";
 import { Icon } from "./components/Icon";
@@ -121,9 +119,9 @@ const PrivateModePage = lazy(async () => {
   return { default: module.PrivateModePage };
 });
 
-const PrivateDetailPage = lazy(async () => {
+const PrivateWorkspaceGate = lazy(async () => {
   const module = await import("./features/private");
-  return { default: module.PrivateDetailPage };
+  return { default: module.PrivateWorkspaceGate };
 });
 
 const ApiTokensPanel = lazy(async () => {
@@ -199,7 +197,6 @@ export function App({
   const [authDialogOpen, setAuthDialogOpen] = useState(() => parseRoute(window.location.hash).page !== "list");
   const initialFilters = useMemo(() => parseListFilters(window.location.hash), []);
   const [searchInput, setSearchInput] = useState(initialFilters.search);
-  const [privateSearchInput, setPrivateSearchInput] = useState("");
   const [sort, setSort] = useState<ListFilters["sort"]>(initialFilters.sort);
   const [bookmarkView, setBookmarkView] = useState<BookmarkListView>(initialFilters.view);
   const [qualityFilter, setQualityFilter] = useState<QualityFilter>(initialFilters.quality);
@@ -225,8 +222,6 @@ export function App({
   const [privateStatusRevision, setPrivateStatusRevision] = useState(0);
   const [privateSummary, setPrivateSummary] = useState<PrivateVaultSummary | null>(null);
   const [privateToken, setPrivateToken] = useState<string | null>(null);
-  const [privateItems, setPrivateItems] = useState<Bookmark[]>([]);
-  const [privateLoadState, setPrivateLoadState] = useState<LoadState>("idle");
   const [privateError, setPrivateError] = useState<string | null>(null);
   const [privateSetupPassword, setPrivateSetupPassword] = useState("");
   const [privateSetupConfirm, setPrivateSetupConfirm] = useState("");
@@ -236,13 +231,6 @@ export function App({
   const [privatePasswordChangeConfirm, setPrivatePasswordChangeConfirm] = useState("");
   const [privatePasswordChangeMessage, setPrivatePasswordChangeMessage] = useState<string | null>(null);
   const [privateBusy, setPrivateBusy] = useState(false);
-  const [privateDetail, setPrivateDetail] = useState<BookmarkDetailResult | null>(null);
-  const [privateDetailLoadState, setPrivateDetailLoadState] = useState<DetailLoadState>("idle");
-  const [privateDetailError, setPrivateDetailError] = useState<string | null>(null);
-  const [privateArchivePreview, setPrivateArchivePreview] = useState<ArchivePreviewState>({
-    status: "idle",
-  });
-  const [privatePreferredPreviewMode, setPrivatePreferredPreviewMode] = useState<ArchiveViewMode>("reader");
   const [managerBusy, setManagerBusy] = useState(false);
   const [managerFeedback, setManagerFeedback] = useState<InlineFeedback | null>(null);
   const [managerDialog, setManagerDialog] = useState<ManagerDialogState>({ kind: "closed" });
@@ -273,12 +261,22 @@ export function App({
 
   const debouncedSearch = useDebouncedValue(searchInput, 200);
   const deferredSearch = useDeferredValue(debouncedSearch);
-  const debouncedPrivateSearch = useDebouncedValue(privateSearchInput, 200);
-  const deferredPrivateSearch = useDeferredValue(debouncedPrivateSearch);
-  const isPrivateSearchScope = route.page === "private-mode" || route.page === "private-detail";
   const authToken = session.status === "authenticated" ? session.token : null;
   const activeToken = useRef(authToken);
   activeToken.current = authToken;
+  // Settings pages keep the last browsed workspace so the sidebar and search stay in place.
+  const lastWorkspaceScope = useRef<WorkspaceScope>(initialFilters.scope);
+  if (route.page === "list" || route.page === "detail") lastWorkspaceScope.current = route.scope;
+  // AI organization only works on the standard library, so it never sees private taxonomy.
+  else if (route.page === "settings-ai-organize") lastWorkspaceScope.current = "standard";
+  const workspaceScope = lastWorkspaceScope.current;
+  const isPrivateScope = workspaceScope === "private";
+  const workspace = useMemo<WorkspaceSource | null>(() => {
+    if (!isPrivateScope) return appDataSource;
+    return privateToken ? appDataSource.privateWorkspace(privateToken) : null;
+  }, [appDataSource, isPrivateScope, privateToken]);
+  // Private lists stay in memory only; they are never written to sessionStorage.
+  const persistListCache = appDataSource.kind === "live" && !isPrivateScope;
   const logoutLabel = appDataSource.logoutLabel;
   const isManagerDialogVisible = isManagerDialogOpen(managerDialog);
   const activeBookmarkContextId = contextMenu.kind === "bookmark" ? contextMenu.bookmark.id : null;
@@ -286,7 +284,7 @@ export function App({
   const activeTagContextId = contextMenu.kind === "tag" ? contextMenu.tag.id : null;
   const hasMoreItems = items.length < listTotal;
   const importAdapter = appDataSource.importAdapter;
-  const accountId = session.user?.id ?? "anonymous";
+  const accountId = `${session.user?.id ?? "anonymous"}${isPrivateScope ? ":private" : ""}`;
   const query = useMemo(() => ({ search: deferredSearch, quality: qualityFilter, view: bookmarkView,
     folderId: selectedFolderId || undefined, tagId: selectedTagId || undefined,
     sort, limit: BOOKMARKS_PAGE_SIZE, offset: 0 }),
@@ -306,19 +304,20 @@ export function App({
   const listScrollPositions = useRef(new Map<string, number>());
   const listSnapshots = useRef(new Map<string, { items: Bookmark[]; total: number; source: "api"; storedAt: number }>());
   const restoreScroll = useRef<number | null>(null);
-  const listHash = buildListHash({ search: searchInput, view: bookmarkView, quality: qualityFilter,
+  const listHash = buildListHash({ scope: workspaceScope, search: searchInput, view: bookmarkView, quality: qualityFilter,
     folderId: selectedFolderId, tagId: selectedTagId, sort });
   const lastListHash = useRef(listHash);
   if (route.page === "list") lastListHash.current = listHash;
 
   function navigateList(changes: Partial<ListFilters> = {}, replace = false) {
-    const next = { search: searchInput, view: bookmarkView, quality: qualityFilter,
+    const next = { scope: workspaceScope, search: searchInput, view: bookmarkView, quality: qualityFilter,
       folderId: selectedFolderId, tagId: selectedTagId, sort, ...changes };
     if (!next.search.trim() && next.sort === "relevance") next.sort = "created";
     const hash = buildListHash(next);
     setSearchInput(next.search); setBookmarkView(next.view); setQualityFilter(next.quality);
     setSelectedFolderId(next.folderId); setSelectedTagId(next.tagId); setSort(next.sort);
-    setRoute({ page: "list" });
+    lastWorkspaceScope.current = next.scope;
+    setRoute({ page: "list", scope: next.scope });
     if (replace) window.history.replaceState(null, "", hash);
     else if (window.location.hash !== hash) window.location.hash = hash;
   }
@@ -332,9 +331,18 @@ export function App({
     for (const controller of prefetchRequests.current.values()) controller.abort();
     prefetchRequests.current.clear();
   }
+  function switchWorkspaceScope(scope: WorkspaceScope) {
+    if (scope === workspaceScope && route.page === "list") return;
+    exitSelectionMode();
+    navigateList({ scope, search: "", view: "all", quality: "all", folderId: "", tagId: "" });
+  }
+  function requireWorkspace() {
+    if (!workspace) throw new Error("私密模式已锁定，请先解锁。");
+    return workspace;
+  }
   function prefetchFolder(folderId: string) {
     cancelPrefetchIntent();
-    if (!authToken || appDataSource.kind !== "live") return;
+    if (!authToken || !workspace || !persistListCache) return;
     const prefetchQuery = { ...query, folderId: folderId || undefined, view: "all" as const };
     const key = buildBookmarkListCacheKey(prefetchQuery, accountId);
     if (readCachedBookmarkList(prefetchQuery, accountId) || prefetchRequests.current.has(key)) return;
@@ -343,7 +351,7 @@ export function App({
       prefetchLastStarted.current = Date.now();
       const controller = new AbortController();
       prefetchRequests.current.set(key, controller);
-      void appDataSource.searchBookmarks(prefetchQuery, authToken, controller.signal).then((result) => {
+      void workspace.searchBookmarks(prefetchQuery, authToken, controller.signal).then((result) => {
         if (!controller.signal.aborted && activeToken.current === authToken) writeCachedBookmarkList(prefetchQuery, result, accountId);
       }).catch(() => { /* Navigation owns visible errors; prefetch is best effort. */ }).finally(() => {
         if (prefetchRequests.current.get(key) === controller) prefetchRequests.current.delete(key);
@@ -361,23 +369,22 @@ export function App({
   }
 
 
-  function clearPrivateState() {
-    setPrivateSearchInput("");
+  function forgetPrivateData() {
     clearApiResponseCache();
+    for (const key of listSnapshots.current.keys()) {
+      if (key.includes(":private")) listSnapshots.current.delete(key);
+    }
+  }
+
+  function clearPrivateState() {
+    forgetPrivateData();
     setPrivateToken(null);
     setPrivateSummary(null);
-    setPrivateItems([]);
-    setPrivateLoadState("idle");
     setPrivateError(null);
     setPrivateSetupPassword("");
     setPrivateSetupConfirm("");
     setPrivateUnlockPassword("");
     setPrivateBusy(false);
-    setPrivateDetail(null);
-    setPrivateDetailLoadState("idle");
-    setPrivateDetailError(null);
-    setPrivateArchivePreview({ status: "idle" });
-    setPrivatePreferredPreviewMode("reader");
   }
 
   async function logout(message?: string) {
@@ -610,6 +617,9 @@ export function App({
   }
 
   function handleProtectedApiError(error: unknown) {
+    if (handlePrivateModeLocked(error)) {
+      return true;
+    }
     if (isSessionInvalid(error)) {
       void logout(toErrorMessage(error));
       return true;
@@ -625,22 +635,22 @@ export function App({
     ) {
       return false;
     }
-    if (
-      error instanceof ApiError &&
-      (error.status === 401 || error.status === 403) &&
-      error.code === "PrivateModeLocked"
-    ) {
-      setPrivateToken(null);
-      setPrivateItems([]);
-      setPrivateDetail(null);
-      setPrivateArchivePreview({ status: "idle" });
-      setPrivateError("私密模式已锁定或会话已失效，请重新输入密码。");
-      if (route.page === "private-detail") {
-        goToPrivateMode();
-      }
-      return true;
-    }
     return handleProtectedApiError(error);
+  }
+
+  // A locked vault only hides private content; the account session stays valid.
+  function handlePrivateModeLocked(error: unknown) {
+    if (
+      !(error instanceof ApiError) ||
+      (error.status !== 401 && error.status !== 403) ||
+      error.code !== "PrivateModeLocked"
+    ) {
+      return false;
+    }
+    forgetPrivateData();
+    setPrivateToken(null);
+    setPrivateError("私密模式已锁定或会话已失效，请重新输入密码。");
+    return true;
   }
 
   function applyWorkspaceBootstrap(
@@ -665,6 +675,10 @@ export function App({
   }, [route]);
 
   useEffect(() => {
+    exitSelectionMode();
+  }, [workspaceScope]);
+
+  useEffect(() => {
     if (isManagerDialogVisible) {
       closeContextMenu();
     }
@@ -677,10 +691,13 @@ export function App({
 
     const handleHashChange = () => {
       const next = parseRoute(window.location.hash);
+      const previousScope = lastWorkspaceScope.current;
       setRoute(next);
       if (next.page === "list") {
         const filters = parseListFilters(window.location.hash);
-        setSearchInput(filters.search); setBookmarkView(filters.view); setQualityFilter(filters.quality);
+        // Private keywords live only in memory, so keep them while browsing inside the vault.
+        setSearchInput((current) => (filters.scope === "private" && previousScope === "private" ? current : filters.search));
+        setBookmarkView(filters.view); setQualityFilter(filters.quality);
         setSelectedFolderId(filters.folderId); setSelectedTagId(filters.tagId); setSort(filters.sort);
         restoreScroll.current = listScrollPositions.current.get(window.location.hash) ?? 0;
       }
@@ -769,8 +786,6 @@ export function App({
     if (!authToken) {
       setPrivateSummary(null);
       setPrivateToken(null);
-      setPrivateItems([]);
-      setPrivateLoadState("idle");
       setPrivateError(null);
       return;
     }
@@ -799,17 +814,26 @@ export function App({
     };
   }, [appDataSource, authToken, privateToken, privateStatusRevision]);
 
+  const bootstrappedWorkspace = useRef("");
+  const workspaceKey = `${workspaceScope}:${workspace ? "open" : "locked"}`;
   useEffect(() => {
-    if (!authToken) {
+    if (bootstrappedWorkspace.current !== workspaceKey) {
+      // Never show one workspace's taxonomy while the other one loads.
+      bootstrappedWorkspace.current = workspaceKey;
       setFolders([]);
       setTags([]);
       setSidebarFolderCounts({});
-      setManagerFeedback(null);
+    }
+    if (!authToken || !workspace) {
+      setFolders([]);
+      setTags([]);
+      setSidebarFolderCounts({});
+      if (!authToken) setManagerFeedback(null);
       return;
     }
 
     let cancelled = false;
-    appDataSource.fetchWorkspaceBootstrap(authToken)
+    workspace.fetchWorkspaceBootstrap(authToken)
       .then((payload) => {
         if (cancelled) {
           return;
@@ -829,7 +853,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, dataRevision]);
+  }, [workspace, authToken, dataRevision]);
 
   useEffect(() => {
     if (loadedQueryKey === queryKey && loadState === "ready") {
@@ -842,7 +866,7 @@ export function App({
     listController.current?.abort();
     pageController.current?.abort();
     pageController.current = null;
-    if (!authToken) {
+    if (!authToken || !workspace) {
       setItems([]); setListTotal(0); setLoadState("idle"); setLoadedQueryKey("");
       return;
     }
@@ -851,7 +875,7 @@ export function App({
     setListError(null); setLoadMoreError(null); setLoadingMore(false); setShowSkeleton(false);
     const snapshot = listSnapshots.current.get(queryKey);
     const cached = snapshot && Date.now() - snapshot.storedAt < 5 * 60 * 1000 ? snapshot
-      : appDataSource.kind === "live" ? readCachedBookmarkList(query, accountId) : null;
+      : persistListCache ? readCachedBookmarkList(query, accountId) : null;
     const sameQuery = loadedQueryKey === queryKey;
     if (cached) {
       setItems(cached.items); setListTotal(cached.total); setLoadState("ready"); setLoadedQueryKey(queryKey);
@@ -859,9 +883,9 @@ export function App({
       setItems([]); setListTotal(0); setLoadState("loading"); setLoadedQueryKey(queryKey);
     }
     const skeletonTimer = window.setTimeout(() => setShowSkeleton(true), 180);
-    fetchBookmarkWindow(appDataSource.searchBookmarks, query, authToken, cached?.items.length ?? BOOKMARKS_PAGE_SIZE, controller.signal).then((result) => {
+    fetchBookmarkWindow(workspace.searchBookmarks, query, authToken, cached?.items.length ?? BOOKMARKS_PAGE_SIZE, controller.signal).then((result) => {
       if (controller.signal.aborted || activeQueryKey.current !== queryKey) return;
-      if (appDataSource.kind === "live") writeCachedBookmarkList(query, result, accountId);
+      if (persistListCache) writeCachedBookmarkList(query, result, accountId);
       setItems(result.items); setListTotal(result.total); setLoadState("ready"); setLoadedQueryKey(queryKey);
     }).catch((error) => {
       if (controller.signal.aborted || activeQueryKey.current !== queryKey || handleProtectedApiError(error)) return;
@@ -869,10 +893,10 @@ export function App({
       setListError(toErrorMessage(error));
     });
     return () => { controller.abort(); window.clearTimeout(skeletonTimer); };
-  }, [appDataSource, authToken, queryKey, dataRevision]);
+  }, [workspace, authToken, queryKey, dataRevision]);
 
   useEffect(() => {
-    if (!authToken || route.page !== "detail") {
+    if (!authToken || route.page !== "detail" || !workspace) {
       setDetailLoadState("idle");
       setDetailError(null);
       setDetail(null);
@@ -883,7 +907,7 @@ export function App({
     setDetailLoadState("loading");
     setDetailError(null);
 
-    appDataSource.fetchBookmarkDetail(route.bookmarkId, authToken)
+    workspace.fetchBookmarkDetail(route.bookmarkId, authToken)
       .then((result) => {
         if (cancelled) {
           return;
@@ -907,97 +931,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [appDataSource, authToken, route]);
-
-  useEffect(() => {
-    if (!authToken || route.page !== "private-mode" || !privateToken) {
-      setPrivateLoadState("idle");
-      setPrivateError((current) => (
-        route.page === "private-detail" ? current : null
-      ));
-      if (route.page !== "private-mode") {
-        setPrivateItems([]);
-      }
-      return;
-    }
-
-    let cancelled = false;
-    setPrivateLoadState("loading");
-    setPrivateError(null);
-
-    appDataSource.searchPrivateBookmarks(
-      {
-        search: deferredPrivateSearch,
-        quality: qualityFilter,
-        view: bookmarkView,
-        limit: BOOKMARKS_PAGE_SIZE,
-        offset: 0,
-      },
-      authToken,
-      privateToken,
-    )
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-        startTransition(() => {
-          setPrivateItems(result.items);
-          setPrivateLoadState("ready");
-        });
-      })
-      .catch((error) => {
-        if (cancelled || handlePrivateModeApiError(error)) {
-          return;
-        }
-        startTransition(() => {
-          setPrivateItems([]);
-          setPrivateLoadState("error");
-          setPrivateError(toErrorMessage(error));
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appDataSource, authToken, bookmarkView, deferredPrivateSearch, privateToken, qualityFilter, route.page]);
-
-  useEffect(() => {
-    if (!authToken || route.page !== "private-detail" || !privateToken) {
-      setPrivateDetailLoadState("idle");
-      setPrivateDetailError(null);
-      setPrivateDetail(null);
-      return;
-    }
-
-    let cancelled = false;
-    setPrivateDetailLoadState("loading");
-    setPrivateDetailError(null);
-
-    appDataSource.fetchPrivateBookmarkDetail(route.bookmarkId, authToken, privateToken)
-      .then((result) => {
-        if (cancelled) {
-          return;
-        }
-        startTransition(() => {
-          setPrivateDetail(result);
-          setPrivateDetailLoadState(result ? "ready" : "not-found");
-        });
-      })
-      .catch((error) => {
-        if (cancelled || handlePrivateModeApiError(error)) {
-          return;
-        }
-        startTransition(() => {
-          setPrivateDetail(null);
-          setPrivateDetailLoadState("error");
-          setPrivateDetailError(toErrorMessage(error));
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [appDataSource, authToken, privateToken, route]);
+  }, [workspace, authToken, route]);
 
   useEffect(() => {
     if (!detail) {
@@ -1100,19 +1034,6 @@ export function App({
     );
   }, [detail, route]);
 
-  const selectedPrivateVersion = useMemo(() => {
-    if (!privateDetail || route.page !== "private-detail") {
-      return null;
-    }
-
-    return (
-      privateDetail.versions.find((version) => version.id === route.versionId) ??
-      privateDetail.versions.find((version) => version.id === privateDetail.bookmark.latestVersionId) ??
-      privateDetail.versions[0] ??
-      null
-    );
-  }, [privateDetail, route]);
-
   const previewSourceUrl = detail
     ? (detail.bookmark.canonicalUrl ?? detail.bookmark.sourceUrl)
     : null;
@@ -1120,26 +1041,19 @@ export function App({
     () => resolvePreviewSelection(selectedVersion, preferredPreviewMode),
     [preferredPreviewMode, selectedVersion],
   );
-  const privatePreviewSourceUrl = privateDetail
-    ? (privateDetail.bookmark.canonicalUrl ?? privateDetail.bookmark.sourceUrl)
-    : null;
-  const privatePreviewSelection = useMemo(
-    () => resolvePreviewSelection(selectedPrivateVersion, privatePreferredPreviewMode),
-    [privatePreferredPreviewMode, selectedPrivateVersion],
-  );
 
   useEffect(() => {
     let revokedUrl: string | null = null;
     let cancelled = false;
 
-    if (!authToken || !previewSelection?.objectKey || !previewSourceUrl) {
+    if (!authToken || !workspace || !previewSelection?.objectKey || !previewSourceUrl) {
       setArchivePreview({ status: "idle" });
       return;
     }
 
     setArchivePreview({ status: "loading" });
 
-    appDataSource.createArchivePreviewUrl(
+    workspace.createArchivePreviewUrl(
       selectedVersion?.id ?? null,
       previewSelection?.objectKey ?? null,
       previewSourceUrl,
@@ -1186,7 +1100,7 @@ export function App({
       }
     };
   }, [
-    appDataSource,
+    workspace,
     authToken,
     previewSelection?.objectKey,
     previewSelection?.mode,
@@ -1194,83 +1108,16 @@ export function App({
     selectedVersion?.id,
   ]);
 
-  useEffect(() => {
-    let revokedUrl: string | null = null;
-    let cancelled = false;
-
-    if (!authToken || !privateToken || !privatePreviewSelection?.objectKey || !privatePreviewSourceUrl) {
-      setPrivateArchivePreview({ status: "idle" });
-      return;
-    }
-
-    setPrivateArchivePreview({ status: "loading" });
-
-    appDataSource.createArchivePreviewUrl(
-      selectedPrivateVersion?.id ?? null,
-      privatePreviewSelection?.objectKey ?? null,
-      privatePreviewSourceUrl,
-      authToken,
-      privateToken,
-    )
-      .then((url) => {
-        if (!url) {
-          setPrivateArchivePreview({ status: "idle" });
-          return;
-        }
-        if (cancelled) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        revokedUrl = url;
-        setPrivateArchivePreview({
-          status: "ready",
-          url,
-        });
-      })
-      .catch((error) => {
-        if (cancelled || handlePrivateModeApiError(error)) {
-          return;
-        }
-        if (
-          error instanceof ApiError &&
-          error.status === 404 &&
-          privatePreviewSelection?.mode === "reader" &&
-          selectedPrivateVersion?.archiveAvailable
-        ) {
-          setPrivatePreferredPreviewMode("original");
-          return;
-        }
-        setPrivateArchivePreview({
-          status: "error",
-          error: toErrorMessage(error),
-        });
-      });
-
-    return () => {
-      cancelled = true;
-      if (revokedUrl) {
-        URL.revokeObjectURL(revokedUrl);
-      }
-    };
-  }, [
-    appDataSource,
-    authToken,
-    privatePreviewSelection?.objectKey,
-    privatePreviewSelection?.mode,
-    privatePreviewSourceUrl,
-    privateToken,
-    selectedPrivateVersion?.id,
-  ]);
-
   async function refreshSidebarFolderCounts(currentToken: string) {
-    const nextCounts = await appDataSource.fetchBookmarkFolderCounts(currentToken);
+    const nextCounts = await requireWorkspace().fetchBookmarkFolderCounts(currentToken);
     setSidebarFolderCounts(nextCounts);
   }
 
   async function refreshCatalogs(currentToken: string) {
+    const source = requireWorkspace();
     const [nextFolders, nextTags] = await Promise.all([
-      appDataSource.fetchFolders(currentToken),
-      appDataSource.fetchTags(currentToken),
+      source.fetchFolders(currentToken),
+      source.fetchTags(currentToken),
     ]);
     setFolders(nextFolders);
     setTags(nextTags);
@@ -1294,11 +1141,11 @@ export function App({
     listController.current = controller;
     const requestedKey = queryKey;
     try {
-      const result = await fetchBookmarkWindow(appDataSource.searchBookmarks, query, currentToken, items.length, controller.signal);
+      const result = await fetchBookmarkWindow(requireWorkspace().searchBookmarks, query, currentToken, items.length, controller.signal);
       if (controller.signal.aborted || activeQueryKey.current !== requestedKey) return;
       setListError(null); setLoadMoreError(null); setItems(result.items); setListTotal(result.total);
       setLoadedQueryKey(requestedKey); setLoadingMore(false); setLoadState("ready");
-      writeCachedBookmarkList(query, { ...result, items: result.items.slice(0, BOOKMARKS_PAGE_SIZE) }, accountId);
+      if (persistListCache) writeCachedBookmarkList(query, { ...result, items: result.items.slice(0, BOOKMARKS_PAGE_SIZE) }, accountId);
     } catch (error) {
       if (controller.signal.aborted || activeQueryKey.current !== requestedKey) return;
       if (!handleProtectedApiError(error)) setListError(`更新失败，已保留当前内容。${toErrorMessage(error)}`);
@@ -1311,7 +1158,7 @@ export function App({
     const controller = new AbortController(); pageController.current = controller;
     setLoadMoreError(null); setLoadingMore(true);
     try {
-      const result = await appDataSource.searchBookmarks({ ...query, offset: items.length }, authToken, controller.signal);
+      const result = await requireWorkspace().searchBookmarks({ ...query, offset: items.length }, authToken, controller.signal);
       if (controller.signal.aborted || activeQueryKey.current !== requestedKey) return;
       setItems((current) => {
         const existing = new Set(current.map((item) => item.id));
@@ -1334,7 +1181,7 @@ export function App({
       const all: Bookmark[] = [];
       let total = Infinity;
       while (all.length < total) {
-        const result = await appDataSource.searchBookmarks({ ...query, offset: all.length, limit: 100 }, authToken);
+        const result = await requireWorkspace().searchBookmarks({ ...query, offset: all.length, limit: 100 }, authToken);
         if (activeQueryKey.current !== requestedKey) return;
         total = result.total;
         if (!result.items.length) break;
@@ -1347,7 +1194,7 @@ export function App({
   }
 
   async function refreshBookmarkDetail(currentToken: string, bookmarkId: string) {
-    const result = await appDataSource.fetchBookmarkDetail(bookmarkId, currentToken);
+    const result = await requireWorkspace().fetchBookmarkDetail(bookmarkId, currentToken);
     setDetailError(null);
     setDetail(result);
     setDetailLoadState(result ? "ready" : "not-found");
@@ -1360,35 +1207,6 @@ export function App({
       setPrivateToken(null);
     }
     return summary;
-  }
-
-  async function refreshPrivateBookmarksList(currentToken: string, currentPrivateToken: string) {
-    const limit = Math.max(privateItems.length, BOOKMARKS_PAGE_SIZE);
-    const result = await appDataSource.searchPrivateBookmarks(
-      {
-        search: deferredPrivateSearch,
-        quality: qualityFilter,
-        view: bookmarkView,
-        limit,
-        offset: 0,
-      },
-      currentToken,
-      currentPrivateToken,
-    );
-    setPrivateItems(result.items);
-    setPrivateLoadState("ready");
-    setPrivateError(null);
-  }
-
-  async function refreshPrivateBookmarkDetail(
-    currentToken: string,
-    currentPrivateToken: string,
-    bookmarkId: string,
-  ) {
-    const result = await appDataSource.fetchPrivateBookmarkDetail(bookmarkId, currentToken, currentPrivateToken);
-    setPrivateDetail(result);
-    setPrivateDetailLoadState(result ? "ready" : "not-found");
-    setPrivateDetailError(null);
   }
 
   async function handleSetupPrivateMode() {
@@ -1415,7 +1233,6 @@ export function App({
       setPrivateSetupConfirm("");
       setPrivateUnlockPassword("");
       setPrivatePasswordChangeMessage(null);
-      await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
       if (handlePrivateModeApiError(error)) {
         return;
@@ -1443,7 +1260,6 @@ export function App({
       setPrivateToken(result.privateToken);
       setPrivateUnlockPassword("");
       setPrivatePasswordChangeMessage(null);
-      await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
       if (handlePrivateModeApiError(error)) {
         return;
@@ -1463,22 +1279,16 @@ export function App({
     setPrivateError(null);
     try {
       const summary = await appDataSource.lockPrivateMode(authToken);
-      setPrivateSearchInput("");
-      clearApiResponseCache();
+      forgetPrivateData();
       setPrivateSummary(summary);
       setPrivateToken(null);
-      setPrivateItems([]);
-      setPrivateDetail(null);
-      setPrivateArchivePreview({ status: "idle" });
-      setPrivateDetailLoadState("idle");
-      setPrivateDetailError(null);
       setPrivateUnlockPassword("");
       setPrivatePasswordChangeLogin("");
       setPrivatePasswordChangeNew("");
       setPrivatePasswordChangeConfirm("");
       setPrivatePasswordChangeMessage(null);
-      if (route.page === "private-detail") {
-        goToPrivateMode();
+      if (isPrivateScope && (route.page === "list" || route.page === "detail")) {
+        switchWorkspaceScope("standard");
       }
     } catch (error) {
       if (handlePrivateModeApiError(error)) {
@@ -1523,7 +1333,6 @@ export function App({
       setPrivatePasswordChangeConfirm("");
       setPrivateUnlockPassword("");
       setPrivatePasswordChangeMessage("私密密码已更新。");
-      await refreshPrivateBookmarksList(authToken, result.privateToken);
     } catch (error) {
       if (handlePrivateModeApiError(error)) {
         return;
@@ -1568,7 +1377,7 @@ export function App({
 
   async function handleDeleteBookmark(bookmark: Bookmark) {
     await runManagerAction(async () => {
-      await appDataSource.deleteBookmark(bookmark.id, authToken!);
+      await requireWorkspace().deleteBookmark(bookmark.id, authToken!);
       if (route.page === "detail" && route.bookmarkId === bookmark.id) {
         goToList();
       }
@@ -1604,12 +1413,12 @@ export function App({
   }
 
   async function handleBatchDelete(ids: Set<string>) {
-    await runBatch(ids, "删除", (id) => appDataSource.deleteBookmark(id, authToken!), true);
+    await runBatch(ids, "删除", (id) => requireWorkspace().deleteBookmark(id, authToken!), true);
   }
 
   async function handleBatchToggleFavorite(ids: Set<string>, isFavorite: boolean) {
     await runBatch(ids, isFavorite ? "加入星标" : "取消星标",
-      (id) => appDataSource.updateBookmarkMetadata(id, { isFavorite }, authToken!));
+      (id) => requireWorkspace().updateBookmarkMetadata(id, { isFavorite }, authToken!));
   }
 
   function handleBatchLocalArchive(ids: Set<string>) {
@@ -1647,24 +1456,24 @@ export function App({
   }
 
   async function handleBatchMoveTo(ids: Set<string>, folderId: string | null) {
-    await runBatch(ids, "移动收藏夹", (id) => appDataSource.updateBookmarkMetadata(id, { folderId }, authToken!), true);
+    await runBatch(ids, "移动收藏夹", (id) => requireWorkspace().updateBookmarkMetadata(id, { folderId }, authToken!), true);
   }
 
   async function handleBatchSetTags(ids: Set<string>, tagIds: string[], mode: "append" | "remove" | "replace") {
     await runBatch(ids, mode === "append" ? "追加标签" : mode === "remove" ? "移除标签" : "替换标签", async (id) => {
       // Fetch current metadata so appending never replaces tags from stale selections.
-      const current = await appDataSource.fetchBookmarkDetail(id, authToken!);
+      const current = await requireWorkspace().fetchBookmarkDetail(id, authToken!);
       if (!current) throw new Error("书签不存在");
       const existing = current.bookmark.tags.map((tag) => tag.id);
       const nextTags = mergeTagIds(existing, tagIds, mode);
-      return appDataSource.updateBookmarkMetadata(id, { tagIds: nextTags }, authToken!);
+      return requireWorkspace().updateBookmarkMetadata(id, { tagIds: nextTags }, authToken!);
     });
   }
 
   async function handleCreateFolder(name: string, parent?: Folder) {
     const trimmedName = name.trim();
     await runManagerAction(async () => {
-      const folder = await appDataSource.createFolder({
+      const folder = await requireWorkspace().createFolder({
         name: trimmedName,
         parentId: parent?.id ?? null,
       }, authToken!);
@@ -1674,7 +1483,7 @@ export function App({
 
   async function handleRenameFolder(folder: Folder, name: string) {
     await runManagerAction(async () => {
-      const updated = await appDataSource.updateFolder(folder.id, { name }, authToken!);
+      const updated = await requireWorkspace().updateFolder(folder.id, { name }, authToken!);
       return `已重命名收藏夹：${updated.path}`;
     });
   }
@@ -1690,14 +1499,14 @@ export function App({
       }
     }
     await runManagerAction(async () => {
-      const updated = await appDataSource.updateFolder(folder.id, { parentId }, authToken!);
+      const updated = await requireWorkspace().updateFolder(folder.id, { parentId }, authToken!);
       return `已移动收藏夹：${updated.path}`;
     });
   }
 
   async function handleDeleteFolder(folder: Folder) {
     await runManagerAction(async () => {
-      await appDataSource.deleteFolder(folder.id, authToken!);
+      await requireWorkspace().deleteFolder(folder.id, authToken!);
       return `已删除收藏夹：${folder.path}`;
     });
   }
@@ -1705,7 +1514,7 @@ export function App({
   async function handleCreateTag(name: string, color?: string) {
     const trimmedName = name.trim();
     await runManagerAction(async () => {
-      const tag = await appDataSource.createTag({
+      const tag = await requireWorkspace().createTag({
         name: trimmedName,
         color,
       }, authToken!);
@@ -1715,7 +1524,7 @@ export function App({
 
   async function handleEditTag(tag: Tag, nextName: string, nextColorRaw: string) {
     await runManagerAction(async () => {
-      const updated = await appDataSource.updateTag(tag.id, {
+      const updated = await requireWorkspace().updateTag(tag.id, {
         name: nextName.trim(),
         color: nextColorRaw.trim() || null,
       }, authToken!);
@@ -1725,7 +1534,7 @@ export function App({
 
   async function handleDeleteTag(tag: Tag) {
     await runManagerAction(async () => {
-      await appDataSource.deleteTag(tag.id, authToken!);
+      await requireWorkspace().deleteTag(tag.id, authToken!);
       return `已删除标签：#${tag.name}`;
     });
   }
@@ -1832,7 +1641,7 @@ export function App({
     setMetadataFeedback(null);
 
     try {
-      const updated = await appDataSource.updateBookmarkMetadata(
+      const updated = await requireWorkspace().updateBookmarkMetadata(
         route.bookmarkId,
         {
           note: metadataNote,
@@ -1873,7 +1682,7 @@ export function App({
     setItems((current) => current.map((item) => item.id === bookmark.id ? { ...item, isFavorite } : item));
     setManagerFeedback(null); closeContextMenu();
     try {
-      const updated = await appDataSource.updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
+      const updated = await requireWorkspace().updateBookmarkMetadata(bookmark.id, { isFavorite }, authToken);
       invalidateLists();
       if (activeQueryKey.current === requestedKey) {
         setItems((current) => bookmarkView === "favorites" && !isFavorite
@@ -1896,7 +1705,7 @@ export function App({
 
     if (contextMenu.kind === "bookmark") {
       const bookmark = contextMenu.bookmark;
-      const detailHash = buildDetailHash(bookmark.id);
+      const detailHash = buildDetailHash(bookmark.id, undefined, workspaceScope);
       const detailUrl = buildAppUrl(detailHash);
       return [
         {
@@ -1923,7 +1732,7 @@ export function App({
               id: "open-archive",
               label: "打开归档",
               icon: "AR",
-              onSelect: () => openBookmark(bookmark.id),
+              onSelect: () => openBookmark(bookmark.id, undefined, workspaceScope),
             },
             {
               id: "open-archive-new-tab",
@@ -1959,7 +1768,7 @@ export function App({
               id: "edit-metadata",
               label: "前往详情编辑",
               icon: "ED",
-              onSelect: () => openBookmark(bookmark.id),
+              onSelect: () => openBookmark(bookmark.id, undefined, workspaceScope),
             },
             {
               id: "delete-bookmark",
@@ -2080,6 +1889,7 @@ export function App({
     managerBusy,
     selectedFolderId,
     selectedTagId,
+    workspaceScope,
   ]);
 
   async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2213,16 +2023,15 @@ export function App({
         tags={tags}
         privateModeSummary={privateSummary}
         privateModeUnlocked={Boolean(privateToken)}
+        workspaceScope={workspaceScope}
+        workspaceLocked={!workspace}
+        onSwitchWorkspaceScope={switchWorkspaceScope}
         routePage={route.page}
         bookmarkView={bookmarkView}
         selectedFolderId={selectedFolderId}
         selectedTagId={selectedTagId}
-        searchInput={isPrivateSearchScope ? privateSearchInput : searchInput}
-        onSearchChange={(search) => updateScopedSearch(route.page, search, {
-          setPrivateSearch: setPrivateSearchInput,
-          navigatePublicSearch: (value) => navigateList({ search: value }, true),
-          openPrivateList: goToPrivateMode,
-        })}
+        searchInput={searchInput}
+        onSearchChange={(search) => navigateList({ search }, true)}
         managerBusy={managerBusy}
         onSelectBookmarkView={(view) => navigateList({ view, folderId: "", tagId: "" })}
         onSelectFolder={(folderId) => navigateList({ folderId, view: "all" })}
@@ -2256,14 +2065,28 @@ export function App({
               onDone={goToList}
             />
           </Suspense>
+        ) : (route.page === "list" || route.page === "detail") && !workspace ? (
+          <Suspense fallback={<section className="loading preview-empty">正在加载私密模式...</section>}>
+            <PrivateWorkspaceGate
+              summary={privateSummary}
+              error={privateError}
+              unlockPassword={privateUnlockPassword}
+              busy={privateBusy}
+              onUnlockPasswordChange={setPrivateUnlockPassword}
+              onUnlock={() => void handleUnlockPrivateMode()}
+              onOpenSettings={goToPrivateMode}
+              onBack={() => switchWorkspaceScope("standard")}
+            />
+          </Suspense>
         ) : route.page === "list" ? (
           <BookmarksListRoute
+            isPrivate={isPrivateScope}
             selectionMode={selectionMode}
             selectedIds={selectedIds}
             selectionBusy={selectionBusy}
             items={loadedQueryKey === queryKey ? items : []}
             totalItems={loadedQueryKey === queryKey ? listTotal : 0}
-            title={selectedFolderId ? (folders.find((folder) => folder.id === selectedFolderId)?.path ?? "收藏夹") : bookmarkView === "favorites" ? "星标书签" : bookmarkView === "recent" ? "最近更新" : "全部书签"}
+            title={selectedFolderId ? (folders.find((folder) => folder.id === selectedFolderId)?.path ?? "收藏夹") : bookmarkView === "favorites" ? "星标书签" : bookmarkView === "recent" ? "最近更新" : isPrivateScope ? "全部私密书签" : "全部书签"}
             searchInput={searchInput}
             selectedFolderId={selectedFolderId}
             selectedTagId={selectedTagId}
@@ -2278,7 +2101,7 @@ export function App({
             onSelectAllResults={() => void selectAllResults()}
             onRetryFailed={retryFailed ?? undefined}
             onEnterSelection={() => enterSelectionMode()}
-            onCreateArchive={(bookmark) => openLocalArchiveDialog([bookmark])}
+            onCreateArchive={isPrivateScope ? undefined : (bookmark) => openLocalArchiveDialog([bookmark])}
             bookmarkView={bookmarkView}
             loadState={loadedQueryKey === queryKey ? loadState : "loading"}
             listError={listError}
@@ -2301,10 +2124,10 @@ export function App({
             onSelectAll={selectAllBookmarks}
             onDeselectAll={deselectAllBookmarks}
             onBatchFavorite={(fav) => void handleBatchToggleFavorite(selectedIds, fav)}
-            onBatchLocalArchive={() => void handleBatchLocalArchive(selectedIds)}
+            onBatchLocalArchive={isPrivateScope ? undefined : () => void handleBatchLocalArchive(selectedIds)}
             onBatchMoveTo={(folderId) => void handleBatchMoveTo(selectedIds, folderId)}
             onBatchSetTags={(tagIds, mode) => void handleBatchSetTags(selectedIds, tagIds, mode ?? "append")}
-            onBatchShare={() => {
+            onBatchShare={isPrivateScope ? undefined : () => {
               if (selectedIds.size === 0) {
                 return;
               }
@@ -2317,19 +2140,15 @@ export function App({
             onLoadMore={() => void loadMoreBookmarks()}
             onBookmarkContextMenu={openBookmarkContextMenu}
             onOpenBookmarkContextMenuAt={openBookmarkContextMenuAt}
-            onOpenArchive={(bookmark) => openBookmark(bookmark.id)}
+            onOpenArchive={(bookmark) => openBookmark(bookmark.id, undefined, workspaceScope)}
             onToggleSelect={toggleSelected}
           />
         ) : route.page === "private-mode" ? (
           <Suspense fallback={<section className="loading preview-empty">正在加载私密模式...</section>}>
             <PrivateModePage
               onRetryStatus={() => { setPrivateError(null); setPrivateStatusRevision((value) => value + 1); }}
-              searchInput={privateSearchInput}
-              onSearchChange={setPrivateSearchInput}
               summary={privateSummary}
               privateToken={privateToken}
-              items={privateItems}
-              loadState={privateLoadState}
               error={privateError}
               setupPassword={privateSetupPassword}
               setupConfirm={privateSetupConfirm}
@@ -2358,76 +2177,9 @@ export function App({
               onUnlock={() => void handleUnlockPrivateMode()}
               onChangePassword={() => void handleChangePrivatePassword()}
               onLock={() => void handleLockPrivateMode()}
-              onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
+              onOpenWorkspace={() => switchWorkspaceScope("private")}
             />
           </Suspense>
-        ) : route.page === "private-detail" ? (
-          privateToken && privateDetail && selectedPrivateVersion ? (
-            <Suspense fallback={<section className="loading preview-empty">正在加载私密详情...</section>}>
-              <PrivateDetailPage
-                detail={privateDetail}
-                selectedVersion={selectedPrivateVersion}
-                previewState={privateArchivePreview}
-                preferredPreviewMode={privatePreferredPreviewMode}
-                activePreviewMode={privatePreviewSelection?.mode ?? null}
-                onGoBack={goToPrivateMode}
-                onSelectVersion={openPrivateBookmark}
-                onPreviewModeChange={setPrivatePreferredPreviewMode}
-              />
-            </Suspense>
-          ) : privateToken && privateDetailLoadState === "loading" ? (
-            <section className="detail-shell">
-              <section className="loading preview-empty">正在加载私密详情...</section>
-            </section>
-          ) : privateToken && privateDetailLoadState === "not-found" ? (
-            <section className="detail-shell">
-              <section className="empty-state preview-empty">
-                <h2>私密内容不存在</h2>
-                <p>这条私密内容可能已被删除，或当前会话没有权限查看。</p>
-              </section>
-            </section>
-          ) : (
-            <Suspense fallback={<section className="loading preview-empty">正在加载私密模式...</section>}>
-              <PrivateModePage
-                onRetryStatus={() => { setPrivateError(null); setPrivateStatusRevision((value) => value + 1); }}
-                searchInput={privateSearchInput}
-                onSearchChange={setPrivateSearchInput}
-                summary={privateSummary}
-                privateToken={privateToken}
-                items={privateItems}
-                loadState={privateLoadState}
-                error={privateDetailError ?? privateError}
-                setupPassword={privateSetupPassword}
-                setupConfirm={privateSetupConfirm}
-                unlockPassword={privateUnlockPassword}
-                passwordChangeLogin={privatePasswordChangeLogin}
-                passwordChangeNew={privatePasswordChangeNew}
-                passwordChangeConfirm={privatePasswordChangeConfirm}
-                passwordChangeMessage={privatePasswordChangeMessage}
-                busy={privateBusy}
-                onSetupPasswordChange={setPrivateSetupPassword}
-                onSetupConfirmChange={setPrivateSetupConfirm}
-                onUnlockPasswordChange={setPrivateUnlockPassword}
-                onPasswordChangeLoginChange={(value) => {
-                  setPrivatePasswordChangeLogin(value);
-                  setPrivatePasswordChangeMessage(null);
-                }}
-                onPasswordChangeNewChange={(value) => {
-                  setPrivatePasswordChangeNew(value);
-                  setPrivatePasswordChangeMessage(null);
-                }}
-                onPasswordChangeConfirmChange={(value) => {
-                  setPrivatePasswordChangeConfirm(value);
-                  setPrivatePasswordChangeMessage(null);
-                }}
-                onSetup={() => void handleSetupPrivateMode()}
-                onUnlock={() => void handleUnlockPrivateMode()}
-                onChangePassword={() => void handleChangePrivatePassword()}
-                onLock={() => void handleLockPrivateMode()}
-                onOpenBookmark={(bookmarkId) => openPrivateBookmark(bookmarkId)}
-              />
-            </Suspense>
-          )
         ) : route.page === "detail" ? (
           <Suspense fallback={<section className="loading preview-empty">正在加载详情视图...</section>}>
             <BookmarkDetailRoute
@@ -2447,7 +2199,7 @@ export function App({
               metadataFeedback={metadataFeedback}
               isPending={isPending}
               onGoBack={returnToList}
-              onSelectVersion={openBookmark}
+              onSelectVersion={(bookmarkId, versionId) => openBookmark(bookmarkId, versionId, workspaceScope)}
               onMetadataNoteChange={setMetadataNote}
               onMetadataFolderChange={setMetadataFolderId}
               onMetadataTagToggle={(tagId) => {

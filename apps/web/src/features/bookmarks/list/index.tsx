@@ -13,6 +13,7 @@ import type {
   Folder,
   Tag,
 } from "@keeppage/domain";
+import { Icon } from "../../../components/Icon";
 import { BrandBookmarkCard, BrandBookmarkSkeleton } from "./brand-card";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -364,10 +365,10 @@ function SelectionToolbar({
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onBatchFavorite: (isFavorite: boolean) => void;
-  onBatchLocalArchive: () => void;
+  onBatchLocalArchive?: () => void;
   onBatchMoveTo: (folderId: string | null) => void;
   onBatchSetTags: (tagIds: string[], mode: "append" | "remove" | "replace") => void;
-  onBatchShare: () => void;
+  onBatchShare?: () => void;
   onBatchDelete: () => void;
   onExit: () => void;
 }) {
@@ -450,15 +451,17 @@ function SelectionToolbar({
         >
           取消星标
         </button>
-        <button
-          type="button"
-          className="selection-toolbar-btn"
-          disabled={!hasSelection || busy}
-          onClick={onBatchLocalArchive}
-          title="发送到本地插件队列"
-        >
-          本地存档
-        </button>
+        {onBatchLocalArchive ? (
+          <button
+            type="button"
+            className="selection-toolbar-btn"
+            disabled={!hasSelection || busy}
+            onClick={onBatchLocalArchive}
+            title="发送到本地插件队列"
+          >
+            本地存档
+          </button>
+        ) : null}
         <div className="selection-toolbar-dropdown-wrapper">
           <button
             type="button"
@@ -503,15 +506,17 @@ function SelectionToolbar({
             </SearchableBatchDropdown>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="selection-toolbar-btn"
-          disabled={!hasSelection || busy}
-          onClick={onBatchShare}
-          title="生成公开分享链接"
-        >
-          分享
-        </button>
+        {onBatchShare ? (
+          <button
+            type="button"
+            className="selection-toolbar-btn"
+            disabled={!hasSelection || busy}
+            onClick={onBatchShare}
+            title="生成公开分享链接"
+          >
+            分享
+          </button>
+        ) : null}
         <button
           type="button"
           className="selection-toolbar-btn is-danger"
@@ -535,6 +540,7 @@ function SelectionToolbar({
 
 export function BookmarksListRoute({
   title,
+  isPrivate = false,
   searchInput = "",
   selectedFolderId = "",
   selectedTagId = "",
@@ -585,6 +591,8 @@ export function BookmarksListRoute({
   onToggleSelect,
 }: {
   title?: string;
+  /** Private workspace: same library UI, scoped to the unlocked vault. */
+  isPrivate?: boolean;
   searchInput?: string;
   selectedFolderId?: string;
   selectedTagId?: string;
@@ -621,10 +629,10 @@ export function BookmarksListRoute({
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onBatchFavorite: (isFavorite: boolean) => void;
-  onBatchLocalArchive: () => void;
+  onBatchLocalArchive?: () => void;
   onBatchMoveTo: (folderId: string | null) => void;
   onBatchSetTags: (tagIds: string[], mode: "append" | "remove" | "replace") => void;
-  onBatchShare: () => void;
+  onBatchShare?: () => void;
   onBatchDelete: () => void;
   onExitSelection: () => void;
   onToggleFavorite: (bookmark: Bookmark) => void;
@@ -637,12 +645,13 @@ export function BookmarksListRoute({
   const [view, setView] = useState<"compact" | "gallery">(() => {
     try { return localStorage.getItem("keeppage.library-view") === "gallery" ? "gallery" : "compact"; } catch { return "compact"; }
   });
-  const listTitle = title || folders.find((folder) => folder.id === selectedFolderId)?.path || (bookmarkView === "favorites" ? "星标收藏" : bookmarkView === "recent" ? "最近更新" : "全部书签");
+  const listTitle = title || folders.find((folder) => folder.id === selectedFolderId)?.path || (bookmarkView === "favorites" ? "星标收藏" : bookmarkView === "recent" ? "最近更新" : isPrivate ? "全部私密书签" : "全部书签");
+  const countLabel = isPrivate ? "条私密书签" : "条书签";
   const selectedTag = tags.find((tag) => tag.id === selectedTagId);
   return (
-    <div className={`bookmark-library is-${view}`}>
+    <div className={`bookmark-library is-${view}${isPrivate ? " is-private" : ""}`}>
       <header className="library-toolbar">
-        <div className="library-heading"><h1 title={listTitle}>{listTitle}</h1><p aria-live="polite">{loadState === "loading" && items.length === 0 ? "书签资料库" : `${totalItems} 条书签`}{searchInput.trim() ? ` · 搜索“${searchInput.trim()}”` : ""}</p></div>
+        <div className="library-heading"><h1 title={listTitle}>{isPrivate ? <span className="library-private-badge"><Icon name="lock" />私密</span> : null}{listTitle}</h1><p aria-live="polite">{loadState === "loading" && items.length === 0 ? (isPrivate ? "私密资料库" : "书签资料库") : `${totalItems} ${countLabel}`}{searchInput.trim() ? ` · 搜索“${searchInput.trim()}”` : ""}</p></div>
         <div className="library-tools">
           <label className="library-sort"><span className="sr-only">书签排序</span><select value={sort} onChange={(event) => onSortChange?.(event.target.value as typeof sort)}><option value="updated">最近更新</option><option value="created">收藏时间</option><option value="title">标题顺序</option>{searchInput.trim() ? <option value="relevance">搜索相关性</option> : null}</select></label>
           <div className="library-view-switch" role="group" aria-label="显示密度">
@@ -651,7 +660,7 @@ export function BookmarksListRoute({
           {!selectionMode && onEnterSelection ? <button className="library-select" type="button" onClick={onEnterSelection}>多选</button> : null}
         </div>
       </header>
-      {hasActiveFilters ? <div className="library-filter-bar"><span>范围：{listTitle}</span>{selectedTag ? <button className="library-filter-chip" type="button" onClick={onClearTag} aria-label={`清除标签筛选：${selectedTag.name}`}>标签 · {selectedTag.name} ×</button> : null}{searchInput.trim() ? <button className="library-filter-chip" type="button" onClick={onClearSearch} aria-label="清除关键词">关键词 · {searchInput.trim()} ×</button> : null}<button type="button" onClick={searchInput.trim() || selectedTag ? onClearFilters : onSearchGlobally}>{searchInput.trim() || selectedTag ? "清除筛选" : "返回全部书签"}</button>{searchInput.trim() && (selectedFolderId || selectedTagId || bookmarkView !== "all") ? <button type="button" onClick={onSearchGlobally}>搜索全部书签</button> : null}</div> : null}
+      {hasActiveFilters ? <div className="library-filter-bar"><span>范围：{listTitle}</span>{selectedTag ? <button className="library-filter-chip" type="button" onClick={onClearTag} aria-label={`清除标签筛选：${selectedTag.name}`}>标签 · {selectedTag.name} ×</button> : null}{searchInput.trim() ? <button className="library-filter-chip" type="button" onClick={onClearSearch} aria-label="清除关键词">关键词 · {searchInput.trim()} ×</button> : null}<button type="button" onClick={searchInput.trim() || selectedTag ? onClearFilters : onSearchGlobally}>{searchInput.trim() || selectedTag ? "清除筛选" : isPrivate ? "返回全部私密书签" : "返回全部书签"}</button>{searchInput.trim() && (selectedFolderId || selectedTagId || bookmarkView !== "all") ? <button type="button" onClick={onSearchGlobally}>{isPrivate ? "搜索全部私密书签" : "搜索全部书签"}</button> : null}</div> : null}
       {selectionMode ? (
         <SelectionToolbar
           selectedCount={selectedIds.size}

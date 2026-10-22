@@ -21,6 +21,7 @@ import {
   looksLikeAuthError,
 } from "../../src/lib/ui-shared/capture-status";
 import { isMissingReceiverError } from "../../src/lib/extension-errors";
+import { BrandMark } from "../../src/lib/ui-shared/brand-mark";
 
 const FOLDER_SUGGESTION_LIMIT = 6;
 const TAG_SUGGESTION_LIMIT = 12;
@@ -403,7 +404,7 @@ export function App() {
         setIsTagMenuOpen(false);
       }
     }}>
-      <header className="popup-brand"><span className="popup-brand-mark" aria-hidden="true">K</span>KeepPage</header>
+      <header className="popup-brand"><BrandMark size={24} />KeepPage</header>
       <section className={`status-card ${saveState}`} role="status" aria-live="polite">
         <div className="status-copy">
           <div className="status-pill">

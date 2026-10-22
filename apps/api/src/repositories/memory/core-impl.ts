@@ -101,10 +101,22 @@ type UserBookmarkState = {
   privatePendingByObjectKey: Map<string, PendingCapture>;
   privateVersionsByObjectKey: Map<string, BookmarkVersion>;
   privateModeConfig: StoredPrivateModeConfig | null;
+  privateFolders: Map<string, Folder>;
+  privateTags: Map<string, Tag>;
   folders: Map<string, Folder>;
   tags: Map<string, Tag>;
   importTasks: Map<string, ImportTask>;
   importItemsByTaskId: Map<string, ImportTaskItem[]>;
+};
+
+/**
+ * One bookmark collection together with the taxonomy it may reference.
+ * The standard workspace and the private workspace each form an isolated scope.
+ */
+type TaxonomyScope = {
+  bookmarks: Map<string, Bookmark>;
+  folders: Map<string, Folder>;
+  tags: Map<string, Tag>;
 };
 
 export type InMemoryBookmarkRepositoryOptions = {
@@ -831,8 +843,7 @@ export class InMemoryRepositoryCore {
     };
   }
 
-  async searchBookmarks(userId: string, query: BookmarkSearchQuery) {
-    const state = this.ensureUserState(userId);
+  private searchBookmarksIn(state: TaxonomyScope, query: BookmarkSearchQuery) {
     const keyword = query.q?.trim().toLowerCase();
     const folderIds = query.folderId ? this.collectFolderSubtreeIds(state, query.folderId) : null;
     const recentThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -880,7 +891,7 @@ export class InMemoryRepositoryCore {
       return searchable.includes(keyword);
     });
 
-    filtered.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    sortBookmarks(filtered, query);
 
     return {
       items: filtered.slice(query.offset, query.offset + query.limit),
@@ -894,8 +905,7 @@ export class InMemoryRepositoryCore {
     return this.findBookmarkByNormalizedHash(state, normalizedUrlHash) ?? null;
   }
 
-  async getBookmarkSidebarStats(userId: string) {
-    const state = this.ensureUserState(userId);
+  private async getBookmarkSidebarStatsIn(state: TaxonomyScope) {
     const folderCounts = new Map<string, number>();
 
     for (const bookmark of state.bookmarks.values()) {
@@ -978,50 +988,6 @@ export class InMemoryRepositoryCore {
     bookmark.updatedAt = new Date().toISOString();
     state.bookmarks.set(bookmark.id, bookmark);
     return version;
-  }
-
-  async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery) {
-    const state = this.ensureUserState(userId);
-    const keyword = query.q?.trim().toLowerCase();
-    const recentThreshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const filtered = [...state.privateBookmarks.values()].filter((bookmark) => {
-      if (query.view === "favorites" && !bookmark.isFavorite) {
-        return false;
-      }
-
-      if (query.view === "recent" && new Date(bookmark.updatedAt).getTime() < recentThreshold) {
-        return false;
-      }
-
-      if (query.domain && bookmark.domain !== query.domain) {
-        return false;
-      }
-
-      if (query.quality && bookmark.latestQuality?.grade !== query.quality) {
-        return false;
-      }
-
-      if (!keyword) {
-        return true;
-      }
-
-      const searchable = [
-        bookmark.title,
-        bookmark.sourceUrl,
-        bookmark.domain,
-        bookmark.note,
-      ]
-        .join(" ")
-        .toLowerCase();
-      return searchable.includes(keyword);
-    });
-
-    filtered.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-
-    return {
-      items: filtered.slice(query.offset, query.offset + query.limit),
-      total: filtered.length,
-    };
   }
 
   async getPrivateBookmarkDetail(userId: string, bookmarkId: string) {
@@ -1353,12 +1319,11 @@ export class InMemoryRepositoryCore {
     ).length;
   }
 
-  async updateBookmarkMetadata(
-    userId: string,
+  private async updateBookmarkMetadataIn(
+    state: TaxonomyScope,
     bookmarkId: string,
     input: BookmarkMetadataUpdateRequest,
   ) {
-    const state = this.ensureUserState(userId);
     const bookmark = state.bookmarks.get(bookmarkId);
     if (!bookmark) {
       return null;
@@ -1404,13 +1369,11 @@ export class InMemoryRepositoryCore {
     return bookmark;
   }
 
-  async listFolders(userId: string) {
-    const state = this.ensureUserState(userId);
+  private async listFoldersIn(state: TaxonomyScope) {
     return [...state.folders.values()].sort((left, right) => left.path.localeCompare(right.path));
   }
 
-  async createFolder(userId: string, input: FolderCreateRequest) {
-    const state = this.ensureUserState(userId);
+  private async createFolderIn(state: TaxonomyScope, input: FolderCreateRequest) {
     const parent = input.parentId ? state.folders.get(input.parentId) : undefined;
     if (input.parentId && !parent) {
       throw new HttpError(404, "FolderNotFound", "Parent folder not found.");
@@ -1428,8 +1391,7 @@ export class InMemoryRepositoryCore {
     return folder;
   }
 
-  async updateFolder(userId: string, folderId: string, input: FolderUpdateRequest) {
-    const state = this.ensureUserState(userId);
+  private async updateFolderIn(state: TaxonomyScope, folderId: string, input: FolderUpdateRequest) {
     const current = state.folders.get(folderId);
     if (!current) {
       return null;
@@ -1479,8 +1441,7 @@ export class InMemoryRepositoryCore {
     return state.folders.get(folderId) ?? null;
   }
 
-  async deleteFolder(userId: string, folderId: string) {
-    const state = this.ensureUserState(userId);
+  private async deleteFolderIn(state: TaxonomyScope, folderId: string) {
     const current = state.folders.get(folderId);
     if (!current) {
       return false;
@@ -1541,13 +1502,11 @@ export class InMemoryRepositoryCore {
     return true;
   }
 
-  async listTags(userId: string) {
-    const state = this.ensureUserState(userId);
+  private async listTagsIn(state: TaxonomyScope) {
     return [...state.tags.values()].sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  async createTag(userId: string, input: TagCreateRequest) {
-    const state = this.ensureUserState(userId);
+  private async createTagIn(state: TaxonomyScope, input: TagCreateRequest) {
     this.assertUniqueTagName(state, input.name);
     const tag: Tag = {
       id: crypto.randomUUID(),
@@ -1558,8 +1517,7 @@ export class InMemoryRepositoryCore {
     return tag;
   }
 
-  async updateTag(userId: string, tagId: string, input: TagUpdateRequest) {
-    const state = this.ensureUserState(userId);
+  private async updateTagIn(state: TaxonomyScope, tagId: string, input: TagUpdateRequest) {
     const current = state.tags.get(tagId);
     if (!current) {
       return null;
@@ -1585,8 +1543,7 @@ export class InMemoryRepositoryCore {
     return current;
   }
 
-  async deleteTag(userId: string, tagId: string) {
-    const state = this.ensureUserState(userId);
+  private async deleteTagIn(state: TaxonomyScope, tagId: string) {
     const existed = state.tags.delete(tagId);
     if (!existed) {
       return false;
@@ -1823,6 +1780,126 @@ export class InMemoryRepositoryCore {
       : false;
   }
 
+  async searchBookmarks(userId: string, query: BookmarkSearchQuery) {
+    return this.searchBookmarksIn(this.ensureUserState(userId), query);
+  }
+
+  async getBookmarkSidebarStats(userId: string) {
+    return this.getBookmarkSidebarStatsIn(this.ensureUserState(userId));
+  }
+
+  async updateBookmarkMetadata(userId: string, bookmarkId: string, input: BookmarkMetadataUpdateRequest) {
+    return this.updateBookmarkMetadataIn(this.ensureUserState(userId), bookmarkId, input);
+  }
+
+  async listFolders(userId: string) {
+    return this.listFoldersIn(this.ensureUserState(userId));
+  }
+
+  async createFolder(userId: string, input: FolderCreateRequest) {
+    return this.createFolderIn(this.ensureUserState(userId), input);
+  }
+
+  async updateFolder(userId: string, folderId: string, input: FolderUpdateRequest) {
+    return this.updateFolderIn(this.ensureUserState(userId), folderId, input);
+  }
+
+  async deleteFolder(userId: string, folderId: string) {
+    return this.deleteFolderIn(this.ensureUserState(userId), folderId);
+  }
+
+  async listTags(userId: string) {
+    return this.listTagsIn(this.ensureUserState(userId));
+  }
+
+  async createTag(userId: string, input: TagCreateRequest) {
+    return this.createTagIn(this.ensureUserState(userId), input);
+  }
+
+  async updateTag(userId: string, tagId: string, input: TagUpdateRequest) {
+    return this.updateTagIn(this.ensureUserState(userId), tagId, input);
+  }
+
+  async deleteTag(userId: string, tagId: string) {
+    return this.deleteTagIn(this.ensureUserState(userId), tagId);
+  }
+
+  async searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery) {
+    return this.searchBookmarksIn(this.privateScope(userId), query);
+  }
+
+  async getPrivateBookmarkSidebarStats(userId: string) {
+    return this.getBookmarkSidebarStatsIn(this.privateScope(userId));
+  }
+
+  async updatePrivateBookmarkMetadata(userId: string, bookmarkId: string, input: BookmarkMetadataUpdateRequest) {
+    return this.updateBookmarkMetadataIn(this.privateScope(userId), bookmarkId, input);
+  }
+
+  async deletePrivateBookmark(userId: string, bookmarkId: string) {
+    const state = this.ensureUserState(userId);
+    const bookmark = state.privateBookmarks.get(bookmarkId);
+    if (!bookmark) {
+      return false;
+    }
+
+    const versions = state.privateVersionsByBookmark.get(bookmarkId) ?? [];
+    for (const version of versions) {
+      state.privateVersionsByObjectKey.delete(version.htmlObjectKey);
+      if (version.readerHtmlObjectKey) {
+        state.privateVersionsByObjectKey.delete(version.readerHtmlObjectKey);
+      }
+      for (const mediaFile of version.mediaFiles ?? []) {
+        state.privateVersionsByObjectKey.delete(mediaFile.objectKey);
+      }
+    }
+
+    state.privateVersionsByBookmark.delete(bookmarkId);
+    state.privateBookmarks.delete(bookmarkId);
+    return true;
+  }
+
+  async listPrivateFolders(userId: string) {
+    return this.listFoldersIn(this.privateScope(userId));
+  }
+
+  async createPrivateFolder(userId: string, input: FolderCreateRequest) {
+    return this.createFolderIn(this.privateScope(userId), input);
+  }
+
+  async updatePrivateFolder(userId: string, folderId: string, input: FolderUpdateRequest) {
+    return this.updateFolderIn(this.privateScope(userId), folderId, input);
+  }
+
+  async deletePrivateFolder(userId: string, folderId: string) {
+    return this.deleteFolderIn(this.privateScope(userId), folderId);
+  }
+
+  async listPrivateTags(userId: string) {
+    return this.listTagsIn(this.privateScope(userId));
+  }
+
+  async createPrivateTag(userId: string, input: TagCreateRequest) {
+    return this.createTagIn(this.privateScope(userId), input);
+  }
+
+  async updatePrivateTag(userId: string, tagId: string, input: TagUpdateRequest) {
+    return this.updateTagIn(this.privateScope(userId), tagId, input);
+  }
+
+  async deletePrivateTag(userId: string, tagId: string) {
+    return this.deleteTagIn(this.privateScope(userId), tagId);
+  }
+
+  private privateScope(userId: string): TaxonomyScope {
+    const state = this.ensureUserState(userId);
+    return {
+      bookmarks: state.privateBookmarks,
+      folders: state.privateFolders,
+      tags: state.privateTags,
+    };
+  }
+
   private ensureUserState(userId: string): UserBookmarkState {
     const existing = this.stateByUserId.get(userId);
     if (existing) {
@@ -1838,6 +1915,8 @@ export class InMemoryRepositoryCore {
       privatePendingByObjectKey: new Map(),
       privateVersionsByObjectKey: new Map(),
       privateModeConfig: null,
+      privateFolders: new Map(),
+      privateTags: new Map(),
       folders: new Map(),
       tags: new Map(),
       importTasks: new Map(),
@@ -1851,13 +1930,13 @@ export class InMemoryRepositoryCore {
     return parentPath ? `${parentPath}/${name}` : name;
   }
 
-  private collectFolderSubtree(state: UserBookmarkState, rootPath: string) {
+  private collectFolderSubtree(state: TaxonomyScope, rootPath: string) {
     return [...state.folders.values()]
       .filter((folder) => folder.path === rootPath || folder.path.startsWith(`${rootPath}/`))
       .sort((left, right) => left.path.localeCompare(right.path));
   }
 
-  private collectFolderSubtreeIds(state: UserBookmarkState, folderId: string) {
+  private collectFolderSubtreeIds(state: TaxonomyScope, folderId: string) {
     const folder = state.folders.get(folderId);
     if (!folder) {
       return new Set<string>();
@@ -1866,7 +1945,7 @@ export class InMemoryRepositoryCore {
   }
 
   private assertUniqueFolderPath(
-    state: UserBookmarkState,
+    state: TaxonomyScope,
     path: string,
     excludeFolderId?: string,
   ) {
@@ -1881,7 +1960,7 @@ export class InMemoryRepositoryCore {
   }
 
   private assertFolderPathSetAvailable(
-    state: UserBookmarkState,
+    state: TaxonomyScope,
     nextPaths: Map<string, string>,
     ignoredFolderIds: Set<string>,
   ) {
@@ -1903,7 +1982,7 @@ export class InMemoryRepositoryCore {
     }
   }
 
-  private assertUniqueTagName(state: UserBookmarkState, name: string, excludeTagId?: string) {
+  private assertUniqueTagName(state: TaxonomyScope, name: string, excludeTagId?: string) {
     for (const tag of state.tags.values()) {
       if (tag.id === excludeTagId) {
         continue;
@@ -1914,7 +1993,7 @@ export class InMemoryRepositoryCore {
     }
   }
 
-  private resolveTagIds(state: UserBookmarkState, tagIds: string[]) {
+  private resolveTagIds(state: TaxonomyScope, tagIds: string[]) {
     const deduplicatedIds = [...new Set(tagIds)];
     return deduplicatedIds.map((tagId) => {
       const tag = state.tags.get(tagId);
@@ -1925,7 +2004,7 @@ export class InMemoryRepositoryCore {
     });
   }
 
-  private syncBookmarksForFolders(state: UserBookmarkState, folderIds: Set<string>, now: string) {
+  private syncBookmarksForFolders(state: TaxonomyScope, folderIds: Set<string>, now: string) {
     for (const bookmark of state.bookmarks.values()) {
       if (!bookmark.folder || !folderIds.has(bookmark.folder.id)) {
         continue;
@@ -2145,7 +2224,7 @@ export class InMemoryRepositoryCore {
     });
   }
 
-  private ensureFolderPath(state: UserBookmarkState, folderPath: string) {
+  private ensureFolderPath(state: TaxonomyScope, folderPath: string) {
     const segments = folderPath.split("/").map((segment) => segment.trim()).filter(Boolean);
     if (segments.length === 0) {
       return undefined;
@@ -2174,7 +2253,7 @@ export class InMemoryRepositoryCore {
     return parent;
   }
 
-  private ensureTagsByName(state: UserBookmarkState, names: string[]) {
+  private ensureTagsByName(state: TaxonomyScope, names: string[]) {
     const deduplicated = [...new Set(
       names
         .map((name) => name.trim())
@@ -2292,6 +2371,60 @@ export class InMemoryRepositoryCore {
     }
     state.privateVersionsByObjectKey.set(readerObjectKey, version);
   }
+}
+
+function sortBookmarks(items: Bookmark[], query: BookmarkSearchQuery) {
+  if (!query.sort) {
+    items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return;
+  }
+
+  const byCreated = (left: Bookmark, right: Bookmark) =>
+    right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id);
+  items.sort((left, right) => {
+    switch (query.sort) {
+      case "updated": {
+        const delta = right.updatedAt.localeCompare(left.updatedAt);
+        if (delta !== 0) {
+          return delta;
+        }
+        break;
+      }
+      case "title": {
+        const leftTitle = left.title.toLowerCase();
+        const rightTitle = right.title.toLowerCase();
+        if (leftTitle !== rightTitle) {
+          return leftTitle < rightTitle ? -1 : 1;
+        }
+        break;
+      }
+      case "relevance": {
+        const delta = searchRank(right, query.q) - searchRank(left, query.q);
+        if (delta !== 0) {
+          return delta;
+        }
+        break;
+      }
+    }
+    return byCreated(left, right);
+  });
+}
+
+function searchRank(bookmark: Bookmark, q?: string) {
+  const needle = q?.trim().toLowerCase();
+  if (!needle) {
+    return 0;
+  }
+  if (bookmark.title.toLowerCase().includes(needle)) {
+    return 4;
+  }
+  if (bookmark.domain.toLowerCase().includes(needle) || bookmark.sourceUrl.toLowerCase().includes(needle)) {
+    return 2;
+  }
+  if (bookmark.note.toLowerCase().includes(needle)) {
+    return 1;
+  }
+  return 0;
 }
 
 function dedupePreserveOrder(ids: string[]) {

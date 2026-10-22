@@ -2,18 +2,34 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/keeppage/keeppage/apps/api-go/internal/domain"
+	"github.com/keeppage/keeppage/apps/api-go/internal/httperror"
 )
 
+// PrivateTaxonomyRepository manages the private folders and tags, which are
+// fully independent of the public taxonomy.
+type PrivateTaxonomyRepository interface {
+	ListPrivateFolders(ctx context.Context, userID string) ([]domain.Folder, error)
+	CreatePrivateFolder(ctx context.Context, userID string, input domain.FolderCreateRequest) (domain.Folder, error)
+	UpdatePrivateFolder(ctx context.Context, userID string, folderID string, input domain.FolderUpdateRequest) (*domain.Folder, error)
+	DeletePrivateFolder(ctx context.Context, userID string, folderID string) (bool, error)
+	ListPrivateTags(ctx context.Context, userID string) ([]domain.Tag, error)
+	CreatePrivateTag(ctx context.Context, userID string, input domain.TagCreateRequest) (domain.Tag, error)
+	UpdatePrivateTag(ctx context.Context, userID string, tagID string, input domain.TagUpdateRequest) (*domain.Tag, error)
+	DeletePrivateTag(ctx context.Context, userID string, tagID string) (bool, error)
+}
+
 type PrivateBookmarkRepository interface {
+	PrivateTaxonomyRepository
 	SearchPrivateBookmarks(ctx context.Context, userID string, query domain.BookmarkSearchQuery) (domain.BookmarkSearchResponse, error)
 	GetPrivateBookmarkDetail(ctx context.Context, userID, bookmarkID string) (*domain.BookmarkDetailResponse, error)
+	GetPrivateBookmarkSidebarStats(ctx context.Context, userID string) (domain.BookmarkSidebarStatsResponse, error)
+	// UpdatePrivateBookmarkMetadata returns nil when the bookmark is not the user's.
+	UpdatePrivateBookmarkMetadata(ctx context.Context, userID, bookmarkID string, input domain.BookmarkMetadataUpdateRequest) (*domain.Bookmark, error)
+	DeletePrivateBookmark(ctx context.Context, userID, bookmarkID string) (bool, error)
 }
 
 func (r *MemoryRepository) SearchPrivateBookmarks(_ context.Context, userID string, query domain.BookmarkSearchQuery) (domain.BookmarkSearchResponse, error) {
@@ -26,6 +42,12 @@ func (r *MemoryRepository) SearchPrivateBookmarks(_ context.Context, userID stri
 			continue
 		}
 		bookmark, ok := state.privateBookmarks[version.bookmarkID]
+		if ok && query.FolderID != "" && (bookmark.Folder == nil || !memoryFolderSubtreeContainsIn(state.privateFolders[userID], query.FolderID, bookmark.Folder.ID)) {
+			continue
+		}
+		if ok && query.TagID != "" && !bookmarkHasTag(bookmark, query.TagID) {
+			continue
+		}
 		if !ok || (query.Q != "" && !bookmarkMatches(bookmark, query.Q) && !strings.Contains(strings.ToLower(r.memoryBookmarkText(userID, bookmark, true)), strings.ToLower(strings.TrimSpace(query.Q)))) || (query.Domain != "" && bookmark.Domain != query.Domain) || (query.View == "favorites" && !bookmark.IsFavorite) {
 			continue
 		}
@@ -59,13 +81,13 @@ func (r *MemoryRepository) GetPrivateBookmarkDetail(_ context.Context, userID, b
 	defer r.mu.RUnlock()
 	state := r.captureState()
 	bookmark, ok := state.privateBookmarks[bookmarkID]
-	if !ok {
+	if !ok || !versionBelongsToMemoryUser(r, state, userID, bookmarkID, true) {
 		return nil, nil
 	}
 	versions := []domain.BookmarkVersion{}
 	for _, version := range state.privateVersions {
 		if version.userID == userID && version.bookmarkID == bookmarkID {
-			versions = append(versions, domain.BookmarkVersion{ID: version.versionID, BookmarkID: bookmarkID, VersionNo: len(versions) + 1, HTMLObjectKey: version.objectKey, HTMLSHA256: version.hash, MediaFiles: append([]domain.CaptureMediaFile(nil), version.mediaFiles...), CaptureProfile: "standard", CreatedAt: bookmark.UpdatedAt})
+			versions = append(versions, domain.BookmarkVersion{ID: version.versionID, BookmarkID: bookmarkID, VersionNo: len(versions) + 1, HTMLObjectKey: version.objectKey, HTMLSHA256: version.hash, MediaFiles: append([]domain.CaptureMediaFile(nil), version.mediaFiles...), CaptureProfile: "standard", Quality: version.quality, CreatedAt: bookmark.UpdatedAt})
 		}
 	}
 	if len(versions) == 0 {
@@ -74,89 +96,142 @@ func (r *MemoryRepository) GetPrivateBookmarkDetail(_ context.Context, userID, b
 	return &domain.BookmarkDetailResponse{Bookmark: bookmark, Versions: versions}, nil
 }
 
-func (r *PostgresRepository) SearchPrivateBookmarks(ctx context.Context, userID string, query domain.BookmarkSearchQuery) (domain.BookmarkSearchResponse, error) {
-	args := []any{userID}
-	conditions := []string{"user_id=$1"}
-	searchPlaceholder := ""
-	if strings.TrimSpace(query.Q) != "" {
-		args = append(args, "%"+escapeSearchLike(strings.TrimSpace(query.Q))+"%")
-		searchPlaceholder = "$2"
-		conditions = append(conditions, "(title ilike $2 or source_url ilike $2 or domain ilike $2 or note ilike $2 or exists (select 1 from private_bookmark_versions pv where pv.id=private_bookmarks.latest_version_id and pv.extracted_text ilike $2))")
+func (r *MemoryRepository) GetPrivateBookmarkSidebarStats(_ context.Context, userID string) (domain.BookmarkSidebarStatsResponse, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return memorySidebarStats(r.privateMemoryTaxonomy(), userID), nil
+}
+
+func (r *MemoryRepository) UpdatePrivateBookmarkMetadata(_ context.Context, userID, bookmarkID string, input domain.BookmarkMetadataUpdateRequest) (*domain.Bookmark, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state := r.captureState()
+	bookmark, ok := state.privateBookmarks[bookmarkID]
+	if !ok || !versionBelongsToMemoryUser(r, state, userID, bookmarkID, true) {
+		return nil, nil
 	}
-	if query.Domain != "" {
-		args = append(args, query.Domain)
-		conditions = append(conditions, fmt.Sprintf("domain=$%d", len(args)))
+	bookmark.Tags = append([]domain.Tag(nil), bookmark.Tags...)
+	if err := applyMemoryBookmarkMetadata(r.privateMemoryTaxonomy(), userID, &bookmark, input); err != nil {
+		return nil, err
 	}
-	if query.View == "favorites" {
-		conditions = append(conditions, "is_favorite=true")
+	if bookmark.Tags == nil {
+		bookmark.Tags = []domain.Tag{}
 	}
-	if query.View == "recent" {
-		args = append(args, time.Now().Add(-7*24*time.Hour))
-		conditions = append(conditions, fmt.Sprintf("updated_at >= $%d", len(args)))
+	state.privateBookmarks[bookmarkID] = bookmark
+	return &bookmark, nil
+}
+
+func (r *MemoryRepository) DeletePrivateBookmark(_ context.Context, userID, bookmarkID string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state := r.captureState()
+	if _, ok := state.privateBookmarks[bookmarkID]; !ok || !versionBelongsToMemoryUser(r, state, userID, bookmarkID, true) {
+		return false, nil
 	}
-	if query.Quality != "" {
-		args = append(args, query.Quality)
-		conditions = append(conditions, fmt.Sprintf("exists (select 1 from private_bookmark_versions pv where pv.id=private_bookmarks.latest_version_id and pv.quality_grade=$%d)", len(args)))
-	}
-	var total int
-	if err := r.pool.QueryRow(ctx, `select count(*) from private_bookmarks where `+strings.Join(conditions, " and "), args...).Scan(&total); err != nil {
-		return domain.BookmarkSearchResponse{}, err
-	}
-	snippetSelect := "''"
-	if searchPlaceholder != "" {
-		args = append(args, strings.TrimSpace(query.Q))
-		literal := fmt.Sprintf("$%d", len(args))
-		snippetSelect = "coalesce((select case when strpos(lower(coalesce(pv.extracted_text, '')), lower(" + literal + ")) > 0 then substring(pv.extracted_text from greatest(1, strpos(lower(pv.extracted_text), lower(" + literal + ")) - 60) for 220) else '' end from private_bookmark_versions pv where pv.id=private_bookmarks.latest_version_id), '')"
-	}
-	args = append(args, query.Limit, query.Offset)
-	rows, err := r.pool.Query(ctx, `select id::text,source_url,canonical_url,title,domain,note,is_favorite,latest_version_id::text,created_at,updated_at, `+snippetSelect+` from private_bookmarks where `+strings.Join(conditions, " and ")+fmt.Sprintf(` order by %s limit $%d offset $%d`, bookmarkOrderSQL("", query.Sort, searchPlaceholder), len(args)-1, len(args)), args...)
-	if err != nil {
-		return domain.BookmarkSearchResponse{}, err
-	}
-	defer rows.Close()
-	items := []domain.Bookmark{}
-	for rows.Next() {
-		var b domain.Bookmark
-		var extractedSnippet string
-		if err := rows.Scan(&b.ID, &b.SourceURL, &b.CanonicalURL, &b.Title, &b.Domain, &b.Note, &b.IsFavorite, &b.LatestVersionID, &b.CreatedAt, &b.UpdatedAt, &extractedSnippet); err != nil {
-			return domain.BookmarkSearchResponse{}, err
+	for key, version := range state.privateVersions {
+		if version.bookmarkID == bookmarkID && version.userID == userID {
+			delete(state.privateVersions, key)
 		}
-		b.Tags = []domain.Tag{}
-		b.SearchSnippet = bookmarkSearchSnippet(b, query.Q, extractedSnippet)
-		items = append(items, b)
 	}
-	return domain.BookmarkSearchResponse{Items: items, Total: total}, rows.Err()
+	delete(state.privateBookmarks, bookmarkID)
+	return true, nil
+}
+
+func (r *MemoryRepository) ListPrivateFolders(_ context.Context, userID string) ([]domain.Folder, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return listMemoryFolders(r.privateMemoryTaxonomy(), userID), nil
+}
+
+func (r *MemoryRepository) CreatePrivateFolder(_ context.Context, userID string, input domain.FolderCreateRequest) (domain.Folder, error) {
+	return r.createMemoryFolder(r.privateMemoryTaxonomy(), userID, input)
+}
+
+func (r *MemoryRepository) UpdatePrivateFolder(_ context.Context, userID string, folderID string, input domain.FolderUpdateRequest) (*domain.Folder, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return updateMemoryFolder(r.privateMemoryTaxonomy(), userID, folderID, input)
+}
+
+func (r *MemoryRepository) DeletePrivateFolder(_ context.Context, userID string, folderID string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return deleteMemoryFolder(r.privateMemoryTaxonomy(), userID, folderID)
+}
+
+func (r *MemoryRepository) ListPrivateTags(_ context.Context, userID string) ([]domain.Tag, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return listMemoryTags(r.privateMemoryTaxonomy(), userID), nil
+}
+
+func (r *MemoryRepository) CreatePrivateTag(_ context.Context, userID string, input domain.TagCreateRequest) (domain.Tag, error) {
+	return r.createMemoryTag(r.privateMemoryTaxonomy(), userID, input)
+}
+
+func (r *MemoryRepository) UpdatePrivateTag(_ context.Context, userID string, tagID string, input domain.TagUpdateRequest) (*domain.Tag, error) {
+	if !input.Name.Present && !input.Color.Present {
+		return nil, httperror.BadRequest("ValidationError", "At least one field must be updated.", nil)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return updateMemoryTag(r.privateMemoryTaxonomy(), userID, tagID, input)
+}
+
+func (r *MemoryRepository) DeletePrivateTag(_ context.Context, userID string, tagID string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return deleteMemoryTag(r.privateMemoryTaxonomy(), userID, tagID), nil
+}
+
+func (r *PostgresRepository) SearchPrivateBookmarks(ctx context.Context, userID string, query domain.BookmarkSearchQuery) (domain.BookmarkSearchResponse, error) {
+	return r.searchTaxonomyBookmarks(ctx, privateTaxonomy, userID, query)
 }
 
 func (r *PostgresRepository) GetPrivateBookmarkDetail(ctx context.Context, userID, bookmarkID string) (*domain.BookmarkDetailResponse, error) {
-	var b domain.Bookmark
-	err := r.pool.QueryRow(ctx, `select id::text,source_url,canonical_url,title,domain,note,is_favorite,latest_version_id::text,created_at,updated_at from private_bookmarks where user_id=$1 and id=$2`, userID, bookmarkID).Scan(&b.ID, &b.SourceURL, &b.CanonicalURL, &b.Title, &b.Domain, &b.Note, &b.IsFavorite, &b.LatestVersionID, &b.CreatedAt, &b.UpdatedAt)
-	if err == pgx.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	b.Tags = []domain.Tag{}
-	rows, err := r.pool.Query(ctx, `select id::text,bookmark_id::text,version_no,html_object_key,reader_html_object_key,html_sha256,text_sha256,text_simhash,capture_profile::text,quality_report_json,source_meta_json,created_at from private_bookmark_versions where bookmark_id=$1 order by version_no desc`, bookmarkID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	versions := []domain.BookmarkVersion{}
-	for rows.Next() {
-		var v domain.BookmarkVersion
-		var quality, meta []byte
-		if err = rows.Scan(&v.ID, &v.BookmarkID, &v.VersionNo, &v.HTMLObjectKey, &v.ReaderHTMLObjectKey, &v.HTMLSHA256, &v.TextSHA256, &v.TextSimhash, &v.CaptureProfile, &quality, &meta, &v.CreatedAt); err != nil {
-			return nil, err
-		}
-		_ = json.Unmarshal(quality, &v.Quality)
-		var source struct {
-			MediaFiles []domain.CaptureMediaFile `json:"mediaFiles"`
-		}
-		_ = json.Unmarshal(meta, &source)
-		v.MediaFiles = source.MediaFiles
-		versions = append(versions, v)
-	}
-	return &domain.BookmarkDetailResponse{Bookmark: b, Versions: versions}, rows.Err()
+	return r.getTaxonomyBookmarkDetail(ctx, privateTaxonomy, userID, bookmarkID)
+}
+
+func (r *PostgresRepository) GetPrivateBookmarkSidebarStats(ctx context.Context, userID string) (domain.BookmarkSidebarStatsResponse, error) {
+	return r.taxonomySidebarStats(ctx, privateTaxonomy, userID)
+}
+
+func (r *PostgresRepository) UpdatePrivateBookmarkMetadata(ctx context.Context, userID, bookmarkID string, input domain.BookmarkMetadataUpdateRequest) (*domain.Bookmark, error) {
+	return r.updateTaxonomyBookmarkMetadata(ctx, privateTaxonomy, userID, bookmarkID, input)
+}
+
+func (r *PostgresRepository) DeletePrivateBookmark(ctx context.Context, userID, bookmarkID string) (bool, error) {
+	return r.deleteTaxonomyBookmark(ctx, privateTaxonomy, userID, bookmarkID)
+}
+
+func (r *PostgresRepository) ListPrivateFolders(ctx context.Context, userID string) ([]domain.Folder, error) {
+	return r.listTaxonomyFolders(ctx, privateTaxonomy, userID)
+}
+
+func (r *PostgresRepository) CreatePrivateFolder(ctx context.Context, userID string, input domain.FolderCreateRequest) (domain.Folder, error) {
+	return r.createTaxonomyFolder(ctx, privateTaxonomy, userID, input)
+}
+
+func (r *PostgresRepository) UpdatePrivateFolder(ctx context.Context, userID string, folderID string, input domain.FolderUpdateRequest) (*domain.Folder, error) {
+	return r.updateTaxonomyFolder(ctx, privateTaxonomy, userID, folderID, input)
+}
+
+func (r *PostgresRepository) DeletePrivateFolder(ctx context.Context, userID string, folderID string) (bool, error) {
+	return r.deleteTaxonomyFolder(ctx, privateTaxonomy, userID, folderID)
+}
+
+func (r *PostgresRepository) ListPrivateTags(ctx context.Context, userID string) ([]domain.Tag, error) {
+	return r.listTaxonomyTags(ctx, privateTaxonomy, userID)
+}
+
+func (r *PostgresRepository) CreatePrivateTag(ctx context.Context, userID string, input domain.TagCreateRequest) (domain.Tag, error) {
+	return r.createTaxonomyTag(ctx, privateTaxonomy, userID, input)
+}
+
+func (r *PostgresRepository) UpdatePrivateTag(ctx context.Context, userID string, tagID string, input domain.TagUpdateRequest) (*domain.Tag, error) {
+	return r.updateTaxonomyTag(ctx, privateTaxonomy, userID, tagID, input)
+}
+
+func (r *PostgresRepository) DeletePrivateTag(ctx context.Context, userID string, tagID string) (bool, error) {
+	return r.deleteTaxonomyTag(ctx, privateTaxonomy, userID, tagID)
 }

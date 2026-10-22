@@ -210,7 +210,7 @@ export interface MoveActiveTabBookmarkToPrivateRequest {
 export interface MoveActiveTabBookmarkToPrivateResponse {
   ok: boolean;
   task?: CaptureTask;
-  /** Set when the private copy was saved but the standard bookmark could not be removed. */
+  /** Set when the private copy was saved but the standard bookmark could not be removed or its folder/tags could not be carried over. */
   warning?: string;
   error?: string;
 }

@@ -204,6 +204,25 @@ export const captureUploads = pgTable(
   }),
 );
 
+export const privateFolders = pgTable(
+  "private_folders",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    path: text("path").notNull(),
+    parentId: uuid("parent_id").references((): AnyPgColumn => privateFolders.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    privateFolderPathIdx: uniqueIndex("private_folders_user_path_idx").on(table.userId, table.path),
+    privateFolderParentIdx: index("private_folders_user_parent_idx").on(table.userId, table.parentId),
+  }),
+);
+
 export const privateBookmarks = pgTable(
   "private_bookmarks",
   {
@@ -217,12 +236,14 @@ export const privateBookmarks = pgTable(
     title: text("title").notNull(),
     domain: varchar("domain", { length: 255 }).notNull(),
     latestVersionId: uuid("latest_version_id"),
+    folderId: uuid("folder_id").references(() => privateFolders.id, { onDelete: "set null" }),
     note: text("note").default("").notNull(),
     isFavorite: boolean("is_favorite").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    privateBookmarkUserFolderIdx: index("private_bookmarks_user_folder_idx").on(table.userId, table.folderId),
     privateBookmarkUserUrlIdx: index("private_bookmarks_user_url_idx").on(table.userId, table.normalizedUrlHash),
     privateBookmarkUserUpdatedIdx: index("private_bookmarks_user_updated_idx").on(table.userId, table.updatedAt),
     privateBookmarkLatestVersionIdx: index("private_bookmarks_latest_version_idx").on(table.latestVersionId),
@@ -359,6 +380,39 @@ export const bookmarkTags = pgTable(
   (table) => ({
     pk: primaryKey({ columns: [table.bookmarkId, table.tagId] }),
     bookmarkTagsTagIdx: index("bookmark_tags_tag_idx").on(table.tagId),
+  }),
+);
+
+export const privateTags = pgTable(
+  "private_tags",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 80 }).notNull(),
+    color: varchar("color", { length: 32 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    privateTagUserNameIdx: uniqueIndex("private_tags_user_name_idx").on(table.userId, table.name),
+  }),
+);
+
+export const privateBookmarkTags = pgTable(
+  "private_bookmark_tags",
+  {
+    bookmarkId: uuid("bookmark_id")
+      .notNull()
+      .references(() => privateBookmarks.id, { onDelete: "cascade" }),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => privateTags.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.bookmarkId, table.tagId] }),
+    privateBookmarkTagsTagIdx: index("private_bookmark_tags_tag_idx").on(table.tagId),
   }),
 );
 

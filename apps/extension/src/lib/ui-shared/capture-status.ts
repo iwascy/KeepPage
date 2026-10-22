@@ -147,12 +147,21 @@ export function captureStatusLabel(status: CaptureTask["status"]) {
     case "uploaded":
       return "已上传";
     case "indexed":
-      return "建索引中";
+      return "已索引";
     case "synced":
-      return "已入库";
+      return "已存档";
     case "failed":
       return "失败";
   }
+}
+
+export type CaptureStatusTone = "success" | "pending" | "danger";
+
+export function captureStatusTone(status: CaptureTask["status"]): CaptureStatusTone {
+  if (status === "failed") {
+    return "danger";
+  }
+  return isSuccessStatus(status) ? "success" : "pending";
 }
 
 export function captureProfileLabel(profile: CaptureProfile) {

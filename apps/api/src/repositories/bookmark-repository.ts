@@ -33,8 +33,11 @@ import type {
   ExtensionDevice,
 } from "@keeppage/domain";
 
+export type BookmarkSearchSort = "created" | "updated" | "title" | "relevance";
+
 export type BookmarkSearchQuery = {
   q?: string;
+  sort?: BookmarkSearchSort;
   quality?: "high" | "medium" | "low";
   view?: BookmarkListView;
   domain?: string;
@@ -237,7 +240,29 @@ export interface PrivateCaptureRepository extends RepositoryInfo {
 
 export interface PrivateBookmarkReadRepository extends RepositoryInfo {
   searchPrivateBookmarks(userId: string, query: BookmarkSearchQuery): Promise<BookmarkSearchResponse>;
+  getPrivateBookmarkSidebarStats(userId: string): Promise<BookmarkSidebarStatsResponse>;
   getPrivateBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null>;
+}
+
+export interface PrivateBookmarkWriteRepository extends RepositoryInfo {
+  deletePrivateBookmark(userId: string, bookmarkId: string): Promise<boolean>;
+  updatePrivateBookmarkMetadata(
+    userId: string,
+    bookmarkId: string,
+    input: BookmarkMetadataUpdateRequest,
+  ): Promise<Bookmark | null>;
+}
+
+/** Private folders/tags: an isolated taxonomy that only private bookmarks may reference. */
+export interface PrivateTaxonomyRepository extends RepositoryInfo {
+  listPrivateFolders(userId: string): Promise<Folder[]>;
+  createPrivateFolder(userId: string, input: FolderCreateRequest): Promise<Folder>;
+  updatePrivateFolder(userId: string, folderId: string, input: FolderUpdateRequest): Promise<Folder | null>;
+  deletePrivateFolder(userId: string, folderId: string): Promise<boolean>;
+  listPrivateTags(userId: string): Promise<Tag[]>;
+  createPrivateTag(userId: string, input: TagCreateRequest): Promise<Tag>;
+  updatePrivateTag(userId: string, tagId: string, input: TagUpdateRequest): Promise<Tag | null>;
+  deletePrivateTag(userId: string, tagId: string): Promise<boolean>;
 }
 
 export interface IngestRepository extends RepositoryInfo {
@@ -320,6 +345,8 @@ export type BookmarkRepository =
   & PrivateModeRepository
   & PrivateCaptureRepository
   & PrivateBookmarkReadRepository
+  & PrivateBookmarkWriteRepository
+  & PrivateTaxonomyRepository
   & IngestRepository
   & BookmarkReadRepository
   & BookmarkWriteRepository

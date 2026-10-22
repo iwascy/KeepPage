@@ -1,9 +1,12 @@
 import { z } from "zod";
 import {
   bookmarkDetailResponseSchema,
+  bookmarkMetadataUpdateRequestSchema,
   bookmarkSearchResponseSchema,
+  bookmarkSidebarStatsResponseSchema,
   captureStatusSchema,
   captureTaskOwnerSchema,
+  workspaceBootstrapResponseSchema,
 } from "./capture";
 import {
   privateAutoLockSchema,
@@ -53,6 +56,11 @@ export const privateModeUnlockResponseSchema = z.object({
 
 export const privateBookmarkSearchResponseSchema = bookmarkSearchResponseSchema;
 export const privateBookmarkDetailResponseSchema = bookmarkDetailResponseSchema;
+// The private workspace mirrors the standard taxonomy contracts under `/private/*`;
+// see docs/private-workspace.md.
+export const privateWorkspaceBootstrapResponseSchema = workspaceBootstrapResponseSchema;
+export const privateBookmarkSidebarStatsResponseSchema = bookmarkSidebarStatsResponseSchema;
+export const privateBookmarkMetadataUpdateRequestSchema = bookmarkMetadataUpdateRequestSchema;
 
 export type PrivateVaultSummary = z.infer<typeof privateVaultSummarySchema>;
 export type PrivateCaptureTaskShell = z.infer<typeof privateCaptureTaskShellSchema>;

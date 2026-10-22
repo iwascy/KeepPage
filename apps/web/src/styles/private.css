@@ -45,12 +45,6 @@
 .private-mode-password-settings summary > .app-icon { color: #68717d; flex: 0 0 auto; }
 .private-mode-password-settings[open] summary > .app-icon { transform: rotate(90deg); }
 .private-mode-password-settings[open] summary { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid #eceef1; }
-.private-mode-list { display: grid; gap: 10px; }
-.private-mode-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 16px; border: 1px solid #e3e5e8; border-radius: 10px; background: #fff; color: #20242b; text-align: left; cursor: pointer; }
-.private-mode-item:hover { background: #f8f9fb; border-color: #cbd1d9; }
-.private-mode-item > div { min-width: 0; }
-.private-mode-item strong { display: block; margin-bottom: 4px; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
-.private-mode-item span { white-space: nowrap; font-size: 12px; color: #626873; }
 @media (max-width: 640px) {
   .private-mode-page { gap: 18px; }
   .private-mode-header { flex-direction: column; gap: 16px; }
@@ -59,7 +53,27 @@
   .private-mode-overview > div { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
   .private-mode-overview > div + div { border-left: 0; padding: 14px 0 0; border-top: 1px solid #eceef1; }
   .private-mode-overview dt { margin: 0; }
-  .private-mode-item { flex-direction: column; align-items: flex-start; gap: 6px; }
-  .private-mode-item span { white-space: normal; }
   .private-mode-page .primary-button, .private-mode-page .secondary-button { min-height: 44px; }
 }
+
+/* Workspace scope switch (standard / private) */
+.home-scope-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 12px 0 14px; padding: 3px; border-radius: var(--radius-button); background: rgba(232, 235, 239, 0.9); }
+.home-scope-option { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: #5f6873; font-size: 13px; font-weight: 550; cursor: pointer; transition: background-color .2s ease, color .2s ease; }
+.home-scope-option .app-icon { font-size: 15px; }
+.home-scope-option:hover { color: #20242b; }
+.home-scope-option.is-active { background: #fff; color: #18181b; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
+.home-scope-option:focus-visible { outline: 2px solid #3c6fd5; outline-offset: 2px; }
+.is-private-scope .home-scope-option.is-active:last-child { background: #262a31; color: #fff; }
+.library-private-badge { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; padding: 2px 8px; border-radius: 999px; background: #262a31; color: #fff; font-size: 12px; font-weight: 550; letter-spacing: 0; vertical-align: 4px; }
+.library-private-badge .app-icon { font-size: 13px; }
+
+/* Locked private workspace gate */
+.private-gate { display: grid; place-items: center; min-height: min(560px, 70vh); padding: 24px; }
+.private-gate-card { display: grid; gap: 18px; width: min(420px, 100%); padding: 28px; border: 1px solid #e3e5e8; border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgb(20 28 40 / 2%); text-align: center; }
+.private-gate-card > .app-icon { justify-self: center; display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #f1f3f5; color: #3e4650; font-size: 22px; }
+.private-gate-card h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.private-gate-card p { margin: 0; color: #626873; font-size: 13px; line-height: 1.65; }
+.private-gate-card .private-mode-form { width: 100%; text-align: left; }
+.private-gate-card .private-mode-action-row { justify-content: center; }
+.private-gate-links { display: flex; justify-content: center; gap: 16px; }
+.private-gate-links button { border: 0; background: none; padding: 0; color: #4a5260; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }

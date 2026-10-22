@@ -24,6 +24,7 @@ import { registerImportRoutes } from "./imports";
 import { registerPrivateBookmarkRoutes } from "./private-bookmarks";
 import { registerPrivateCaptureRoutes } from "./private-captures";
 import { registerPrivateModeRoutes } from "./private-mode";
+import { registerPrivateTaxonomyRoutes } from "./private-taxonomy";
 import { registerExtensionDeviceRoutes } from "./extension-devices";
 import { registerPublicShareRoutes } from "./public-shares";
 import { registerShareRoutes } from "./shares";
@@ -62,6 +63,7 @@ export async function registerRoutes(
   await registerWorkspaceRoutes(app, authService, repository, bookmarkService, responseCache);
   await registerBookmarkRoutes(app, authService, bookmarkService, responseCache);
   await registerPrivateBookmarkRoutes(app, authService, privateModeService, bookmarkService, responseCache);
+  await registerPrivateTaxonomyRoutes(app, authService, privateModeService, repository, bookmarkService, responseCache);
   await registerFolderRoutes(app, authService, repository, responseCache);
   await registerTagRoutes(app, authService, repository, responseCache);
   await registerImportRoutes(app, authService, importService, responseCache);

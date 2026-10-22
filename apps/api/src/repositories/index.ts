@@ -32,8 +32,10 @@ export type {
   IngestRepository,
   ObjectAccessRepository,
   PrivateBookmarkReadRepository,
+  PrivateBookmarkWriteRepository,
   PrivateCaptureRepository,
   PrivateModeRepository,
+  PrivateTaxonomyRepository,
   ShareRepository,
   TaxonomyRepository,
 } from "./bookmark-repository";

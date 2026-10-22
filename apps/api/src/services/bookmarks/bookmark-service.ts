@@ -9,6 +9,7 @@ import {
 } from "@keeppage/domain";
 import { HttpError } from "../../lib/http-error";
 import type {
+  BookmarkDetail,
   BookmarkRepository,
   BookmarkReadRepository,
   BookmarkWriteRepository,
@@ -113,6 +114,37 @@ export class BookmarkService {
     });
   }
 
+  async getPrivateBookmarkSidebarStats(userId: string) {
+    const result = await this.repository.getPrivateBookmarkSidebarStats(userId);
+    return bookmarkSidebarStatsResponseSchema.parse(result);
+  }
+
+  async deletePrivateBookmark(userId: string, bookmarkId: string) {
+    const detail = await this.repository.getPrivateBookmarkDetail(userId, bookmarkId);
+    if (!detail) {
+      throw new HttpError(404, "PrivateBookmarkNotFound", "Private bookmark not found.");
+    }
+    const deleted = await this.repository.deletePrivateBookmark(userId, bookmarkId);
+    if (!deleted) {
+      throw new HttpError(404, "PrivateBookmarkNotFound", "Private bookmark not found.");
+    }
+
+    await this.deleteVersionObjects(detail.versions);
+  }
+
+  async updatePrivateBookmarkMetadata(
+    userId: string,
+    bookmarkId: string,
+    input: BookmarkMetadataUpdateRequest,
+  ) {
+    const bookmark = await this.repository.updatePrivateBookmarkMetadata(userId, bookmarkId, input);
+    if (!bookmark) {
+      throw new HttpError(404, "PrivateBookmarkNotFound", "Private bookmark not found.");
+    }
+
+    return bookmarkSchema.parse(bookmark);
+  }
+
   async deleteBookmark(userId: string, bookmarkId: string) {
     const detail = await this.requireBookmarkDetail(userId, bookmarkId);
     const deleted = await this.repository.deleteBookmark(userId, bookmarkId);
@@ -120,17 +152,7 @@ export class BookmarkService {
       throw new HttpError(404, "BookmarkNotFound", "Bookmark not found.");
     }
 
-    await Promise.allSettled(
-      detail.versions.flatMap((version) => (
-        [
-          this.objectStorage.deleteObject(version.htmlObjectKey),
-          version.readerHtmlObjectKey
-            ? this.objectStorage.deleteObject(version.readerHtmlObjectKey)
-            : Promise.resolve(),
-          ...(version.mediaFiles ?? []).map((mediaFile) => this.objectStorage.deleteObject(mediaFile.objectKey)),
-        ]
-      )),
-    );
+    await this.deleteVersionObjects(detail.versions);
   }
 
   async updateBookmarkMetadata(
@@ -144,6 +166,20 @@ export class BookmarkService {
     }
 
     return bookmarkSchema.parse(bookmark);
+  }
+
+  private async deleteVersionObjects(versions: BookmarkDetail["versions"]) {
+    await Promise.allSettled(
+      versions.flatMap((version) => (
+        [
+          this.objectStorage.deleteObject(version.htmlObjectKey),
+          version.readerHtmlObjectKey
+            ? this.objectStorage.deleteObject(version.readerHtmlObjectKey)
+            : Promise.resolve(),
+          ...(version.mediaFiles ?? []).map((mediaFile) => this.objectStorage.deleteObject(mediaFile.objectKey)),
+        ]
+      )),
+    );
   }
 
   private async requireBookmarkDetail(userId: string, bookmarkId: string) {

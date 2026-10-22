@@ -57,6 +57,7 @@ import * as objectsRepository from "./postgres/objects";
 import * as privateBookmarksRepository from "./postgres/private-bookmarks";
 import * as privateCapturesRepository from "./postgres/private-captures";
 import * as privateModeRepository from "./postgres/private-mode";
+import * as privateTaxonomyRepository from "./postgres/private-taxonomy";
 import * as sharesRepository from "./postgres/shares";
 import * as taxonomyRepository from "./postgres/taxonomy";
 
@@ -210,6 +211,54 @@ export class PostgresBookmarkRepository implements BookmarkRepository {
 
   async getPrivateBookmarkDetail(userId: string, bookmarkId: string): Promise<BookmarkDetail | null> {
     return privateBookmarksRepository.getPrivateBookmarkDetail(this.core, userId, bookmarkId);
+  }
+
+  async getPrivateBookmarkSidebarStats(userId: string): Promise<BookmarkSidebarStatsResponse> {
+    return privateBookmarksRepository.getPrivateBookmarkSidebarStats(this.core, userId);
+  }
+
+  async deletePrivateBookmark(userId: string, bookmarkId: string): Promise<boolean> {
+    return privateBookmarksRepository.deletePrivateBookmark(this.core, userId, bookmarkId);
+  }
+
+  async updatePrivateBookmarkMetadata(
+    userId: string,
+    bookmarkId: string,
+    input: BookmarkMetadataUpdateRequest,
+  ): Promise<Bookmark | null> {
+    return privateBookmarksRepository.updatePrivateBookmarkMetadata(this.core, userId, bookmarkId, input);
+  }
+
+  async listPrivateFolders(userId: string): Promise<Folder[]> {
+    return privateTaxonomyRepository.listPrivateFolders(this.core, userId);
+  }
+
+  async createPrivateFolder(userId: string, input: FolderCreateRequest): Promise<Folder> {
+    return privateTaxonomyRepository.createPrivateFolder(this.core, userId, input);
+  }
+
+  async updatePrivateFolder(userId: string, folderId: string, input: FolderUpdateRequest): Promise<Folder | null> {
+    return privateTaxonomyRepository.updatePrivateFolder(this.core, userId, folderId, input);
+  }
+
+  async deletePrivateFolder(userId: string, folderId: string): Promise<boolean> {
+    return privateTaxonomyRepository.deletePrivateFolder(this.core, userId, folderId);
+  }
+
+  async listPrivateTags(userId: string): Promise<Tag[]> {
+    return privateTaxonomyRepository.listPrivateTags(this.core, userId);
+  }
+
+  async createPrivateTag(userId: string, input: TagCreateRequest): Promise<Tag> {
+    return privateTaxonomyRepository.createPrivateTag(this.core, userId, input);
+  }
+
+  async updatePrivateTag(userId: string, tagId: string, input: TagUpdateRequest): Promise<Tag | null> {
+    return privateTaxonomyRepository.updatePrivateTag(this.core, userId, tagId, input);
+  }
+
+  async deletePrivateTag(userId: string, tagId: string): Promise<boolean> {
+    return privateTaxonomyRepository.deletePrivateTag(this.core, userId, tagId);
   }
 
   async deleteBookmark(userId: string, bookmarkId: string): Promise<boolean> {

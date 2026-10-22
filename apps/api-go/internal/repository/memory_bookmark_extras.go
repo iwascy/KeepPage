@@ -35,7 +35,7 @@ func (r *MemoryRepository) GetBookmarkDetail(_ context.Context, userID, bookmark
 			state := r.captureState()
 			for _, capture := range state.versions {
 				if capture.userID == userID && capture.bookmarkID == bookmarkID {
-					versions = append(versions, domain.BookmarkVersion{ID: capture.versionID, BookmarkID: bookmarkID, VersionNo: len(versions) + 1, HTMLObjectKey: capture.objectKey, HTMLSHA256: capture.hash, MediaFiles: append([]domain.CaptureMediaFile(nil), capture.mediaFiles...), CaptureProfile: "standard", CreatedAt: item.UpdatedAt})
+					versions = append(versions, domain.BookmarkVersion{ID: capture.versionID, BookmarkID: bookmarkID, VersionNo: len(versions) + 1, HTMLObjectKey: capture.objectKey, HTMLSHA256: capture.hash, MediaFiles: append([]domain.CaptureMediaFile(nil), capture.mediaFiles...), CaptureProfile: "standard", Quality: capture.quality, CreatedAt: item.UpdatedAt})
 				}
 			}
 			sort.Slice(versions, func(i, j int) bool { return versions[i].VersionNo > versions[j].VersionNo })
@@ -67,33 +67,9 @@ func (r *MemoryRepository) UpdateBookmarkMetadata(_ context.Context, userID, boo
 		if item.ID != bookmarkID {
 			continue
 		}
-		if input.Note.Present {
-			item.Note = derefString(input.Note.Value)
+		if err := applyMemoryBookmarkMetadata(r.publicMemoryTaxonomy(), userID, item, input); err != nil {
+			return nil, err
 		}
-		if input.IsFavorite != nil {
-			item.IsFavorite = *input.IsFavorite
-		}
-		if input.FolderPath.Present {
-			item.Folder = r.ensureMemoryFolderPath(userID, derefString(input.FolderPath.Value))
-		} else if input.FolderID.Present {
-			if input.FolderID.Value == nil {
-				item.Folder = nil
-			} else if f, ok := r.folders[userID][*input.FolderID.Value]; ok {
-				copy := f
-				item.Folder = &copy
-			}
-		}
-		if input.Tags != nil {
-			item.Tags = r.ensureMemoryTags(userID, *input.Tags)
-		} else if input.TagIDs != nil {
-			item.Tags = []domain.Tag{}
-			for _, id := range *input.TagIDs {
-				if tag, ok := r.tags[userID][id]; ok {
-					item.Tags = append(item.Tags, tag)
-				}
-			}
-		}
-		item.UpdatedAt = time.Now().UTC()
 		r.bookmarks[userID] = items
 		copy := *item
 		return &copy, nil

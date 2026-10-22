@@ -10,19 +10,6 @@ import (
 	"github.com/keeppage/keeppage/apps/api-go/internal/httperror"
 )
 
-func (s *Server) handleBookmarkSidebarStats(w http.ResponseWriter, r *http.Request) {
-	u, e := s.requireUser(r, auth.RequireOptions{AllowExtensionDevice: true})
-	if e != nil {
-		writeError(s.logger, w, e)
-		return
-	}
-	p, e := s.taxonomy.GetBookmarkSidebarStats(r.Context(), u.ID)
-	if e != nil {
-		writeError(s.logger, w, e)
-		return
-	}
-	writeJSON(w, http.StatusOK, p)
-}
 func (s *Server) handleBookmarkStatus(w http.ResponseWriter, r *http.Request) {
 	u, e := s.requireUser(r, auth.RequireOptions{AllowExtensionDevice: true})
 	if e != nil {
@@ -72,13 +59,9 @@ func (s *Server) handleUpdateBookmarkMetadata(w http.ResponseWriter, r *http.Req
 		writeError(s.logger, w, e)
 		return
 	}
-	var in domain.BookmarkMetadataUpdateRequest
-	if e = decodeJSON(r, &in); e != nil {
+	in, e := decodeBookmarkMetadata(r)
+	if e != nil {
 		writeError(s.logger, w, e)
-		return
-	}
-	if !in.Note.Present && !in.FolderID.Present && !in.FolderPath.Present && in.TagIDs == nil && in.Tags == nil && in.IsFavorite == nil {
-		writeError(s.logger, w, httperror.BadRequest("ValidationError", "At least one field must be updated.", nil))
 		return
 	}
 	p, e := s.bookmarkExtras.Update(r.Context(), u.ID, chi.URLParam(r, "bookmarkID"), in)

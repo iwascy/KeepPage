@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/keeppage/keeppage/apps/api-go/internal/domain"
+	"github.com/keeppage/keeppage/apps/api-go/internal/httperror"
 )
 
 func (r *PostgresRepository) FindBookmarkByURL(ctx context.Context, userID, rawURL string) (*domain.Bookmark, error) {
@@ -34,14 +35,18 @@ func (r *PostgresRepository) FindBookmarkByURL(ctx context.Context, userID, rawU
 }
 
 func (r *PostgresRepository) GetBookmarkDetail(ctx context.Context, userID, bookmarkID string) (*domain.BookmarkDetailResponse, error) {
-	b, err := r.loadBookmark(ctx, userID, bookmarkID)
+	return r.getTaxonomyBookmarkDetail(ctx, publicTaxonomy, userID, bookmarkID)
+}
+
+func (r *PostgresRepository) getTaxonomyBookmarkDetail(ctx context.Context, t taxonomyTables, userID, bookmarkID string) (*domain.BookmarkDetailResponse, error) {
+	b, err := r.loadTaxonomyBookmark(ctx, t, userID, bookmarkID)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.pool.Query(ctx, `select id::text, bookmark_id::text, version_no, html_object_key, reader_html_object_key, html_sha256, text_sha256, text_simhash, capture_profile::text, quality_report_json, source_meta_json, created_at from bookmark_versions where bookmark_id=$1 order by version_no desc`, bookmarkID)
+	rows, err := r.pool.Query(ctx, t.sql(`select id::text, bookmark_id::text, version_no, html_object_key, reader_html_object_key, html_sha256, text_sha256, text_simhash, capture_profile::text, quality_report_json, source_meta_json, created_at from {versions} where bookmark_id=$1 order by version_no desc`), bookmarkID)
 	if err != nil {
 		return nil, err
 	}
@@ -65,18 +70,26 @@ func (r *PostgresRepository) GetBookmarkDetail(ctx context.Context, userID, book
 }
 
 func (r *PostgresRepository) DeleteBookmark(ctx context.Context, userID, bookmarkID string) (bool, error) {
-	c, err := r.pool.Exec(ctx, `delete from bookmarks where id=$1 and user_id=$2`, bookmarkID, userID)
+	return r.deleteTaxonomyBookmark(ctx, publicTaxonomy, userID, bookmarkID)
+}
+
+func (r *PostgresRepository) deleteTaxonomyBookmark(ctx context.Context, t taxonomyTables, userID, bookmarkID string) (bool, error) {
+	c, err := r.pool.Exec(ctx, t.sql(`delete from {bookmarks} where id=$1 and user_id=$2`), bookmarkID, userID)
 	return c.RowsAffected() > 0, err
 }
 
 func (r *PostgresRepository) UpdateBookmarkMetadata(ctx context.Context, userID, bookmarkID string, input domain.BookmarkMetadataUpdateRequest) (*domain.Bookmark, error) {
+	return r.updateTaxonomyBookmarkMetadata(ctx, publicTaxonomy, userID, bookmarkID, input)
+}
+
+func (r *PostgresRepository) updateTaxonomyBookmarkMetadata(ctx context.Context, t taxonomyTables, userID, bookmarkID string, input domain.BookmarkMetadataUpdateRequest) (*domain.Bookmark, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
 	var exists bool
-	if err = tx.QueryRow(ctx, `select exists(select 1 from bookmarks where id=$1 and user_id=$2)`, bookmarkID, userID).Scan(&exists); err != nil || !exists {
+	if err = tx.QueryRow(ctx, t.sql(`select exists(select 1 from {bookmarks} where id=$1 and user_id=$2)`), bookmarkID, userID).Scan(&exists); err != nil || !exists {
 		if err == nil {
 			return nil, nil
 		}
@@ -95,10 +108,19 @@ func (r *PostgresRepository) UpdateBookmarkMetadata(ctx context.Context, userID,
 		add("is_favorite", *input.IsFavorite)
 	}
 	if input.FolderID.Present {
+		if t.strictFolderIDs && input.FolderID.Value != nil {
+			var owned bool
+			if err = tx.QueryRow(ctx, t.sql(`select exists(select 1 from {folders} where id::text=$1 and user_id=$2)`), *input.FolderID.Value, userID).Scan(&owned); err != nil {
+				return nil, err
+			}
+			if !owned {
+				return nil, httperror.NotFound("FolderNotFound", "Folder not found.")
+			}
+		}
 		add("folder_id", input.FolderID.Value)
 	}
 	if input.FolderPath.Present {
-		id, e := r.ensureFolderPathID(ctx, tx, userID, derefString(input.FolderPath.Value), time.Now().UTC())
+		id, e := r.ensureTaxonomyFolderPathID(ctx, tx, t, userID, derefString(input.FolderPath.Value), time.Now().UTC())
 		if e != nil {
 			return nil, e
 		}
@@ -106,24 +128,24 @@ func (r *PostgresRepository) UpdateBookmarkMetadata(ctx context.Context, userID,
 	}
 	if len(sets) > 0 {
 		sets = append(sets, "updated_at=now()")
-		if _, err = tx.Exec(ctx, `update bookmarks set `+strings.Join(sets, ",")+` where id=$1 and user_id=$2`, args...); err != nil {
+		if _, err = tx.Exec(ctx, t.sql(`update {bookmarks} set `)+strings.Join(sets, ",")+` where id=$1 and user_id=$2`, args...); err != nil {
 			return nil, err
 		}
 	}
 	if input.Tags != nil || input.TagIDs != nil {
-		if _, err = tx.Exec(ctx, `update bookmarks set updated_at=now() where id=$1 and user_id=$2`, bookmarkID, userID); err != nil {
+		if _, err = tx.Exec(ctx, t.sql(`update {bookmarks} set updated_at=now() where id=$1 and user_id=$2`), bookmarkID, userID); err != nil {
 			return nil, err
 		}
-		if _, err = tx.Exec(ctx, `delete from bookmark_tags where bookmark_id=$1`, bookmarkID); err != nil {
+		if _, err = tx.Exec(ctx, t.sql(`delete from {bookmark_tags} where bookmark_id=$1`), bookmarkID); err != nil {
 			return nil, err
 		}
 		if input.Tags != nil {
-			if err = r.attachTagNames(ctx, tx, userID, bookmarkID, *input.Tags, time.Now().UTC()); err != nil {
+			if err = r.attachTaxonomyTagNames(ctx, tx, t, userID, bookmarkID, *input.Tags, time.Now().UTC()); err != nil {
 				return nil, err
 			}
 		} else {
 			for _, tagID := range *input.TagIDs {
-				if _, err = tx.Exec(ctx, `insert into bookmark_tags (bookmark_id,tag_id,created_at) select $1,id,now() from tags where id=$2 and user_id=$3 on conflict do nothing`, bookmarkID, tagID, userID); err != nil {
+				if _, err = tx.Exec(ctx, t.sql(`insert into {bookmark_tags} (bookmark_id,tag_id,created_at) select $1,id,now() from {tags} where id=$2 and user_id=$3 on conflict do nothing`), bookmarkID, tagID, userID); err != nil {
 					return nil, err
 				}
 			}
@@ -132,7 +154,7 @@ func (r *PostgresRepository) UpdateBookmarkMetadata(ctx context.Context, userID,
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	b, err := r.loadBookmark(ctx, userID, bookmarkID)
+	b, err := r.loadTaxonomyBookmark(ctx, t, userID, bookmarkID)
 	return &b, err
 }
 

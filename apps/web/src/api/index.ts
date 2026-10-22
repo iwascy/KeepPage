@@ -20,12 +20,15 @@ import {
   folderListResponseSchema,
   folderSchema,
   privateBookmarkDetailResponseSchema,
+  privateBookmarkMetadataUpdateRequestSchema,
   privateBookmarkSearchResponseSchema,
+  privateBookmarkSidebarStatsResponseSchema,
   privateModePasswordChangeRequestSchema,
   privateModeSetupRequestSchema,
   privateModeUnlockRequestSchema,
   privateModeUnlockResponseSchema,
   privateVaultSummarySchema,
+  privateWorkspaceBootstrapResponseSchema,
   tagListResponseSchema,
   tagSchema,
   extensionConnectInitRequestSchema,
@@ -718,7 +721,17 @@ export async function revokeExtensionDevice(deviceId: string, token: string) {
   });
 }
 
-export async function fetchBookmarks(query: BookmarkQuery, token: string, signal?: AbortSignal): Promise<BookmarkResult> {
+/** Standard and private workspaces share one API shape; private calls live under `/private`. */
+function workspacePath(path: string, privateToken?: string) {
+  return privateToken ? `/private${path}` : path;
+}
+
+export async function fetchBookmarks(
+  query: BookmarkQuery,
+  token: string,
+  signal?: AbortSignal,
+  privateToken?: string,
+): Promise<BookmarkResult> {
   const params = new URLSearchParams();
   if (query.search.trim()) {
     params.set("q", query.search.trim());
@@ -740,11 +753,16 @@ export async function fetchBookmarks(query: BookmarkQuery, token: string, signal
   if (query.offset !== undefined) {
     params.set("offset", String(query.offset));
   }
-  const path = `/bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
-  const payload = await requestJsonCached(path, bookmarkSearchResponseSchema, {
-    token,
-    signal,
-  });
+  const path = workspacePath(`/bookmarks${params.toString() ? `?${params.toString()}` : ""}`, privateToken);
+  const payload = await requestJsonCached(
+    path,
+    privateToken ? privateBookmarkSearchResponseSchema : bookmarkSearchResponseSchema,
+    {
+      token,
+      privateToken,
+      signal,
+    },
+  );
   return {
     items: payload.items,
     total: payload.total,
@@ -796,65 +814,41 @@ export async function lockPrivateMode(token: string): Promise<PrivateVaultSummar
   });
 }
 
-export async function fetchPrivateBookmarks(
-  query: BookmarkQuery,
-  token: string,
-  privateToken: string,
-  signal?: AbortSignal,
-): Promise<BookmarkResult> {
-  const params = new URLSearchParams();
-  if (query.search.trim()) {
-    params.set("q", query.search.trim());
-  }
-  params.set("sort", query.sort ?? "created");
-  params.set("view", bookmarkListViewSchema.parse(query.view));
-  if (query.quality !== "all") {
-    params.set("quality", query.quality);
-  }
-  if (query.limit !== undefined) {
-    params.set("limit", String(query.limit));
-  }
-  if (query.offset !== undefined) {
-    params.set("offset", String(query.offset));
-  }
-  const path = `/private/bookmarks${params.toString() ? `?${params.toString()}` : ""}`;
-  const payload = await requestJsonCached(path, privateBookmarkSearchResponseSchema, {
-    token,
-    privateToken,
-    signal,
-  });
-  return {
-    items: payload.items,
-    total: payload.total,
-    source: "api",
-  };
-}
-
-export async function fetchBookmarkFolderCounts(token: string): Promise<Record<string, number>> {
-  const payload = await requestJsonCached("/bookmarks/sidebar-stats", bookmarkSidebarStatsResponseSchema, {
-    token,
-  });
+export async function fetchBookmarkFolderCounts(token: string, privateToken?: string): Promise<Record<string, number>> {
+  const payload = await requestJsonCached(
+    workspacePath("/bookmarks/sidebar-stats", privateToken),
+    privateToken ? privateBookmarkSidebarStatsResponseSchema : bookmarkSidebarStatsResponseSchema,
+    {
+      token,
+      privateToken,
+    },
+  );
   return payload.folderCounts.reduce<Record<string, number>>((accumulator, item) => {
     accumulator[item.folderId] = item.count;
     return accumulator;
   }, {});
 }
 
-export async function fetchWorkspaceBootstrap(token: string): Promise<WorkspaceBootstrapResult> {
-  return requestJsonCached("/workspace/bootstrap", workspaceBootstrapResponseSchema, {
-    token,
-  });
+export async function fetchWorkspaceBootstrap(token: string, privateToken?: string): Promise<WorkspaceBootstrapResult> {
+  return requestJsonCached(
+    workspacePath("/workspace/bootstrap", privateToken),
+    privateToken ? privateWorkspaceBootstrapResponseSchema : workspaceBootstrapResponseSchema,
+    {
+      token,
+      privateToken,
+    },
+  );
 }
 
-export async function fetchPrivateBookmarkDetail(
+export async function fetchBookmarkDetail(
   bookmarkId: string,
   token: string,
-  privateToken: string,
+  privateToken?: string,
 ): Promise<BookmarkDetailResult | null> {
   try {
     const payload = await requestJson(
-      `/private/bookmarks/${encodeURIComponent(bookmarkId)}`,
-      privateBookmarkDetailResponseSchema,
+      workspacePath(`/bookmarks/${encodeURIComponent(bookmarkId)}`, privateToken),
+      privateToken ? privateBookmarkDetailResponseSchema : bookmarkDetailResponseSchema,
       {
         token,
         privateToken,
@@ -873,35 +867,11 @@ export async function fetchPrivateBookmarkDetail(
   }
 }
 
-export async function fetchBookmarkDetail(
-  bookmarkId: string,
-  token: string,
-): Promise<BookmarkDetailResult | null> {
-  try {
-    const payload = await requestJson(
-      `/bookmarks/${encodeURIComponent(bookmarkId)}`,
-      bookmarkDetailResponseSchema,
-      {
-        token,
-      },
-    );
-    return {
-      bookmark: payload.bookmark,
-      versions: payload.versions,
-      source: "api",
-    };
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-export async function deleteBookmark(bookmarkId: string, token: string) {
-  await requestVoid(`/bookmarks/${encodeURIComponent(bookmarkId)}`, {
+export async function deleteBookmark(bookmarkId: string, token: string, privateToken?: string) {
+  await requestVoid(workspacePath(`/bookmarks/${encodeURIComponent(bookmarkId)}`, privateToken), {
     method: "DELETE",
     token,
+    privateToken,
   });
 }
 
@@ -909,76 +879,86 @@ export async function updateBookmarkMetadata(
   bookmarkId: string,
   input: BookmarkMetadataUpdateRequest,
   token: string,
+  privateToken?: string,
 ) {
-  const payload = bookmarkMetadataUpdateRequestSchema.parse(input);
+  const payload = (privateToken ? privateBookmarkMetadataUpdateRequestSchema : bookmarkMetadataUpdateRequestSchema).parse(input);
   return requestJson(
-    `/bookmarks/${encodeURIComponent(bookmarkId)}/metadata`,
+    workspacePath(`/bookmarks/${encodeURIComponent(bookmarkId)}/metadata`, privateToken),
     bookmarkSchema,
     {
       method: "PATCH",
       token,
+      privateToken,
       body: payload,
     },
   );
 }
 
-export async function fetchFolders(token: string): Promise<Folder[]> {
-  const payload = await requestJsonCached("/folders", folderListResponseSchema, {
+export async function fetchFolders(token: string, privateToken?: string): Promise<Folder[]> {
+  const payload = await requestJsonCached(workspacePath("/folders", privateToken), folderListResponseSchema, {
     token,
+    privateToken,
   });
   return payload.items;
 }
 
-export async function createFolder(input: FolderCreateRequest, token: string) {
-  return requestJson("/folders", folderSchema, {
+export async function createFolder(input: FolderCreateRequest, token: string, privateToken?: string) {
+  return requestJson(workspacePath("/folders", privateToken), folderSchema, {
     method: "POST",
     token,
+    privateToken,
     body: input,
   });
 }
 
-export async function updateFolder(folderId: string, input: FolderUpdateRequest, token: string) {
-  return requestJson(`/folders/${encodeURIComponent(folderId)}`, folderSchema, {
+export async function updateFolder(folderId: string, input: FolderUpdateRequest, token: string, privateToken?: string) {
+  return requestJson(workspacePath(`/folders/${encodeURIComponent(folderId)}`, privateToken), folderSchema, {
     method: "PATCH",
     token,
+    privateToken,
     body: input,
   });
 }
 
-export async function deleteFolder(folderId: string, token: string) {
-  await requestVoid(`/folders/${encodeURIComponent(folderId)}`, {
+export async function deleteFolder(folderId: string, token: string, privateToken?: string) {
+  await requestVoid(workspacePath(`/folders/${encodeURIComponent(folderId)}`, privateToken), {
     method: "DELETE",
     token,
+    privateToken,
   });
 }
 
-export async function fetchTags(token: string): Promise<Tag[]> {
-  const payload = await requestJsonCached("/tags", tagListResponseSchema, {
+export async function fetchTags(token: string, privateToken?: string): Promise<Tag[]> {
+  const payload = await requestJsonCached(workspacePath("/tags", privateToken), tagListResponseSchema, {
     token,
+    privateToken,
   });
   return payload.items;
 }
 
-export async function createTag(input: TagCreateRequest, token: string) {
-  return requestJson("/tags", tagSchema, {
+export async function createTag(input: TagCreateRequest, token: string, privateToken?: string) {
+  return requestJson(workspacePath("/tags", privateToken), tagSchema, {
     method: "POST",
     token,
+    privateToken,
     body: input,
   });
 }
 
-export async function updateTag(tagId: string, input: TagUpdateRequest, token: string) {
-  return requestJson(`/tags/${encodeURIComponent(tagId)}`, tagSchema, {
+export async function updateTag(tagId: string, input: TagUpdateRequest, token: string, privateToken?: string) {
+  return requestJson(workspacePath(`/tags/${encodeURIComponent(tagId)}`, privateToken), tagSchema, {
     method: "PATCH",
     token,
+    privateToken,
     body: input,
   });
 }
 
-export async function deleteTag(tagId: string, token: string) {
-  await requestVoid(`/tags/${encodeURIComponent(tagId)}`, {
+export async function deleteTag(tagId: string, token: string, privateToken?: string) {
+  await requestVoid(workspacePath(`/tags/${encodeURIComponent(tagId)}`, privateToken), {
     method: "DELETE",
     token,
+    privateToken,
   });
 }
 

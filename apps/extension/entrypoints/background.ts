@@ -1,4 +1,5 @@
 import { defineBackground } from "wxt/utils/define-background";
+import type { Bookmark, BookmarkMetadataUpdateRequest } from "@keeppage/domain";
 import {
   captureActiveTab,
   captureTabById,
@@ -24,7 +25,9 @@ import { refreshAllBookmarkIcons } from "../src/lib/sync-api";
 import {
   createLinkBookmark,
   deleteBookmark,
+  fetchBookmark,
   fetchBookmarkStatus,
+  updatePrivateBookmarkMetadata,
 } from "../src/lib/bookmark-metadata-api";
 import {
   captureProfileSchema,
@@ -589,6 +592,16 @@ async function moveTabBookmarkToPrivate(
   const tabId = tab.id as number;
   await requirePrivateVaultUnlocked();
   logger.info("Moving bookmark to private mode.", { tabId, bookmarkId });
+  // Read the standard classification first; it is gone once the bookmark is deleted.
+  let standardBookmark: Bookmark | null = null;
+  let classificationWarning: string | null = null;
+  try {
+    standardBookmark = await fetchBookmark(bookmarkId);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.warn("Standard bookmark lookup failed before private move.", { bookmarkId, error: reason });
+    classificationWarning = `原收藏夹和标签未能带入私密书签：${reason}`;
+  }
   const task = await captureTabById(tabId, undefined, "private");
   if (task.status !== "synced") {
     return {
@@ -596,6 +609,9 @@ async function moveTabBookmarkToPrivate(
       task,
       error: `私密保存没有完成，原书签已保留：${task.failureReason ?? "请在侧边栏查看详情。"}`,
     };
+  }
+  if (standardBookmark) {
+    classificationWarning = await carryClassificationToPrivate(standardBookmark, task.bookmarkId);
   }
   // Only remove the standard bookmark after the private copy is safely stored.
   try {
@@ -609,12 +625,51 @@ async function moveTabBookmarkToPrivate(
     return {
       ok: true,
       task,
-      warning: `已私密保存，但普通书签删除失败：${reason}`,
+      warning: [`已私密保存，但普通书签删除失败：${reason}`, classificationWarning].filter(Boolean).join("；"),
     };
   } finally {
     await refreshTabBookmarkBadge(tabId, tab.url);
   }
-  return { ok: true, task };
+  return classificationWarning ? { ok: true, task, warning: classificationWarning } : { ok: true, task };
+}
+
+/** Copies folder path, tag names, note and favorite onto the private copy. Returns a warning on failure. */
+async function carryClassificationToPrivate(
+  bookmark: Bookmark,
+  privateBookmarkId: string | undefined,
+): Promise<string | null> {
+  const update: BookmarkMetadataUpdateRequest = {};
+  if (bookmark.folder?.path) {
+    update.folderPath = bookmark.folder.path;
+  }
+  if (bookmark.tags.length > 0) {
+    update.tags = bookmark.tags.map((tag) => tag.name);
+  }
+  if (bookmark.note.trim()) {
+    update.note = bookmark.note;
+  }
+  if (bookmark.isFavorite) {
+    update.isFavorite = true;
+  }
+  if (Object.keys(update).length === 0) {
+    return null;
+  }
+  if (!privateBookmarkId) {
+    logger.warn("Private copy has no bookmark id; classification not carried.", { bookmarkId: bookmark.id });
+    return "原收藏夹和标签未能带入私密书签：缺少私密书签 ID。";
+  }
+  try {
+    await updatePrivateBookmarkMetadata(privateBookmarkId, update);
+    return null;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.warn("Carrying classification to private bookmark failed.", {
+      bookmarkId: bookmark.id,
+      privateBookmarkId,
+      error: reason,
+    });
+    return `原收藏夹和标签未能带入私密书签：${reason}`;
+  }
 }
 
 async function saveTabAsLinkBookmark(tab: chrome.tabs.Tab) {

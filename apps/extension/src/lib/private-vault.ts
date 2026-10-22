@@ -43,6 +43,20 @@ let cachedPrivateTokenExpiresAt: number | null = null;
 let cachedPrivateTokenIssuedAt: number | null = null;
 let privateTokenLoaded = false;
 
+// Popup and side panel read the private token directly too; drop this context's
+// cache whenever another context (usually the background) unlocks, locks or
+// touches the session so every context sees the current token.
+chrome.storage?.onChanged?.addListener((changes, areaName) => {
+  if (
+    areaName === "session" &&
+    (PRIVATE_TOKEN_KEY in changes ||
+      PRIVATE_TOKEN_EXPIRES_AT_KEY in changes ||
+      PRIVATE_TOKEN_ISSUED_AT_KEY in changes)
+  ) {
+    privateTokenLoaded = false;
+  }
+});
+
 async function createEmptySummary(): Promise<PrivateVaultSummary> {
   return privateVaultSummarySchema.parse({
     enabled: false,

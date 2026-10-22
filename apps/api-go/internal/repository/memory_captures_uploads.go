@@ -22,6 +22,7 @@ type memoryCaptureVersion struct {
 	objectKey     string
 	objects       map[string]struct{}
 	mediaFiles    []domain.CaptureMediaFile
+	quality       domain.QualityReport
 }
 
 type memoryCaptureState struct {
@@ -30,6 +31,8 @@ type memoryCaptureState struct {
 	versions         map[string]memoryCaptureVersion
 	privateVersions  map[string]memoryCaptureVersion
 	privateBookmarks map[string]domain.Bookmark
+	privateFolders   map[string]map[string]domain.Folder
+	privateTags      map[string]map[string]domain.Tag
 }
 
 var memoryCaptureStates sync.Map // map[*MemoryRepository]*memoryCaptureState
@@ -38,6 +41,7 @@ func (r *MemoryRepository) captureState() *memoryCaptureState {
 	state, _ := memoryCaptureStates.LoadOrStore(r, &memoryCaptureState{
 		pending: map[string]domain.CaptureUpload{}, privatePending: map[string]domain.CaptureUpload{},
 		versions: map[string]memoryCaptureVersion{}, privateVersions: map[string]memoryCaptureVersion{}, privateBookmarks: map[string]domain.Bookmark{},
+		privateFolders: map[string]map[string]domain.Folder{}, privateTags: map[string]map[string]domain.Tag{},
 	})
 	return state.(*memoryCaptureState)
 }
@@ -157,7 +161,7 @@ func (r *MemoryRepository) completeMemoryCapture(userID string, input domain.Cap
 		objects[file.ObjectKey] = struct{}{}
 	}
 	versionID := auth.NewUUID()
-	versions[input.ObjectKey] = memoryCaptureVersion{extractedText: derefString(input.ExtractedText), userID: userID, bookmarkID: bookmark.ID, versionID: versionID, hash: input.HTMLSHA256, objectKey: input.ObjectKey, objects: objects, mediaFiles: append([]domain.CaptureMediaFile(nil), input.MediaFiles...)}
+	versions[input.ObjectKey] = memoryCaptureVersion{extractedText: derefString(input.ExtractedText), userID: userID, bookmarkID: bookmark.ID, versionID: versionID, hash: input.HTMLSHA256, objectKey: input.ObjectKey, objects: objects, mediaFiles: append([]domain.CaptureMediaFile(nil), input.MediaFiles...), quality: memoryVersionQuality(input.Quality)}
 	delete(pending, input.ObjectKey)
 	r.updateMemoryCaptureBookmark(bookmark, input)
 	bookmark.LatestVersionID = &versionID
@@ -256,6 +260,15 @@ func (r *MemoryRepository) findCaptureBookmarkByHash(userID, hash string, privat
 	}
 	return r.findMemoryBookmarkByHash(userID, hash)
 }
+
+// memoryVersionQuality keeps the detail contract valid: reasons must be an array.
+func memoryVersionQuality(quality domain.QualityReport) domain.QualityReport {
+	if quality.Reasons == nil {
+		quality.Reasons = []domain.QualityReason{}
+	}
+	return quality
+}
+
 func (r *MemoryRepository) updateMemoryCaptureBookmark(bookmark *domain.Bookmark, input domain.CaptureCompleteRequest) {
 	bookmark.SourceURL = input.Source.URL
 	bookmark.CanonicalURL = input.Source.CanonicalURL
@@ -263,7 +276,8 @@ func (r *MemoryRepository) updateMemoryCaptureBookmark(bookmark *domain.Bookmark
 	bookmark.Domain = input.Source.Domain
 	bookmark.FaviconURL = input.Source.FaviconURL
 	bookmark.CoverImageURL = input.Source.CoverImageURL
-	bookmark.LatestQuality = &input.Quality
+	quality := memoryVersionQuality(input.Quality)
+	bookmark.LatestQuality = &quality
 	bookmark.UpdatedAt = time.Now().UTC()
 }
 func versionBelongsToMemoryUser(r *MemoryRepository, state *memoryCaptureState, userID, bookmarkID string, private bool) bool {

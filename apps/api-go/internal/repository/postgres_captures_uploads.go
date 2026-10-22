@@ -173,10 +173,7 @@ func (r *PostgresRepository) updateCaptureBookmark(ctx context.Context, tx pgx.T
 }
 func (r *PostgresRepository) loadCaptureBookmark(ctx context.Context, userID, bookmarkID string, private bool) (domain.Bookmark, error) {
 	if private {
-		var b domain.Bookmark
-		err := r.pool.QueryRow(ctx, `select id::text,source_url,canonical_url,title,domain,note,is_favorite,latest_version_id::text,created_at,updated_at from private_bookmarks where user_id=$1 and id=$2`, userID, bookmarkID).Scan(&b.ID, &b.SourceURL, &b.CanonicalURL, &b.Title, &b.Domain, &b.Note, &b.IsFavorite, &b.LatestVersionID, &b.CreatedAt, &b.UpdatedAt)
-		b.Tags = []domain.Tag{}
-		return b, err
+		return r.loadTaxonomyBookmark(ctx, privateTaxonomy, userID, bookmarkID)
 	}
 	return r.loadBookmark(ctx, userID, bookmarkID)
 }

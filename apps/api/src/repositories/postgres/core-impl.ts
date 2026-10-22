@@ -51,9 +51,12 @@ import {
   importItems,
   importTasks,
   privateBookmarks,
+  privateBookmarkTags,
   privateBookmarkVersions,
   privateCaptureUploads,
+  privateFolders,
   privateModeConfigs,
+  privateTags,
   shareItems,
   shares,
   tags,
@@ -71,6 +74,7 @@ import {
   ilike,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -101,6 +105,27 @@ import {
   deriveHtmlObjectKeyFromMediaObjectKey,
   mergeBookmarkMediaFiles,
 } from "./shared/helpers";
+
+/** Folder/tag tables that one bookmark collection may reference. */
+type TaxonomyTables = {
+  folders: typeof folders;
+  tags: typeof tags;
+  bookmarkTags: typeof bookmarkTags;
+};
+
+const PUBLIC_TAXONOMY: TaxonomyTables = {
+  folders,
+  tags,
+  bookmarkTags,
+};
+
+// The private_* taxonomy tables are column-for-column identical to their public
+// counterparts, so the same query builders run against either table set.
+const PRIVATE_TAXONOMY: TaxonomyTables = {
+  folders: privateFolders as unknown as typeof folders,
+  tags: privateTags as unknown as typeof tags,
+  bookmarkTags: privateBookmarkTags as unknown as typeof bookmarkTags,
+};
 
 export type PostgresBookmarkRepositoryOptions = {
   databaseUrl: string;
@@ -1414,6 +1439,26 @@ export class PostgresRepositoryCore {
     if (query.quality) {
       conditions.push(eq(privateBookmarkVersions.qualityGrade, query.quality));
     }
+    if (query.folderId) {
+      const folderIds = await this.loadFolderSubtreeIds(userId, query.folderId, PRIVATE_TAXONOMY);
+      if (folderIds.length === 0) {
+        return bookmarkSearchResponseSchema.parse({
+          items: [],
+          total: 0,
+        });
+      }
+      conditions.push(inArray(privateBookmarks.folderId, folderIds));
+    }
+    if (query.tagId) {
+      conditions.push(
+        sql<boolean>`exists (
+          select 1
+          from ${privateBookmarkTags}
+          where ${privateBookmarkTags.bookmarkId} = ${privateBookmarks.id}
+            and ${privateBookmarkTags.tagId} = ${query.tagId}
+        )`,
+      );
+    }
     if (query.q?.trim()) {
       const needle = `%${query.q.trim()}%`;
       conditions.push(
@@ -1422,7 +1467,15 @@ export class PostgresRepositoryCore {
           ilike(privateBookmarks.sourceUrl, needle),
           ilike(privateBookmarks.domain, needle),
           ilike(privateBookmarks.note, needle),
+          ilike(privateFolders.path, needle),
           ilike(privateBookmarkVersions.extractedText, needle),
+          sql<boolean>`exists (
+            select 1
+            from ${privateBookmarkTags}
+            inner join ${privateTags} on ${privateTags.id} = ${privateBookmarkTags.tagId}
+            where ${privateBookmarkTags.bookmarkId} = ${privateBookmarks.id}
+              and ${privateTags.name} ilike ${needle}
+          )`,
         )!,
       );
     }
@@ -1433,6 +1486,7 @@ export class PostgresRepositoryCore {
       })
       .from(privateBookmarks)
       .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .leftJoin(privateFolders, eq(privateBookmarks.folderId, privateFolders.id))
       .where(and(...conditions));
     const total = Number(totalRow[0]?.total ?? 0);
     if (total === 0) {
@@ -1454,32 +1508,132 @@ export class PostgresRepositoryCore {
         latestVersionId: privateBookmarks.latestVersionId,
         createdAt: privateBookmarks.createdAt,
         updatedAt: privateBookmarks.updatedAt,
+        folderId: privateFolders.id,
+        folderName: privateFolders.name,
+        folderPath: privateFolders.path,
+        folderParentId: privateFolders.parentId,
         latestQualityReport: privateBookmarkVersions.qualityReportJson,
         latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
         iconUrl: bookmarkIconUrlForHostname(privateBookmarks.domain),
       })
       .from(privateBookmarks)
       .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .leftJoin(privateFolders, eq(privateBookmarks.folderId, privateFolders.id))
       .where(and(...conditions))
-      .orderBy(desc(privateBookmarks.updatedAt))
+      .orderBy(...bookmarkOrderBy(privateBookmarks, query))
       .limit(query.limit)
       .offset(query.offset);
-    const versionCountMap = await this.loadPrivateVersionCounts(rows.map((row) => row.id));
+    const paginatedBookmarkIds = rows.map((row) => row.id);
+    const tagMap = await this.loadTagsByBookmarkId(paginatedBookmarkIds, PRIVATE_TAXONOMY);
+    const versionCountMap = await this.loadPrivateVersionCounts(paginatedBookmarkIds);
 
     return bookmarkSearchResponseSchema.parse({
       items: rows.map((row) =>
-        this.mapBookmarkRow({
-          ...row,
-          folderId: null,
-          folderName: null,
-          folderPath: null,
-          folderParentId: null,
-        }, {
-          tags: [],
+        this.mapBookmarkRow(row, {
+          tags: tagMap.get(row.id) ?? [],
           versionCount: versionCountMap.get(row.id) ?? 0,
         })),
       total,
     });
+  }
+
+  async getPrivateBookmarkSidebarStats(userId: string) {
+    const rows = await this.db
+      .select({
+        folderId: privateBookmarks.folderId,
+        count: count(),
+      })
+      .from(privateBookmarks)
+      .where(and(
+        eq(privateBookmarks.userId, userId),
+        sql<boolean>`${privateBookmarks.folderId} is not null`,
+      ))
+      .groupBy(privateBookmarks.folderId);
+
+    return bookmarkSidebarStatsResponseSchema.parse({
+      folderCounts: rows.flatMap((row) => (
+        typeof row.folderId === "string"
+          ? [{
+              folderId: row.folderId,
+              count: Number(row.count),
+            }]
+          : []
+      )),
+    });
+  }
+
+  async deletePrivateBookmark(userId: string, bookmarkId: string) {
+    const rows = await this.db
+      .delete(privateBookmarks)
+      .where(and(eq(privateBookmarks.id, bookmarkId), eq(privateBookmarks.userId, userId)))
+      .returning({
+        id: privateBookmarks.id,
+      });
+    return Boolean(rows[0]);
+  }
+
+  async updatePrivateBookmarkMetadata(
+    userId: string,
+    bookmarkId: string,
+    input: BookmarkMetadataUpdateRequest,
+  ) {
+    const existing = await this.loadPrivateBookmarkOrNull(bookmarkId, userId);
+    if (!existing) {
+      return null;
+    }
+
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      const taxonomy = await this.resolveMetadataTaxonomy(tx, userId, existing, input, now, PRIVATE_TAXONOMY);
+      const patch: Partial<typeof privateBookmarks.$inferInsert> = {
+        updatedAt: now,
+      };
+      if (input.note !== undefined) {
+        patch.note = input.note;
+      }
+      if (input.isFavorite !== undefined) {
+        patch.isFavorite = input.isFavorite;
+      }
+      if (taxonomy.folderChanged) {
+        patch.folderId = taxonomy.folderId;
+      }
+      await tx.update(privateBookmarks).set(patch).where(eq(privateBookmarks.id, bookmarkId));
+      await this.replaceBookmarkTags(tx, bookmarkId, taxonomy.tagIds, now, PRIVATE_TAXONOMY);
+    });
+
+    return this.loadPrivateBookmark(bookmarkId, userId);
+  }
+
+  async listPrivateFolders(userId: string) {
+    return this.listFolders(userId, PRIVATE_TAXONOMY);
+  }
+
+  async createPrivateFolder(userId: string, input: FolderCreateRequest) {
+    return this.createFolder(userId, input, PRIVATE_TAXONOMY);
+  }
+
+  async updatePrivateFolder(userId: string, folderId: string, input: FolderUpdateRequest) {
+    return this.updateFolder(userId, folderId, input, PRIVATE_TAXONOMY);
+  }
+
+  async deletePrivateFolder(userId: string, folderId: string) {
+    return this.deleteFolder(userId, folderId, PRIVATE_TAXONOMY);
+  }
+
+  async listPrivateTags(userId: string) {
+    return this.listTags(userId, PRIVATE_TAXONOMY);
+  }
+
+  async createPrivateTag(userId: string, input: TagCreateRequest) {
+    return this.createTag(userId, input, PRIVATE_TAXONOMY);
+  }
+
+  async updatePrivateTag(userId: string, tagId: string, input: TagUpdateRequest) {
+    return this.updateTag(userId, tagId, input, PRIVATE_TAXONOMY);
+  }
+
+  async deletePrivateTag(userId: string, tagId: string) {
+    return this.deleteTag(userId, tagId, PRIVATE_TAXONOMY);
   }
 
   async getPrivateBookmarkDetail(userId: string, bookmarkId: string) {
@@ -1710,7 +1864,7 @@ export class PostgresRepositoryCore {
       .leftJoin(bookmarkVersions, eq(bookmarks.latestVersionId, bookmarkVersions.id))
       .leftJoin(folders, eq(bookmarks.folderId, folders.id))
       .where(and(...conditions))
-      .orderBy(desc(bookmarks.updatedAt))
+      .orderBy(...bookmarkOrderBy(bookmarks, query))
       .limit(query.limit)
       .offset(query.offset);
     const paginatedBookmarkIds = rows.map((row) => row.id);
@@ -1892,27 +2046,7 @@ export class PostgresRepositoryCore {
     const now = new Date();
 
     await this.db.transaction(async (tx) => {
-      let folderId = existing.folder?.id ?? null;
-      if (input.folderPath !== undefined) {
-        folderId = await this.ensureFolderPathId(tx, userId, input.folderPath, now);
-      } else if (input.folderId !== undefined) {
-        if (input.folderId === null) {
-          folderId = null;
-        } else {
-          const folder = await this.loadFolderOrNull(userId, input.folderId);
-          if (!folder) {
-            throw new HttpError(404, "FolderNotFound", "Folder not found.");
-          }
-          folderId = folder.id;
-        }
-      }
-
-      const tagIds = input.tags !== undefined
-        ? await this.ensureTagIdsByName(tx, userId, input.tags, now)
-        : input.tagIds !== undefined
-        ? await this.resolveTagIds(userId, input.tagIds)
-        : undefined;
-
+      const taxonomy = await this.resolveMetadataTaxonomy(tx, userId, existing, input, now, PUBLIC_TAXONOMY);
       const patch: Partial<typeof bookmarks.$inferInsert> = {
         updatedAt: now,
       };
@@ -1922,34 +2056,22 @@ export class PostgresRepositoryCore {
       if (input.isFavorite !== undefined) {
         patch.isFavorite = input.isFavorite;
       }
-      if (input.folderPath !== undefined || input.folderId !== undefined) {
-        patch.folderId = folderId;
+      if (taxonomy.folderChanged) {
+        patch.folderId = taxonomy.folderId;
       }
       await tx.update(bookmarks).set(patch).where(eq(bookmarks.id, bookmarkId));
-
-      if (tagIds !== undefined) {
-        await tx.delete(bookmarkTags).where(eq(bookmarkTags.bookmarkId, bookmarkId));
-        if (tagIds.length > 0) {
-          await tx.insert(bookmarkTags).values(
-            tagIds.map((tagId) => ({
-              bookmarkId,
-              tagId,
-              createdAt: now,
-            })),
-          );
-        }
-      }
+      await this.replaceBookmarkTags(tx, bookmarkId, taxonomy.tagIds, now, PUBLIC_TAXONOMY);
     });
 
     return this.loadBookmark(bookmarkId, userId);
   }
 
-  async listFolders(userId: string) {
-    return this.loadAllFolders(userId);
+  async listFolders(userId: string, t: TaxonomyTables = PUBLIC_TAXONOMY) {
+    return this.loadAllFolders(userId, t);
   }
 
-  async createFolder(userId: string, input: FolderCreateRequest) {
-    const allFolders = await this.loadAllFolders(userId);
+  async createFolder(userId: string, input: FolderCreateRequest, t: TaxonomyTables = PUBLIC_TAXONOMY) {
+    const allFolders = await this.loadAllFolders(userId, t);
     const parent = input.parentId
       ? allFolders.find((folder) => folder.id === input.parentId)
       : undefined;
@@ -1961,7 +2083,7 @@ export class PostgresRepositoryCore {
     this.assertUniqueFolderPath(allFolders, nextPath);
     const now = new Date();
     const rows = await this.db
-      .insert(folders)
+      .insert(t.folders)
       .values({
         userId,
         name: input.name,
@@ -1971,10 +2093,10 @@ export class PostgresRepositoryCore {
         updatedAt: now,
       })
       .returning({
-        id: folders.id,
-        name: folders.name,
-        path: folders.path,
-        parentId: folders.parentId,
+        id: t.folders.id,
+        name: t.folders.name,
+        path: t.folders.path,
+        parentId: t.folders.parentId,
       });
 
     const row = rows[0];
@@ -1989,8 +2111,13 @@ export class PostgresRepositoryCore {
     };
   }
 
-  async updateFolder(userId: string, folderId: string, input: FolderUpdateRequest) {
-    const allFolders = await this.loadAllFolders(userId);
+  async updateFolder(
+    userId: string,
+    folderId: string,
+    input: FolderUpdateRequest,
+    t: TaxonomyTables = PUBLIC_TAXONOMY,
+  ) {
+    const allFolders = await this.loadAllFolders(userId, t);
     const current = allFolders.find((folder) => folder.id === folderId);
     if (!current) {
       return null;
@@ -2034,32 +2161,32 @@ export class PostgresRepositoryCore {
         }
         if (folder.id === folderId) {
           await tx
-            .update(folders)
+            .update(t.folders)
             .set({
               name: nextName,
               path: candidatePath,
               parentId: nextParentId,
               updatedAt: now,
             })
-            .where(and(eq(folders.id, folder.id), eq(folders.userId, userId)));
+            .where(and(eq(t.folders.id, folder.id), eq(t.folders.userId, userId)));
           continue;
         }
 
         await tx
-          .update(folders)
+          .update(t.folders)
           .set({
             path: candidatePath,
             updatedAt: now,
           })
-          .where(and(eq(folders.id, folder.id), eq(folders.userId, userId)));
+          .where(and(eq(t.folders.id, folder.id), eq(t.folders.userId, userId)));
       }
     });
 
-    return this.loadFolderOrNull(userId, folderId);
+    return this.loadFolderOrNull(userId, folderId, t);
   }
 
-  async deleteFolder(userId: string, folderId: string) {
-    const allFolders = await this.loadAllFolders(userId);
+  async deleteFolder(userId: string, folderId: string, t: TaxonomyTables = PUBLIC_TAXONOMY) {
+    const allFolders = await this.loadAllFolders(userId, t);
     const current = allFolders.find((folder) => folder.id === folderId);
     if (!current) {
       return false;
@@ -2101,29 +2228,29 @@ export class PostgresRepositoryCore {
           patch.parentId = current.parentId ?? null;
         }
         await tx
-          .update(folders)
+          .update(t.folders)
           .set(patch)
-          .where(and(eq(folders.id, folder.id), eq(folders.userId, userId)));
+          .where(and(eq(t.folders.id, folder.id), eq(t.folders.userId, userId)));
       }
 
       await tx
-        .delete(folders)
-        .where(and(eq(folders.id, folderId), eq(folders.userId, userId)));
+        .delete(t.folders)
+        .where(and(eq(t.folders.id, folderId), eq(t.folders.userId, userId)));
     });
 
     return true;
   }
 
-  async listTags(userId: string) {
+  async listTags(userId: string, t: TaxonomyTables = PUBLIC_TAXONOMY) {
     const rows = await this.db
       .select({
-        id: tags.id,
-        name: tags.name,
-        color: tags.color,
+        id: t.tags.id,
+        name: t.tags.name,
+        color: t.tags.color,
       })
-      .from(tags)
-      .where(eq(tags.userId, userId))
-      .orderBy(tags.name);
+      .from(t.tags)
+      .where(eq(t.tags.userId, userId))
+      .orderBy(t.tags.name);
 
     return rows.map((row) => ({
       id: row.id,
@@ -2132,20 +2259,20 @@ export class PostgresRepositoryCore {
     }));
   }
 
-  async createTag(userId: string, input: TagCreateRequest) {
-    const allTags = await this.listTags(userId);
+  async createTag(userId: string, input: TagCreateRequest, t: TaxonomyTables = PUBLIC_TAXONOMY) {
+    const allTags = await this.listTags(userId, t);
     this.assertUniqueTagName(allTags, input.name);
     const rows = await this.db
-      .insert(tags)
+      .insert(t.tags)
       .values({
         userId,
         name: input.name,
         color: input.color ?? null,
       })
       .returning({
-        id: tags.id,
-        name: tags.name,
-        color: tags.color,
+        id: t.tags.id,
+        name: t.tags.name,
+        color: t.tags.color,
       });
 
     const row = rows[0];
@@ -2159,8 +2286,8 @@ export class PostgresRepositoryCore {
     };
   }
 
-  async updateTag(userId: string, tagId: string, input: TagUpdateRequest) {
-    const allTags = await this.listTags(userId);
+  async updateTag(userId: string, tagId: string, input: TagUpdateRequest, t: TaxonomyTables = PUBLIC_TAXONOMY) {
+    const allTags = await this.listTags(userId, t);
     const current = allTags.find((tag) => tag.id === tagId);
     if (!current) {
       return null;
@@ -2171,16 +2298,16 @@ export class PostgresRepositoryCore {
     this.assertUniqueTagName(allTags, nextName, tagId);
 
     const rows = await this.db
-      .update(tags)
+      .update(t.tags)
       .set({
         name: nextName,
         color: nextColor ?? null,
       })
-      .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+      .where(and(eq(t.tags.id, tagId), eq(t.tags.userId, userId)))
       .returning({
-        id: tags.id,
-        name: tags.name,
-        color: tags.color,
+        id: t.tags.id,
+        name: t.tags.name,
+        color: t.tags.color,
       });
 
     const row = rows[0];
@@ -2194,12 +2321,12 @@ export class PostgresRepositoryCore {
     };
   }
 
-  async deleteTag(userId: string, tagId: string) {
+  async deleteTag(userId: string, tagId: string, t: TaxonomyTables = PUBLIC_TAXONOMY) {
     const rows = await this.db
-      .delete(tags)
-      .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+      .delete(t.tags)
+      .where(and(eq(t.tags.id, tagId), eq(t.tags.userId, userId)))
       .returning({
-        id: tags.id,
+        id: t.tags.id,
       });
     return Boolean(rows[0]);
   }
@@ -2674,12 +2801,17 @@ export class PostgresRepositoryCore {
         latestVersionId: privateBookmarks.latestVersionId,
         createdAt: privateBookmarks.createdAt,
         updatedAt: privateBookmarks.updatedAt,
+        folderId: privateFolders.id,
+        folderName: privateFolders.name,
+        folderPath: privateFolders.path,
+        folderParentId: privateFolders.parentId,
         latestQualityReport: privateBookmarkVersions.qualityReportJson,
         latestSourceMeta: privateBookmarkVersions.sourceMetaJson,
         iconUrl: bookmarkIconUrlForHostname(privateBookmarks.domain),
       })
       .from(privateBookmarks)
       .leftJoin(privateBookmarkVersions, eq(privateBookmarks.latestVersionId, privateBookmarkVersions.id))
+      .leftJoin(privateFolders, eq(privateBookmarks.folderId, privateFolders.id))
       .where(
         and(
           eq(privateBookmarks.id, bookmarkId),
@@ -2693,15 +2825,10 @@ export class PostgresRepositoryCore {
       return null;
     }
 
+    const tagsByBookmark = await this.loadTagsByBookmarkId([bookmarkId], PRIVATE_TAXONOMY);
     const versionCounts = await this.loadPrivateVersionCounts([bookmarkId]);
-    return this.mapBookmarkRow({
-      ...row,
-      folderId: null,
-      folderName: null,
-      folderPath: null,
-      folderParentId: null,
-    }, {
-      tags: [],
+    return this.mapBookmarkRow(row, {
+      tags: tagsByBookmark.get(bookmarkId) ?? [],
       versionCount: versionCounts.get(bookmarkId) ?? 0,
     });
   }
@@ -2794,7 +2921,7 @@ export class PostgresRepositoryCore {
     );
   }
 
-  private async loadTagsByBookmarkId(bookmarkIds: string[]) {
+  private async loadTagsByBookmarkId(bookmarkIds: string[], t: TaxonomyTables = PUBLIC_TAXONOMY) {
     const tagMap = new Map<string, Array<{ id: string; name: string; color?: string }>>();
     if (bookmarkIds.length === 0) {
       return tagMap;
@@ -2802,14 +2929,14 @@ export class PostgresRepositoryCore {
 
     const tagRows = await this.db
       .select({
-        bookmarkId: bookmarkTags.bookmarkId,
-        id: tags.id,
-        name: tags.name,
-        color: tags.color,
+        bookmarkId: t.bookmarkTags.bookmarkId,
+        id: t.tags.id,
+        name: t.tags.name,
+        color: t.tags.color,
       })
-      .from(bookmarkTags)
-      .innerJoin(tags, eq(bookmarkTags.tagId, tags.id))
-      .where(inArray(bookmarkTags.bookmarkId, bookmarkIds));
+      .from(t.bookmarkTags)
+      .innerJoin(t.tags, eq(t.bookmarkTags.tagId, t.tags.id))
+      .where(inArray(t.bookmarkTags.bookmarkId, bookmarkIds));
 
     for (const row of tagRows) {
       const existing = tagMap.get(row.bookmarkId) ?? [];
@@ -2967,6 +3094,7 @@ export class PostgresRepositoryCore {
     userId: string,
     folderPath: string,
     now: Date,
+    t: TaxonomyTables = PUBLIC_TAXONOMY,
   ) {
     const segments = folderPath.split("/").map((segment) => segment.trim()).filter(Boolean);
     if (segments.length === 0) {
@@ -2981,13 +3109,13 @@ export class PostgresRepositoryCore {
       currentPath = currentPath ? `${currentPath}/${segment}` : segment;
       const existingRows = await tx
         .select({
-          id: folders.id,
+          id: t.folders.id,
         })
-        .from(folders)
+        .from(t.folders)
         .where(
           and(
-            eq(folders.userId, userId),
-            eq(folders.path, currentPath),
+            eq(t.folders.userId, userId),
+            eq(t.folders.path, currentPath),
           ),
         )
         .limit(1);
@@ -2999,7 +3127,7 @@ export class PostgresRepositoryCore {
       }
 
       currentId = crypto.randomUUID();
-      await tx.insert(folders).values({
+      await tx.insert(t.folders).values({
         id: currentId,
         userId,
         name: segment,
@@ -3019,6 +3147,7 @@ export class PostgresRepositoryCore {
     userId: string,
     tagNames: string[],
     now: Date,
+    t: TaxonomyTables = PUBLIC_TAXONOMY,
   ) {
     const names = [...new Set(tagNames.map((tagName) => tagName.trim()).filter(Boolean))];
     if (names.length === 0) {
@@ -3029,13 +3158,13 @@ export class PostgresRepositoryCore {
     for (const name of names) {
       const existingRows = await tx
         .select({
-          id: tags.id,
+          id: t.tags.id,
         })
-        .from(tags)
+        .from(t.tags)
         .where(
           and(
-            eq(tags.userId, userId),
-            eq(tags.name, name),
+            eq(t.tags.userId, userId),
+            eq(t.tags.name, name),
           ),
         )
         .limit(1);
@@ -3046,7 +3175,7 @@ export class PostgresRepositoryCore {
       }
 
       const tagId = crypto.randomUUID();
-      await tx.insert(tags).values({
+      await tx.insert(t.tags).values({
         id: tagId,
         userId,
         name,
@@ -3474,17 +3603,82 @@ export class PostgresRepositoryCore {
     return title || normalizedUrl;
   }
 
-  private async loadAllFolders(userId: string): Promise<Folder[]> {
+  /**
+   * Resolves the folder/tag part of a metadata update against one taxonomy.
+   * Ids must belong to that taxonomy; paths and names are found or created in it.
+   */
+  private async resolveMetadataTaxonomy(
+    tx: any,
+    userId: string,
+    existing: Bookmark,
+    input: BookmarkMetadataUpdateRequest,
+    now: Date,
+    t: TaxonomyTables,
+  ) {
+    let folderId = existing.folder?.id ?? null;
+    let folderChanged = false;
+    if (input.folderPath !== undefined) {
+      folderId = await this.ensureFolderPathId(tx, userId, input.folderPath, now, t);
+      folderChanged = true;
+    } else if (input.folderId !== undefined) {
+      folderChanged = true;
+      if (input.folderId === null) {
+        folderId = null;
+      } else {
+        const folder = await this.loadFolderOrNull(userId, input.folderId, t);
+        if (!folder) {
+          throw new HttpError(404, "FolderNotFound", "Folder not found.");
+        }
+        folderId = folder.id;
+      }
+    }
+
+    const tagIds = input.tags !== undefined
+      ? await this.ensureTagIdsByName(tx, userId, input.tags, now, t)
+      : input.tagIds !== undefined
+      ? await this.resolveTagIds(userId, input.tagIds, t)
+      : undefined;
+
+    return {
+      folderId,
+      folderChanged,
+      tagIds,
+    };
+  }
+
+  private async replaceBookmarkTags(
+    tx: any,
+    bookmarkId: string,
+    tagIds: string[] | undefined,
+    now: Date,
+    t: TaxonomyTables,
+  ) {
+    if (tagIds === undefined) {
+      return;
+    }
+    await tx.delete(t.bookmarkTags).where(eq(t.bookmarkTags.bookmarkId, bookmarkId));
+    if (tagIds.length > 0) {
+      await tx.insert(t.bookmarkTags).values(
+        tagIds.map((tagId) => ({
+          bookmarkId,
+          tagId,
+          createdAt: now,
+        })),
+      );
+    }
+  }
+
+  private async loadAllFolders(userId: string, t: TaxonomyTables = PUBLIC_TAXONOMY): Promise<Folder[]> {
     const rows = await this.db
       .select({
-        id: folders.id,
-        name: folders.name,
-        path: folders.path,
-        parentId: folders.parentId,
+        id: t.folders.id,
+        name: t.folders.name,
+        path: t.folders.path,
+        parentId: t.folders.parentId,
       })
-      .from(folders)
-      .where(eq(folders.userId, userId))
-      .orderBy(folders.path);
+      .from(t.folders)
+      .where(eq(t.folders.userId, userId))
+      .orderBy(t.folders.path);
 
     return rows.map((row) => ({
       id: row.id,
@@ -3494,16 +3688,20 @@ export class PostgresRepositoryCore {
     }));
   }
 
-  private async loadFolderOrNull(userId: string, folderId: string): Promise<Folder | null> {
+  private async loadFolderOrNull(
+    userId: string,
+    folderId: string,
+    t: TaxonomyTables = PUBLIC_TAXONOMY,
+  ): Promise<Folder | null> {
     const rows = await this.db
       .select({
-        id: folders.id,
-        name: folders.name,
-        path: folders.path,
-        parentId: folders.parentId,
+        id: t.folders.id,
+        name: t.folders.name,
+        path: t.folders.path,
+        parentId: t.folders.parentId,
       })
-      .from(folders)
-      .where(and(eq(folders.userId, userId), eq(folders.id, folderId)))
+      .from(t.folders)
+      .where(and(eq(t.folders.userId, userId), eq(t.folders.id, folderId)))
       .limit(1);
 
     const row = rows[0];
@@ -3518,8 +3716,8 @@ export class PostgresRepositoryCore {
     };
   }
 
-  private async loadFolderSubtreeIds(userId: string, folderId: string) {
-    const allFolders = await this.loadAllFolders(userId);
+  private async loadFolderSubtreeIds(userId: string, folderId: string, t: TaxonomyTables = PUBLIC_TAXONOMY) {
+    const allFolders = await this.loadAllFolders(userId, t);
     const current = allFolders.find((folder) => folder.id === folderId);
     if (!current) {
       return [];
@@ -3574,7 +3772,7 @@ export class PostgresRepositoryCore {
     }
   }
 
-  private async resolveTagIds(userId: string, tagIds: string[]) {
+  private async resolveTagIds(userId: string, tagIds: string[], t: TaxonomyTables = PUBLIC_TAXONOMY) {
     const deduplicatedIds = [...new Set(tagIds)];
     if (deduplicatedIds.length === 0) {
       return [];
@@ -3582,10 +3780,10 @@ export class PostgresRepositoryCore {
 
     const rows = await this.db
       .select({
-        id: tags.id,
+        id: t.tags.id,
       })
-      .from(tags)
-      .where(and(eq(tags.userId, userId), inArray(tags.id, deduplicatedIds)));
+      .from(t.tags)
+      .where(and(eq(t.tags.userId, userId), inArray(t.tags.id, deduplicatedIds)));
 
     if (rows.length !== deduplicatedIds.length) {
       throw new HttpError(404, "TagNotFound", "Tag not found.");
@@ -4067,6 +4265,40 @@ export class PostgresRepositoryCore {
       );
     }
     return readerObjectKey;
+  }
+}
+
+function bookmarkOrderBy(
+  table: typeof bookmarks | typeof privateBookmarks,
+  query: BookmarkSearchQuery,
+): SQL[] {
+  if (!query.sort) {
+    return [desc(table.updatedAt)];
+  }
+  const stable = [desc(table.createdAt), desc(table.id)];
+  switch (query.sort) {
+    case "updated":
+      return [desc(table.updatedAt), ...stable];
+    case "title":
+      return [asc(sql`lower(${table.title})`), ...stable];
+    case "relevance": {
+      const needle = query.q?.trim();
+      if (!needle) {
+        return stable;
+      }
+      const pattern = `%${needle}%`;
+      return [
+        desc(sql`case
+          when ${table.title} ilike ${pattern} then 4
+          when ${table.domain} ilike ${pattern} or ${table.sourceUrl} ilike ${pattern} then 2
+          when ${table.note} ilike ${pattern} then 1
+          else 0
+        end`),
+        ...stable,
+      ];
+    }
+    default:
+      return stable;
   }
 }
 

@@ -100,17 +100,20 @@ func (s *Server) Router() http.Handler {
 	router.Get("/ai/organization-jobs/{jobID}", s.handleGetAIOrganizationJob)
 	router.Get("/ai/organization-jobs/{jobID}/items", s.handleListAIOrganizationJobItems)
 	router.Post("/ai/organization-jobs/{jobID}/cancel", s.handleCancelAIOrganizationJob)
-	router.Get("/workspace/bootstrap", s.handleWorkspaceBootstrap)
-	router.Get("/folders", s.handleListFolders)
-	router.Post("/folders", s.handleCreateFolder)
-	router.Patch("/folders/{folderID}", s.handleUpdateFolder)
-	router.Delete("/folders/{folderID}", s.handleDeleteFolder)
-	router.Get("/tags", s.handleListTags)
-	router.Post("/tags", s.handleCreateTag)
-	router.Patch("/tags/{tagID}", s.handleUpdateTag)
-	router.Delete("/tags/{tagID}", s.handleDeleteTag)
+	taxonomy := publicTaxonomyStore(s.taxonomy)
+	sessionOnly := s.publicGuard(auth.RequireOptions{})
+	sessionOrDevice := s.publicGuard(auth.RequireOptions{AllowExtensionDevice: true})
+	router.Get("/workspace/bootstrap", s.handleWorkspaceBootstrapWith(sessionOnly, taxonomy))
+	router.Get("/folders", s.handleListFoldersWith(sessionOrDevice, taxonomy))
+	router.Post("/folders", s.handleCreateFolderWith(sessionOnly, taxonomy))
+	router.Patch("/folders/{folderID}", s.handleUpdateFolderWith(sessionOnly, taxonomy))
+	router.Delete("/folders/{folderID}", s.handleDeleteFolderWith(sessionOnly, taxonomy))
+	router.Get("/tags", s.handleListTagsWith(sessionOrDevice, taxonomy))
+	router.Post("/tags", s.handleCreateTagWith(sessionOnly, taxonomy))
+	router.Patch("/tags/{tagID}", s.handleUpdateTagWith(sessionOnly, taxonomy))
+	router.Delete("/tags/{tagID}", s.handleDeleteTagWith(sessionOnly, taxonomy))
 	router.Get("/bookmarks", s.handleSearchBookmarks)
-	router.Get("/bookmarks/sidebar-stats", s.handleBookmarkSidebarStats)
+	router.Get("/bookmarks/sidebar-stats", s.handleSidebarStatsWith(sessionOrDevice, taxonomy))
 	router.Get("/bookmarks/status", s.handleBookmarkStatus)
 	router.Get("/bookmarks/{bookmarkID}", s.handleBookmarkDetail)
 	router.Delete("/bookmarks/{bookmarkID}", s.handleDeleteBookmark)
@@ -136,178 +139,6 @@ func (s *Server) Router() http.Handler {
 	s.registerCaptureUploadRoutes(router)
 	s.registerPrivateBookmarkRoutes(router)
 	return router
-}
-
-func (s *Server) handleWorkspaceBootstrap(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	folders, err := s.taxonomy.ListFolders(r.Context(), user.ID)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	tags, err := s.taxonomy.ListTags(r.Context(), user.ID)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	stats, err := s.taxonomy.GetBookmarkSidebarStats(r.Context(), user.ID)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, domain.WorkspaceBootstrapResponse{Folders: folders, Tags: tags, FolderCounts: stats.FolderCounts})
-}
-
-func (s *Server) handleListFolders(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{AllowExtensionDevice: true})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	items, err := s.taxonomy.ListFolders(r.Context(), user.ID)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, domain.FolderListResponse{Items: items})
-}
-
-func (s *Server) handleCreateFolder(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	var input domain.FolderCreateRequest
-	if err := decodeJSON(r, &input); err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	folder, err := s.taxonomy.CreateFolder(r.Context(), user.ID, input)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, folder)
-}
-
-func (s *Server) handleUpdateFolder(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	var input domain.FolderUpdateRequest
-	if err := decodeJSON(r, &input); err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	folder, err := s.taxonomy.UpdateFolder(r.Context(), user.ID, chi.URLParam(r, "folderID"), input)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	if folder == nil {
-		writeError(s.logger, w, httperror.NotFound("FolderNotFound", "Folder not found."))
-		return
-	}
-	writeJSON(w, http.StatusOK, folder)
-}
-
-func (s *Server) handleDeleteFolder(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	deleted, err := s.taxonomy.DeleteFolder(r.Context(), user.ID, chi.URLParam(r, "folderID"))
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	if !deleted {
-		writeError(s.logger, w, httperror.NotFound("FolderNotFound", "Folder not found."))
-		return
-	}
-	writeNoContent(w)
-}
-
-func (s *Server) handleListTags(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{AllowExtensionDevice: true})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	items, err := s.taxonomy.ListTags(r.Context(), user.ID)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, domain.TagListResponse{Items: items})
-}
-
-func (s *Server) handleCreateTag(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	var input domain.TagCreateRequest
-	if err := decodeJSON(r, &input); err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	tag, err := s.taxonomy.CreateTag(r.Context(), user.ID, input)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, tag)
-}
-
-func (s *Server) handleUpdateTag(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	var input domain.TagUpdateRequest
-	if err := decodeJSON(r, &input); err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	tag, err := s.taxonomy.UpdateTag(r.Context(), user.ID, chi.URLParam(r, "tagID"), input)
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	if tag == nil {
-		writeError(s.logger, w, httperror.NotFound("TagNotFound", "Tag not found."))
-		return
-	}
-	writeJSON(w, http.StatusOK, tag)
-}
-
-func (s *Server) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
-	user, err := s.requireUser(r, auth.RequireOptions{})
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	deleted, err := s.taxonomy.DeleteTag(r.Context(), user.ID, chi.URLParam(r, "tagID"))
-	if err != nil {
-		writeError(s.logger, w, err)
-		return
-	}
-	if !deleted {
-		writeError(s.logger, w, httperror.NotFound("TagNotFound", "Tag not found."))
-		return
-	}
-	writeNoContent(w)
 }
 
 func (s *Server) handleListAPITokens(w http.ResponseWriter, r *http.Request) {
